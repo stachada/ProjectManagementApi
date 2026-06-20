@@ -48,7 +48,8 @@ src/
 │
 tests/
 ├── Ordinis.UnitTests
-└── Ordinis.IntegrationTests
+├── Ordinis.IntegrationTests
+└── Ordinis.Benchmarks   # added in Phase 8
 ```
 
 ---
@@ -102,7 +103,7 @@ You can also paste existing code and ask to review, extend, or debug it in the c
 
 - [x] Create GitHub repo with `.gitignore` (dotnet) and MIT license
 - [x] Scaffold solution: `dotnet new sln`
-- [x] Add projects: Api, Application, Domain, Infrastructure, Tests
+- [x] Add projects: Api, Application, Domain, Infrastructure, UnitTests, IntegrationTests
 - [x] Wire project references (Clean Architecture layers)
 - [x] Establish feature-folder structure within each project (Tasks/, Projects/, Boards/, Comments/, Users/, Common/)
 - [x] Add README with architecture overview and setup instructions
@@ -212,7 +213,7 @@ You can also paste existing code and ask to review, extend, or debug it in the c
 
 ---
 
-## Phase 8 — Testing
+## Phase 8 — Testing & benchmarking
 
 > ✅ Start unit tests from Phase 3 onward; integration tests from Phase 5 onward. Grows continuously.
 
@@ -222,6 +223,10 @@ You can also paste existing code and ask to review, extend, or debug it in the c
 - [ ] API-level tests for all endpoints (happy path + error cases)
 - [ ] Concurrency conflict tests — simulate simultaneous edits and assert `409 Conflict` responses
 - [ ] Test coverage report
+- [ ] Benchmark EF Core vs Dapper for the same read query (e.g. `GetTasksFiltered`) using BenchmarkDotNet — scaffold `Ordinis.Benchmarks` project at this point
+- [ ] Benchmark manual mapping vs Mapster across varying collection sizes (1, 100, 10 000 items)
+- [ ] Benchmark middleware pipeline overhead — raw endpoint vs full middleware stack
+- [ ] Load test concurrent write throughput (`PUT /tasks/{id}`) to validate concurrency handling under pressure (k6 or NBomber)
 
 ---
 
@@ -281,44 +286,40 @@ You can also paste existing code and ask to review, extend, or debug it in the c
 
 ### Branch naming examples
 
+```
 feature/phase-2-domain-entities
-
 feature/phase-3-cqrs-task-commands
-
 feature/phase-4-efcore-dual-provider
-
 fix/task-concurrency-409-response
-
 chore/update-build-plan
-
 docs/readme-architecture-diagram
+```
 
 ### Conventional Commits examples
 
+```
 feat(tasks): add CreateTask command handler with FluentValidation
-
 feat(auth): implement JWT token issuance and refresh flow
-
 fix(concurrency): translate DbUpdateConcurrencyException to 409 Conflict
-
 chore: update Directory.Build.props target framework
-
 docs: add architecture diagram to README
+```
 
 ### Phase tags
 
 | Tag | Milestone |
 |---|---|
 | `v0.0-phase1-solution-setup` | Phase 1: Repository & solution setup complete |
-| `v0.1-phase2-domain` | Phase 2: Domain layer complete |
-| `v0.2-phase3-application` | Phase 3: Application / CQRS layer complete |
-| `v0.3-phase4-infrastructure` | Phase 4: Infrastructure layer complete |
-| `v0.4-phase5-core-api` | Phase 5: Core REST endpoints complete |
-| `v0.5-phase6-advanced-rest` | Phase 6: Advanced REST features complete |
-| `v0.6-phase7-security` | Phase 7: Security complete |
-| `v0.7-phase8-testing` | Phase 8: Testing complete |
-| `v0.8-phase9-docs` | Phase 9: Developer experience & docs complete |
-| `v0.9-phase10-cicd` | Phase 10: CI/CD & Docker complete |
+| `v0.1-phase1-setup` | Phase 1: Repository & solution setup complete |
+| `v0.2-phase2-domain` | Phase 2: Domain layer complete |
+| `v0.3-phase3-application` | Phase 3: Application / CQRS layer complete |
+| `v0.4-phase4-infrastructure` | Phase 4: Infrastructure layer complete |
+| `v0.5-phase5-core-api` | Phase 5: Core REST endpoints complete |
+| `v0.6-phase6-advanced-rest` | Phase 6: Advanced REST features complete |
+| `v0.7-phase7-security` | Phase 7: Security complete |
+| `v0.8-phase8-testing` | Phase 8: Testing & benchmarking complete |
+| `v0.9-phase9-docs` | Phase 9: Developer experience & docs complete |
+| `v0.10-phase10-cicd` | Phase 10: CI/CD & Docker complete |
 
 ---
 
