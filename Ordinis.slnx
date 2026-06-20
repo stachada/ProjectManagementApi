@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ordinis.Api/Ordinis.Api.csproj" />
+    <Project Path="src/Ordinis.Application/Ordinis.Application.csproj" />
+    <Project Path="src/Ordinis.Domain/Ordinis.Domain.csproj" />
+    <Project Path="src/Ordinis.Infrastructure/Ordinis.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ordinis.IntegrationTests/Ordinis.IntegrationTests.csproj" />
+    <Project Path="tests/Ordinis.UnitTests/Ordinis.UnitTests.csproj" />
+  </Folder>
+</Solution>
