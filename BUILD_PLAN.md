@@ -117,7 +117,9 @@ You can also paste existing code and ask to review, extend, or debug it in the c
 > ⚠️ Required before Phase 3 and Phase 4 can start.
 
 - [ ] Define core entities: `Organization`, `Project`, `Board`, `Task`, `Comment`, `Attachment`, `User`
-- [ ] Add value objects: `TaskStatus`, `Priority`, `Role`
+- [ ] Add `ValueObject` base class (`Domain/Common/ValueObject.cs`) — structural equality infrastructure for future complex value objects (e.g. `EmailAddress`, `TaskTitle`)
+- [ ] Add domain enumerations: `TaskStatus` (with `TaskStatusExtensions` state machine), `Priority`, `Role`
+- [ ] Add `TaskStatusExtensions` transition map — drives `Task.Move()` invariant guards (Phase 2) and HATEOAS link generation (Phase 6)
 - [ ] Define domain events: `TaskCreated`, `TaskMoved`, `TaskAssigned`, `CommentAdded`
 - [ ] Add aggregate roots and invariant guards
 - [ ] Add soft delete support: `IsDeleted` / `DeletedAt` fields on entities that should not be hard-deleted (`Task`, `Project`, `Board`, `Comment`)
