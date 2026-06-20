@@ -269,6 +269,59 @@ You can also paste existing code and ask to review, extend, or debug it in the c
 
 ---
 
+## Git workflow
+
+| Topic | Choice |
+|---|---|
+| Strategy | GitHub Flow — feature branches off `main`, merged via PR |
+| Branch naming | `feature/phase-N-description`, `fix/description`, `chore/description`, `docs/description` |
+| Commit style | Conventional Commits — `type(scope): description` |
+| Merge strategy | Squash merge to keep `main` history linear and readable |
+| Tagging | Tag `main` at the end of each phase: `v0.N-phaseN-description` |
+
+### Branch naming examples
+
+feature/phase-2-domain-entities
+
+feature/phase-3-cqrs-task-commands
+
+feature/phase-4-efcore-dual-provider
+
+fix/task-concurrency-409-response
+
+chore/update-build-plan
+
+docs/readme-architecture-diagram
+
+### Conventional Commits examples
+
+feat(tasks): add CreateTask command handler with FluentValidation
+
+feat(auth): implement JWT token issuance and refresh flow
+
+fix(concurrency): translate DbUpdateConcurrencyException to 409 Conflict
+
+chore: update Directory.Build.props target framework
+
+docs: add architecture diagram to README
+
+### Phase tags
+
+| Tag | Milestone |
+|---|---|
+| `v0.0-phase1-solution-setup` | Phase 1: Repository & solution setup complete |
+| `v0.1-phase2-domain` | Phase 2: Domain layer complete |
+| `v0.2-phase3-application` | Phase 3: Application / CQRS layer complete |
+| `v0.3-phase4-infrastructure` | Phase 4: Infrastructure layer complete |
+| `v0.4-phase5-core-api` | Phase 5: Core REST endpoints complete |
+| `v0.5-phase6-advanced-rest` | Phase 6: Advanced REST features complete |
+| `v0.6-phase7-security` | Phase 7: Security complete |
+| `v0.7-phase8-testing` | Phase 8: Testing complete |
+| `v0.8-phase9-docs` | Phase 9: Developer experience & docs complete |
+| `v0.9-phase10-cicd` | Phase 10: CI/CD & Docker complete |
+
+---
+
 ## Progress tracking
 
 Use the interactive checklist in the build plan chat thread, or check off items directly in this file.
