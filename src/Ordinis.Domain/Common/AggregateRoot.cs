@@ -27,7 +27,7 @@ namespace Ordinis.Domain.Common;
 public class AggregateRoot : AuditableEntity
 {
     private readonly List<IDomainEvent> _domainEvents = [];
-
+    
     /// <summary>
     /// Domain events raised during this unit of work.
     /// Read by the Infrastructure layer after <c>SaveChanges</c>;
@@ -66,10 +66,14 @@ public class AggregateRoot : AuditableEntity
     /// Adds a domain event to the collection for dispatch after the
     /// current transaction commits.
     /// </summary>
-    /// <param name="domainEvent">The event to raise. Must not be <c>null</c>.</param>
+    /// <param name="domainEvent">
+    /// The event to raise. Its <c>OccurredAt</c> must already be set by the
+    /// caller (typically a value passed in from the command handler), since
+    /// <see cref="AggregateRoot"/> has no time source of its own.
+    /// </param>
     protected void RaiseDomainEvent(IDomainEvent domainEvent)
     {
-        ArgumentNullException.ThrowIfNull(domainEvent, nameof(domainEvent));
+        ArgumentNullException.ThrowIfNull(domainEvent);
         _domainEvents.Add(domainEvent);
     }
 

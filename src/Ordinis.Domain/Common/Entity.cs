@@ -14,7 +14,7 @@ namespace Ordinis.Domain.Common;
 /// </para>
 /// <para>
 /// The <see cref="Id"/> is set at construction time and never changes.
-/// Use <see cref="Guid.NewGuid"/> in constructors rather than relying
+/// Use <see cref="Guid.CreateVersion7()"/> in constructors rather than relying
 /// on the database to generate it, so the Id is available immediately
 /// for domain event payloads before the first SaveChanges call.
 /// </para>
@@ -30,7 +30,7 @@ public abstract class Entity
     /// <summary>
     /// Initializes a new entity with a new unique <see cref="Id"/>.
     /// </summary>
-    protected Entity() => Id = Guid.NewGuid();
+    protected Entity() => Id = Guid.CreateVersion7();
 
     /// <summary>
     /// Initializes an entity with a specific <see cref="Id"/>.
