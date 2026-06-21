@@ -32,7 +32,7 @@ tests/
 └── Ordinis.IntegrationTests
 ```
 
-**Core entities:** `Organization`, `Project`, `Board`, `Task`, `Comment`, `Attachment`, `User`
+**Core entities:** `Organization`, `Project`, `Board`, `ProjectTask`, `Comment`, `Attachment`, `User`, `ProjectMember`
 
 ## Tech stack
 
@@ -115,6 +115,19 @@ dotnet test
 This project is under active development, built incrementally phase by phase.
 See [BUILD_PLAN.md](./BUILD_PLAN.md) for the current checklist and architecture
 decisions behind each phase.
+
+| Phase | Status |
+| --- | --- |
+| 1 — Repository & solution setup | ✅ Complete |
+| 2 — Domain layer | ✅ Complete |
+| 3 — Application layer (CQRS) | ⏳ Not started |
+| 4 — Infrastructure layer | ⏳ Not started |
+| 5 — API layer — core REST endpoints | ⏳ Not started |
+| 6 — Advanced REST features | ⏳ Not started |
+| 7 — Security | ⏳ Not started |
+| 8 — Testing & benchmarking | ⏳ Not started |
+| 9 — Developer experience & docs | ⏳ Not started |
+| 10 — Cloud-ready & CI/CD | ⏳ Not started |
 
 ## License
 
