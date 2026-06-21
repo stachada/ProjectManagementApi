@@ -41,7 +41,7 @@ public abstract class AuditableEntity : Entity
     /// When <c>true</c>, the global EF Core query filter excludes this row
     /// from all standard queries.
     /// </summary>
-    public bool IsDeleted { get; internal set; }
+    public bool IsDeleted { get; private set; }
 
     /// <summary>
     /// UTC timestamp of when this entity was soft-deleted.
@@ -70,7 +70,7 @@ public abstract class AuditableEntity : Entity
     /// (e.g. <c>task.Delete(deletedBy)</c> which calls this method internally
     /// and fires the appropriate domain event.
     /// </remarks>
-    public void SoftDelete()
+    public void SoftDelete(DateTimeOffset deletedAt)
     {
         if (IsDeleted)
         {
@@ -78,7 +78,7 @@ public abstract class AuditableEntity : Entity
         }
 
         IsDeleted = true;
-        DeletedAt = DateTimeOffset.UtcNow;
+        DeletedAt = deletedAt;
     }
 
     /// <summary>

@@ -1,13 +1,13 @@
 namespace Ordinis.Domain.Tasks;
 
 /// <summary>
-/// Represents the lifecycle status of a <see cref="Task"/>.
+/// Represents the lifecycle status of a <see cref="ProjectTask"/>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>State machine:</b> Not all transitions between statuses are legal.
 /// Use <see cref="TaskStatusExtensions.CanTransitionTo"/> to validate a
-/// proposed move before applying it. Aggregate root methods on <see cref="Task"/>
+/// proposed move before applying it. Aggregate root methods on <see cref="ProjectTask"/>
 /// enforce this - callers never bypass transition validation.
 /// </para>
 /// <para>
