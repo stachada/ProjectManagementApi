@@ -50,6 +50,7 @@ A Jira/Trello-like project management API.
 - ❌ No AutoMapper
 - ❌ No Swashbuckle / NSwag
 - ❌ No repository pattern or unit of work abstraction over EF Core
+- ❌ No `DateTimeOffset.UtcNow` (or `DateTime.Now`/`DateTime.UtcNow`) calls anywhere in Domain or Infrastructure — Application-layer command handlers inject `TimeProvider`, resolve `now` once per command, and pass it into domain methods as an explicit `DateTimeOffset` parameter
 
 ---
 
@@ -60,46 +61,41 @@ then by type within that concept.
 
 ```
 src/
-├── ProjectMgmt.Domain
-│   ├── Tasks/              # Task.cs, TaskStatus.cs, TaskCreated.cs
-│   ├── Projects/           # Project.cs, ProjectCreated.cs
-│   ├── Organizations/
-│   ├── Boards/
-│   ├── Comments/
+├── Ordinis.Domain
+│   ├── Tasks/              # ProjectTask.cs, TaskStatus.cs, TaskCreated.cs, Comment.cs, Attachment.cs
+│   ├── Projects/           # Project.cs, Board.cs, ProjectMember.cs
+│   ├── Organizations/      # Organization.cs
 │   └── Users/              # User.cs, Role.cs
 │
-├── ProjectMgmt.Application
+├── Ordinis.Application
 │   ├── Tasks/
 │   │   ├── Commands/       # CreateTask.cs, MoveTask.cs, AssignTask.cs ...
 │   │   ├── Queries/        # GetTaskById.cs, GetTasksFiltered.cs ...
 │   │   ├── Validators/     # CreateTaskValidator.cs ...
 │   │   └── Dtos/           # TaskDto.cs
 │   ├── Projects/
-│   ├── Boards/
-│   ├── Comments/
+│   ├── Organizations/
 │   ├── Users/
 │   └── Common/             # ICommandHandler.cs, IQueryHandler.cs, Dispatcher.cs
 │
-├── ProjectMgmt.Infrastructure
-│   ├── Tasks/              # TaskConfiguration.cs (IEntityTypeConfiguration<Task>)
+├── Ordinis.Infrastructure
+│   ├── Tasks/              # ProjectTaskConfiguration.cs (IEntityTypeConfiguration<ProjectTask>)
 │   ├── Projects/
-│   ├── Boards/
-│   ├── Comments/
+│   ├── Organizations/
 │   ├── Users/
 │   └── Persistence/        # AppDbContext.cs, migrations, DI registration
 │
-├── ProjectMgmt.Api
+├── Ordinis.Api
 │   ├── Tasks/              # TasksController.cs
 │   ├── Projects/           # ProjectsController.cs
-│   ├── Boards/
-│   ├── Comments/
+│   ├── Organizations/
 │   ├── Users/
 │   ├── MinimalApis/        # Auth.cs, Webhooks.cs (Minimal API endpoint groups)
 │   └── Common/             # Middleware, filters, startup extensions
 │
 tests/
-├── ProjectMgmt.UnitTests
-└── ProjectMgmt.IntegrationTests
+├── Ordinis.UnitTests
+└── Ordinis.IntegrationTests
 ```
 
 Shared infrastructure (`AppDbContext`, middleware, DI registration) lives in
@@ -123,6 +119,8 @@ Do not suggest Minimal APIs for resource endpoints. Do not suggest Controllers f
 | CQRS dispatch | Manual (`ICommandHandler` / `IQueryHandler` + DI dispatcher) | Explicit, low-indirection; no hidden pipeline magic |
 | Mapping | Manual static mappers / extension methods | Zero overhead, compiler-safe; no reflection-based magic |
 | Validation | FluentValidation in command handlers | Rich rules; wired explicitly, not via pipeline behavior |
+| Primary key type | `Guid.CreateVersion7()` (UUIDv7) | Sequential, time-ordered Guid — avoids clustered index fragmentation from random v4 Guids while keeping client-side ID generation before `SaveChanges` |
+| Time abstraction | `TimeProvider` injected into `AppDbContext` and into Application-layer command handlers — Domain never references `TimeProvider` or `DateTimeOffset.UtcNow` | `AppDbContext` (constructor DI) sets `CreatedAt`/`UpdatedAt` automatically. For everything domain-meaningful (`IDomainEvent.OccurredAt`, `DeletedAt`, `JoinedAt`, `UploadedAt`), command handlers resolve `now` once via their own injected `TimeProvider` and pass it into aggregate methods as a plain `DateTimeOffset` parameter (e.g. `task.Move(status, userId, now)`, `comment.SoftDelete(now)`). Tests use `FakeTimeProvider` from `Microsoft.Extensions.TimeProvider.Testing`. Production registers `TimeProvider.System` as a singleton. |
 | EF Core | Direct `AppDbContext` injection into handlers | No leaky abstraction; testable via integration tests |
 | Soft deletes | `IsDeleted` / `DeletedAt` + global EF Core query filter | No data loss; filter applied transparently |
 | Concurrency | `RowVersion` token + ETag / `If-Match` header | End-to-end optimistic concurrency; `409 Conflict` on collision |
