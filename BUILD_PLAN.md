@@ -10,11 +10,9 @@
 ```
 src/
 ├── Ordinis.Domain
-│   ├── Tasks/              # Task.cs, TaskStatus.cs, TaskCreated.cs
-│   ├── Projects/           # Project.cs, ProjectCreated.cs
-│   ├── Organizations/
-│   ├── Boards/
-│   ├── Comments/
+│   ├── Tasks/              # ProjectTask.cs, TaskStatus.cs, TaskCreated.cs, Comment.cs, Attachment.cs
+│   ├── Projects/           # Project.cs, Board.cs, ProjectMember.cs
+│   ├── Organizations/      # Organization.cs
 │   └── Users/              # User.cs, Role.cs
 │
 ├── Ordinis.Application
@@ -24,24 +22,21 @@ src/
 │   │   ├── Validators/     # CreateTaskValidator.cs ...
 │   │   └── Dtos/           # TaskDto.cs
 │   ├── Projects/
-│   ├── Boards/
-│   ├── Comments/
+│   ├── Organizations/
 │   ├── Users/
 │   └── Common/             # ICommandHandler.cs, IQueryHandler.cs, Dispatcher.cs
 │
 ├── Ordinis.Infrastructure
-│   ├── Tasks/              # TaskConfiguration.cs (IEntityTypeConfiguration<Task>)
+│   ├── Tasks/              # ProjectTaskConfiguration.cs (IEntityTypeConfiguration<ProjectTask>)
 │   ├── Projects/
-│   ├── Boards/
-│   ├── Comments/
+│   ├── Organizations/
 │   ├── Users/
 │   └── Persistence/        # AppDbContext.cs, migrations, DI registration
 │
 ├── Ordinis.Api
 │   ├── Tasks/              # TasksController.cs
 │   ├── Projects/           # ProjectsController.cs
-│   ├── Boards/
-│   ├── Comments/
+│   ├── Organizations/
 │   ├── Users/
 │   ├── MinimalApis/        # Auth.cs, Webhooks.cs (Minimal API endpoint groups)
 │   └── Common/             # Middleware, filters, startup extensions
@@ -116,15 +111,16 @@ You can also paste existing code and ask to review, extend, or debug it in the c
 
 > ⚠️ Required before Phase 3 and Phase 4 can start.
 
-- [ ] Define core entities: `Organization`, `Project`, `Board`, `Task`, `Comment`, `Attachment`, `User`
-- [ ] Add `ValueObject` base class (`Domain/Common/ValueObject.cs`) — structural equality infrastructure for future complex value objects (e.g. `EmailAddress`, `TaskTitle`)
-- [ ] Add domain enumerations: `TaskStatus` (with `TaskStatusExtensions` state machine), `Priority`, `Role`
-- [ ] Add `TaskStatusExtensions` transition map — drives `Task.Move()` invariant guards (Phase 2) and HATEOAS link generation (Phase 6)
-- [ ] Define domain events: `TaskCreated`, `TaskMoved`, `TaskAssigned`, `CommentAdded`
-- [ ] Add aggregate roots and invariant guards
-- [ ] Add soft delete support: `IsDeleted` / `DeletedAt` fields on entities that should not be hard-deleted (`Task`, `Project`, `Board`, `Comment`)
-- [ ] Add concurrency tokens (`RowVersion`) to entities subject to concurrent edits (`Task`, `Project`, `Board`)
-- [ ] No external dependencies in this layer (enforce in csproj)
+- [x] Define core entities: `Organization`, `Project`, `Board`, `ProjectTask` (renamed from `Task` to avoid colliding with `System.Threading.Tasks.Task`), `Comment`, `Attachment`, `User`, `ProjectMember`
+- [x] Add `ValueObject` base class (`Domain/Common/ValueObject.cs`) — structural equality infrastructure for future complex value objects (e.g. `EmailAddress`, `TaskTitle`)
+- [x] Add domain enumerations: `TaskStatus` (with `TaskStatusExtensions` state machine), `Priority`, `Role`
+- [x] Add `TaskStatusExtensions` transition map — drives `ProjectTask.Move()` invariant guards (Phase 2) and HATEOAS link generation (Phase 6)
+- [x] Define domain events: `TaskCreated`, `TaskMoved`, `TaskAssigned`, `TaskUnassigned`, `CommentAdded`, `CommentRemoved`, `AttachmentAdded`, `AttachmentRemoved`
+- [x] Add aggregate roots and invariant guards
+- [x] Domain methods take `DateTimeOffset` as an explicit parameter wherever a timestamp is needed (event `OccurredAt`, `SoftDelete`, due-date validation, `ProjectMember.JoinedAt`, `Attachment.UploadedAt`) — `Ordinis.Domain` never references `TimeProvider` or calls `DateTimeOffset.UtcNow` itself
+- [x] Add soft delete support: `IsDeleted` / `DeletedAt` fields on entities that should not be hard-deleted (`ProjectTask`, `Project`, `Board`, `Comment`)
+- [x] Add concurrency tokens (`RowVersion`) to entities subject to concurrent edits (`ProjectTask`, `Project`, `Board`)
+- [x] No external dependencies in this layer (confirmed — `Ordinis.Domain.csproj` has zero `PackageReference`s)
 
 ---
 
@@ -140,6 +136,7 @@ You can also paste existing code and ask to review, extend, or debug it in the c
 - [ ] Add FluentValidation validators for each command
 - [ ] Add a dispatcher service to resolve and invoke handlers via DI
 - [ ] Inject `AppDbContext` directly into handlers (no repository abstraction)
+- [ ] Inject `TimeProvider` into command handlers; resolve `now` once per command and pass it into domain method calls as an explicit `DateTimeOffset` parameter
 - [ ] Handle `DbUpdateConcurrencyException` in command handlers and translate to `409 Conflict` with Problem Details
 - [ ] Define DTOs and implement manual mapping (static mapper classes or extension methods); consider Mapster if boilerplate grows
 
