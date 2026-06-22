@@ -23,7 +23,7 @@ namespace Ordinis.Domain.Tasks;
 /// </para>
 /// <para>
 /// <b>State machine:</b> Status transitions are validated against the adjacency
-/// list in <see cref="TaskStatusExtensions"/>. Calling <see cref="Move"/> with
+/// list in <see cref="ProjectTaskStatusExtensions"/>. Calling <see cref="Move"/> with
 /// an illegal transition throws a <see cref="DomainException"/> with error code
 /// <c>"task.invalid-status-transition"</c>. Terminal states (<c>Done</c> and <c>Cancelled</c>)
 /// reject all further transitions.
@@ -69,7 +69,7 @@ public class ProjectTask : AggregateRoot
     /// Stored as a <c>varchar</c> string column - never as an integer - so the
     /// database is readable without a lookup table.
     /// </summary>
-    public TaskStatus Status { get; private set; }
+    public ProjectTaskStatus Status { get; private set; }
 
     /// <summary>
     /// Urgency level of the task. Used for sorting and filtering.
@@ -141,7 +141,7 @@ public class ProjectTask : AggregateRoot
     private ProjectTask() { }
 
     /// <summary>
-    /// Creates a new task on the given board in <see cref="TaskStatus.Backlog"/> status.
+    /// Creates a new task on the given board in <see cref="ProjectTaskStatus.Backlog"/> status.
     /// </summary>
     /// <param name="boardId">The board to create the task on. Must not be empty.</param>
     /// <param name="reporterId">The user creating the task. Must not be empty.</param>
@@ -185,7 +185,7 @@ public class ProjectTask : AggregateRoot
             Title = title.Trim(),
             Description = description?.Trim(),
             Priority = priority,
-            Status = TaskStatus.Backlog,
+            Status = ProjectTaskStatus.Backlog,
             DueDate = dueDate,
         };
 
@@ -218,6 +218,7 @@ public class ProjectTask : AggregateRoot
     public void UpdateDetails(string title, string? description)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        EnsureNotTerminal();
 
         Title = title.Trim();
         Description = description?.Trim();
@@ -263,7 +264,7 @@ public class ProjectTask : AggregateRoot
     #region State machine
     /// <summary>
     /// Moves the task to a new status, validating the transition against
-    /// the state machine defined in <see cref="TaskStatusExtensions"/>.
+    /// the state machine defined in <see cref="ProjectTaskStatusExtensions"/>.
     /// </summary>
     /// <param name="newStatus">The target status.</param>
     /// <param name="movedByUserId">The user requesting the transition. Carried in the domain event.</param>
@@ -273,13 +274,13 @@ public class ProjectTask : AggregateRoot
     /// is not permitted by the state machine, or if the task is already in a terminal state.
     /// </exception>
     /// <remarks>
-    /// Legal transitions are defined in <see cref="TaskStatusExtensions.AllowedTransitions"/>.
+    /// Legal transitions are defined in <see cref="ProjectTaskStatusExtensions.AllowedTransitions"/>.
     /// This method is the only place in the codebase that changes <see cref="Status"/> —
     /// no handler or service sets the property directly.
-    /// The HATEOAS layer (Phase 6) calls <see cref="TaskStatusExtensions.GetAllowedTransitions"/>
+    /// The HATEOAS layer (Phase 6) calls <see cref="ProjectTaskStatusExtensions.GetAllowedTransitions"/>
     /// on the current status to generate <c>_links</c> for valid next states.
     /// </remarks>
-    public void Move(TaskStatus newStatus, Guid movedByUserId, DateTimeOffset occurredAt)
+    public void Move(ProjectTaskStatus newStatus, Guid movedByUserId, DateTimeOffset occurredAt)
     {
         if (!Status.CanTransitionTo(newStatus))
         {
@@ -289,7 +290,7 @@ public class ProjectTask : AggregateRoot
             );
         }
 
-        TaskStatus previousStatus = Status;
+        ProjectTaskStatus previousStatus = Status;
         Status = newStatus;
 
         RaiseDomainEvent(new TaskMoved(
@@ -425,7 +426,7 @@ public class ProjectTask : AggregateRoot
         var comment = _comments.FirstOrDefault(c => c.Id == commentId)
             ?? throw new DomainException(
                 "Comment not found on this task.",
-                "comment.comment-not-found"
+                "task.comment-not-found"
             );
 
         comment.SoftDelete(occurredAt);
@@ -523,7 +524,7 @@ public class ProjectTask : AggregateRoot
     /// <summary>
     /// Asserts the task is not in a terminal state.
     /// Called at the start of any mutation that should be blocked once
-    /// a task is <see cref="TaskStatus.Done"/> or <see cref="TaskStatus.Cancelled"/>.
+    /// a task is <see cref="ProjectTaskStatus.Done"/> or <see cref="ProjectTaskStatus.Cancelled"/>.
     /// </summary>
     /// <exception cref="DomainException">Thrown if the task is in a terminal state.</exception>
     private void EnsureNotTerminal()

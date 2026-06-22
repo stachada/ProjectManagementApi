@@ -11,7 +11,7 @@ namespace Ordinis.Domain.Tasks;
 /// </para>
 /// <para>
 /// <b>EF Core mapping:</b> Stored as a <c>varchar</c> string column (not an integer)
-/// for the same readability and reordering-safety reasons as <see cref="TaskStatus"/>.
+/// for the same readability and reordering-safety reasons as <see cref="ProjectTaskStatus"/>.
 /// Configured in <c>TaskConfiguration</c> via <c>.HasConversion<string>()</c>.
 /// </para>
 /// </remarks>

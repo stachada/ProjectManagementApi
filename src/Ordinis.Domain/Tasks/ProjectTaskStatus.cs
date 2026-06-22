@@ -6,7 +6,7 @@ namespace Ordinis.Domain.Tasks;
 /// <remarks>
 /// <para>
 /// <b>State machine:</b> Not all transitions between statuses are legal.
-/// Use <see cref="TaskStatusExtensions.CanTransitionTo"/> to validate a
+/// Use <see cref="ProjectTaskStatusExtensions.CanTransitionTo"/> to validate a
 /// proposed move before applying it. Aggregate root methods on <see cref="ProjectTask"/>
 /// enforce this - callers never bypass transition validation.
 /// </para>
@@ -28,7 +28,7 @@ namespace Ordinis.Domain.Tasks;
 /// via <c>.HasConversion<string>()</c>.
 /// </para>
 /// </remarks>
-public enum TaskStatus
+public enum ProjectTaskStatus
 {
     /// <summary>
     /// The task exists but has not been scheduled for active work.
@@ -63,18 +63,18 @@ public enum TaskStatus
 }
 
 /// <summary>
-/// Extension methods for <see cref="TaskStatus"/> transition validation.
+/// Extension methods for <see cref="ProjectTaskStatus"/> transition validation.
 /// </summary>
-public static class TaskStatusExtensions
+public static class ProjectTaskStatusExtensions
 {
-    private static readonly Dictionary<TaskStatus, IReadOnlySet<TaskStatus>> AllowedTransitions = new()
+    private static readonly Dictionary<ProjectTaskStatus, IReadOnlySet<ProjectTaskStatus>> AllowedTransitions = new()
     {
-        [TaskStatus.Backlog] = new HashSet<TaskStatus> { TaskStatus.ToDo, TaskStatus.Cancelled },
-        [TaskStatus.ToDo] = new HashSet<TaskStatus> { TaskStatus.InProgress, TaskStatus.Cancelled },
-        [TaskStatus.InProgress] = new HashSet<TaskStatus> { TaskStatus.InReview, TaskStatus.ToDo, TaskStatus.Cancelled },
-        [TaskStatus.InReview] = new HashSet<TaskStatus> { TaskStatus.Done, TaskStatus.InProgress, TaskStatus.Cancelled },
-        [TaskStatus.Done] = new HashSet<TaskStatus>(), // terminal
-        [TaskStatus.Cancelled] = new HashSet<TaskStatus>() // terminal
+        [ProjectTaskStatus.Backlog] = new HashSet<ProjectTaskStatus> { ProjectTaskStatus.ToDo, ProjectTaskStatus.Cancelled },
+        [ProjectTaskStatus.ToDo] = new HashSet<ProjectTaskStatus> { ProjectTaskStatus.InProgress, ProjectTaskStatus.Cancelled },
+        [ProjectTaskStatus.InProgress] = new HashSet<ProjectTaskStatus> { ProjectTaskStatus.InReview, ProjectTaskStatus.ToDo, ProjectTaskStatus.Cancelled },
+        [ProjectTaskStatus.InReview] = new HashSet<ProjectTaskStatus> { ProjectTaskStatus.Done, ProjectTaskStatus.InProgress, ProjectTaskStatus.Cancelled },
+        [ProjectTaskStatus.Done] = new HashSet<ProjectTaskStatus>(), // terminal
+        [ProjectTaskStatus.Cancelled] = new HashSet<ProjectTaskStatus>() // terminal
     };
 
     /// <summary>
@@ -89,17 +89,17 @@ public static class TaskStatusExtensions
     /// <paramref name="to"/> - transitioning to the same state is a no-op
     /// and should be rejected before calling this method.
     /// </returns>
-    public static bool CanTransitionTo(this TaskStatus from, TaskStatus to)
+    public static bool CanTransitionTo(this ProjectTaskStatus from, ProjectTaskStatus to)
         => from != to
             && AllowedTransitions[from].Contains(to);
 
     /// <summary>
     /// Returns all statuses that can be legally reached from <paramref name="from"/>.
-    /// Returns an empty collection for terminal states (<see cref="TaskStatus.Done"/>
-    /// and <see cref="TaskStatus.Cancelled"/>).
+    /// Returns an empty collection for terminal states (<see cref="ProjectTaskStatus.Done"/>
+    /// and <see cref="ProjectTaskStatus.Cancelled"/>).
     /// </summary>
     /// <param name="from">The task's current status.</param>
-    public static IReadOnlySet<TaskStatus> GetAllowedTransitions(this TaskStatus from)
+    public static IReadOnlySet<ProjectTaskStatus> GetAllowedTransitions(this ProjectTaskStatus from)
         => AllowedTransitions[from];
 
     /// <summary>
@@ -107,6 +107,6 @@ public static class TaskStatusExtensions
     /// no further transitions are allowed.
     /// </summary>
     /// <param name="status">The status to evaluate.</param>
-    public static bool IsTerminal(this TaskStatus status)
+    public static bool IsTerminal(this ProjectTaskStatus status)
         => AllowedTransitions[status].Count == 0;
 }

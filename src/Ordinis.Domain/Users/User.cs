@@ -24,7 +24,7 @@ namespace Ordinis.Domain.Users;
 /// before the <c>CreateUser</c> command reaches the domain.
 /// </para>
 /// </remarks>
-public class User
+public class User : AggregateRoot
 {
     #region Private backing fields for collections
     private readonly List<ProjectMember> _projectMemberships = [];

@@ -27,7 +27,7 @@ namespace Ordinis.Domain.Common;
 public class AggregateRoot : AuditableEntity
 {
     private readonly List<IDomainEvent> _domainEvents = [];
-    
+
     /// <summary>
     /// Domain events raised during this unit of work.
     /// Read by the Infrastructure layer after <c>SaveChanges</c>;
@@ -35,7 +35,7 @@ public class AggregateRoot : AuditableEntity
     /// Exposed as <see cref="IReadOnlyCollection{T}"/> to prevent
     /// external code from adding events directly.
     /// </summary>
-    private IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
+    public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
 
     /// <summary>
     /// EF Core concurrency token. Automatically incremented by the database
