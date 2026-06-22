@@ -216,7 +216,8 @@ You can also paste existing code and ask to review, extend, or debug it in the c
 
 > ✅ Start unit tests from Phase 3 onward; integration tests from Phase 5 onward. Grows continuously.
 
-- [ ] Unit tests for domain logic and validators (xUnit)
+- [x] Unit tests for domain logic (xUnit) — covers `Common` (`AggregateRoot`/`ValueObject` equality), `Organizations`, `Projects` (`Project`, `Board`), `Tasks` (`ProjectTask`, `ProjectTaskStatus` transitions, `Comment`), `Users` (`User`)
+- [ ] Unit tests for validators (xUnit) — blocked on Phase 3 (FluentValidation validators don't exist yet)
 - [ ] Unit tests for command/query handlers
 - [ ] Integration tests with `WebApplicationFactory` and test DB
 - [ ] API-level tests for all endpoints (happy path + error cases)
