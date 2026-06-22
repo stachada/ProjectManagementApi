@@ -9,8 +9,8 @@ namespace Ordinis.Domain.Tasks;
 /// </summary>
 public sealed record TaskMoved(
     Guid TaskId,
-    TaskStatus PreviousStatus,
-    TaskStatus NewStatus,
+    ProjectTaskStatus PreviousStatus,
+    ProjectTaskStatus NewStatus,
     Guid MovedByUserId,
     DateTimeOffset OccurredAt) : IDomainEvent
 {
