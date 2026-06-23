@@ -34,7 +34,7 @@ A Jira/Trello-like project management API.
 | ORM | EF Core injected directly into handlers — no repository pattern, no unit of work |
 | Database | SQL Server + PostgreSQL; provider selected via `appsettings.json` (`DatabaseProvider`) |
 | Read queries | Dapper for complex reporting / read queries |
-| Validation | FluentValidation, wired manually into command handlers |
+| Validation | FluentValidation, resolved per-type via `IValidator<T>` and run centrally in the `Dispatcher` before any command/query reaches its handler |
 | Mapping | Manual (static mapper classes or extension methods); Mapster only if boilerplate becomes excessive |
 | Logging | Serilog with structured logging, correlation IDs, request/response middleware |
 | Auth | JWT + refresh tokens; role-based (Admin, Member, Viewer) + policy-based authorization |
@@ -118,7 +118,7 @@ Do not suggest Minimal APIs for resource endpoints. Do not suggest Controllers f
 |---|---|---|
 | CQRS dispatch | Manual (`ICommandHandler` / `IQueryHandler` + DI dispatcher) | Explicit, low-indirection; no hidden pipeline magic |
 | Mapping | Manual static mappers / extension methods | Zero overhead, compiler-safe; no reflection-based magic |
-| Validation | FluentValidation in command handlers | Rich rules; wired explicitly, not via pipeline behavior |
+| Validation | FluentValidation, invoked centrally in `Dispatcher.ValidateAsync` via `IValidator<T>` | Rich rules; one consistent enforcement point for every command/query instead of repeating validation calls in each handler |
 | Primary key type | `Guid.CreateVersion7()` (UUIDv7) | Sequential, time-ordered Guid — avoids clustered index fragmentation from random v4 Guids while keeping client-side ID generation before `SaveChanges` |
 | Time abstraction | `TimeProvider` injected into `AppDbContext` and into Application-layer command handlers — Domain never references `TimeProvider` or `DateTimeOffset.UtcNow` | `AppDbContext` (constructor DI) sets `CreatedAt`/`UpdatedAt` automatically. For everything domain-meaningful (`IDomainEvent.OccurredAt`, `DeletedAt`, `JoinedAt`, `UploadedAt`), command handlers resolve `now` once via their own injected `TimeProvider` and pass it into aggregate methods as a plain `DateTimeOffset` parameter (e.g. `task.Move(status, userId, now)`, `comment.SoftDelete(now)`). Tests use `FakeTimeProvider` from `Microsoft.Extensions.TimeProvider.Testing`. Production registers `TimeProvider.System` as a singleton. |
 | EF Core | Direct `AppDbContext` injection into handlers | No leaky abstraction; testable via integration tests |
