@@ -128,13 +128,13 @@ You can also paste existing code and ask to review, extend, or debug it in the c
 
 > ✅ Can run in parallel with Phase 4 once Phase 2 is done.
 
-- [ ] Install FluentValidation
-- [ ] Define `ICommandHandler<TCommand>` and `IQueryHandler<TQuery, TResult>` interfaces
+- [x] Install FluentValidation
+- [x] Define `ICommandHandler<TCommand>` and `IQueryHandler<TQuery, TResult>` interfaces (plus `ICommandHandler<TCommand, TResult>` for commands that must return data, e.g. `CreateTask` -> `TaskDto`)
 - [ ] Add Commands: `CreateTask`, `UpdateTask`, `DeleteTask`, `MoveTask`, `AssignTask`
 - [ ] Add Queries: `GetTaskById`, `GetTasksFiltered`, `GetProjectBoard`
 - [ ] Implement handlers for each command and query
 - [ ] Add FluentValidation validators for each command
-- [ ] Add a dispatcher service to resolve and invoke handlers via DI
+- [x] Add a dispatcher service to resolve and invoke handlers via DI — resolves handlers via closed generic DI lookups (no reflection); also resolves and runs the matching `IValidator<T>` (if registered) before invoking the handler, centralizing FluentValidation instead of repeating it per handler
 - [ ] Inject `AppDbContext` directly into handlers (no repository abstraction)
 - [ ] Inject `TimeProvider` into command handlers; resolve `now` once per command and pass it into domain method calls as an explicit `DateTimeOffset` parameter
 - [ ] Handle `DbUpdateConcurrencyException` in command handlers and translate to `409 Conflict` with Problem Details
@@ -263,7 +263,7 @@ You can also paste existing code and ask to review, extend, or debug it in the c
 | API style | Controllers + Minimal APIs | Controllers for resource endpoints, Minimal APIs for auth, health, webhooks |
 | CQRS | Manual dispatch (no MediatR) | Less indirection, explicit handler resolution via DI |
 | Mapping | Manual (static mappers / extensions) | Zero overhead, compiler-safe; Mapster available if scale demands it |
-| Validation | FluentValidation | Rich rules, wired manually into command handlers |
+| Validation | FluentValidation, invoked centrally in the `Dispatcher` | Rich rules; one consistent enforcement point for every command/query |
 | ORM | EF Core (no repository pattern) + Dapper | DbContext injected directly; Dapper for complex reads |
 | Database | SQL Server + PostgreSQL (switchable) | Provider selected via config; same migrations strategy |
 | Soft deletes | `IsDeleted` / `DeletedAt` + global query filter | Realistic for project management domain; no data loss |
