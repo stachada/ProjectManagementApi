@@ -1,7 +1,7 @@
 # Project Management API — Build Plan
 
-> Use solution name "Ordinis"
-> Jira-like REST API · ASP.NET Core · Clean Architecture
+> Solution name: **Ordinis**
+> Jira-like REST API · ASP.NET Core · Clean Architecture · Portfolio project targeting senior .NET developers
 
 ---
 
@@ -10,286 +10,720 @@
 ```
 src/
 ├── Ordinis.Domain
-│   ├── Tasks/              # ProjectTask.cs, TaskStatus.cs, TaskCreated.cs, Comment.cs, Attachment.cs
-│   ├── Projects/           # Project.cs, Board.cs, ProjectMember.cs
+│   ├── Common/             # Entity.cs, AuditableEntity.cs, AggregateRoot.cs, ValueObject.cs, IDomainEvent.cs
+│   ├── Tasks/              # ProjectTask.cs, ProjectTaskStatus.cs, Priority.cs
+│   │                       # Comment.cs, Attachment.cs
+│   │                       # TaskCreated.cs, TaskMoved.cs, TaskAssigned.cs, TaskUnassigned.cs
+│   │                       # CommentAdded.cs, CommentRemoved.cs, AttachmentAdded.cs, AttachmentRemoved.cs
+│   ├── Projects/           # Project.cs, Board.cs, ProjectMember.cs, Role.cs
 │   ├── Organizations/      # Organization.cs
-│   └── Users/              # User.cs, Role.cs
+│   └── Users/              # User.cs
 │
 ├── Ordinis.Application
+│   ├── Common/             # ICommandHandler.cs, IQueryHandler.cs, IDispatcher.cs, Dispatcher.cs
+│   │                       # ValidationException.cs, ConcurrencyException.cs
+│   │                       # ApplicationServiceExtensions.cs, ApplicationAssemblyMarker.cs
 │   ├── Tasks/
-│   │   ├── Commands/       # CreateTask.cs, MoveTask.cs, AssignTask.cs ...
-│   │   ├── Queries/        # GetTaskById.cs, GetTasksFiltered.cs ...
-│   │   ├── Validators/     # CreateTaskValidator.cs ...
-│   │   └── Dtos/           # TaskDto.cs
+│   │   ├── Commands/       # CreateTask.cs, UpdateTask.cs, DeleteTask.cs, MoveTask.cs
+│   │   │                   # AssignTask.cs, UnassignTask.cs
+│   │   │                   # AddComment.cs, EditComment.cs, RemoveComment.cs
+│   │   │                   # AddAttachment.cs, RemoveAttachment.cs
+│   │   ├── Queries/        # GetTaskById.cs, GetTasksFiltered.cs
+│   │   ├── Validators/     # CreateTaskValidator.cs, UpdateTaskValidator.cs, MoveTaskValidator.cs
+│   │   │                   # AssignTaskValidator.cs, AddCommentValidator.cs, EditCommentValidator.cs
+│   │   │                   # AddAttachmentValidator.cs
+│   │   └── Dtos/           # TaskDto.cs, TaskSummaryDto.cs, CommentDto.cs, AttachmentDto.cs, TaskMapper.cs
 │   ├── Projects/
+│   │   ├── Commands/       # CreateProject.cs, UpdateProject.cs, DeleteProject.cs
+│   │   │                   # AddProjectMember.cs, RemoveProjectMember.cs
+│   │   │                   # CreateBoard.cs, ArchiveBoard.cs, RenameBoard.cs
+│   │   ├── Queries/        # GetProjectById.cs, GetProjectsFiltered.cs
+│   │   │                   # GetProjectTasks.cs, GetProjectMembers.cs
+│   │   │                   # GetBoardById.cs, GetBoardTasks.cs
+│   │   ├── Validators/     # CreateProjectValidator.cs, UpdateProjectValidator.cs
+│   │   │                   # AddProjectMemberValidator.cs, CreateBoardValidator.cs, RenameBoardValidator.cs
+│   │   └── Dtos/           # ProjectDto.cs, ProjectSummaryDto.cs, ProjectMemberDto.cs
+│   │                       # BoardDto.cs, BoardSummaryDto.cs, ProjectMapper.cs
 │   ├── Organizations/
-│   ├── Users/
-│   └── Common/             # ICommandHandler.cs, IQueryHandler.cs, Dispatcher.cs
+│   │   ├── Commands/       # CreateOrganization.cs, UpdateOrganization.cs
+│   │   ├── Queries/        # GetOrganizationById.cs, GetOrganizationProjects.cs
+│   │   ├── Validators/     # CreateOrganizationValidator.cs, UpdateOrganizationValidator.cs
+│   │   └── Dtos/           # OrganizationDto.cs, OrganizationMapper.cs
+│   └── Users/
+│       ├── Commands/       # CreateUser.cs, UpdateUser.cs
+│       ├── Queries/        # GetUserById.cs, GetUserTasks.cs
+│       ├── Validators/     # CreateUserValidator.cs, UpdateUserValidator.cs
+│       └── Dtos/           # UserDto.cs, UserMapper.cs
 │
 ├── Ordinis.Infrastructure
-│   ├── Tasks/              # ProjectTaskConfiguration.cs (IEntityTypeConfiguration<ProjectTask>)
-│   ├── Projects/
-│   ├── Organizations/
-│   ├── Users/
-│   └── Persistence/        # AppDbContext.cs, migrations, DI registration
+│   ├── Common/             # InfrastructureServiceExtensions.cs
+│   ├── Tasks/              # ProjectTaskConfiguration.cs, CommentConfiguration.cs, AttachmentConfiguration.cs
+│   ├── Projects/           # ProjectConfiguration.cs, BoardConfiguration.cs, ProjectMemberConfiguration.cs
+│   ├── Organizations/      # OrganizationConfiguration.cs
+│   ├── Users/              # UserConfiguration.cs
+│   └── Persistence/        # AppDbContext.cs, OutboxMessage.cs, OutboxMessageConfiguration.cs
+│                           # OutboxDispatcherJob.cs, Migrations/
 │
 ├── Ordinis.Api
+│   ├── Common/             # GlobalExceptionMiddleware.cs, CorrelationIdMiddleware.cs
+│   │                       # ProblemDetailsFactory.cs, ApiServiceExtensions.cs
 │   ├── Tasks/              # TasksController.cs
-│   ├── Projects/           # ProjectsController.cs
-│   ├── Organizations/
-│   ├── Users/
-│   ├── MinimalApis/        # Auth.cs, Webhooks.cs (Minimal API endpoint groups)
-│   └── Common/             # Middleware, filters, startup extensions
+│   ├── Projects/           # ProjectsController.cs, BoardsController.cs
+│   ├── Organizations/      # OrganizationsController.cs
+│   ├── Users/              # UsersController.cs
+│   └── MinimalApis/        # AuthEndpoints.cs, SearchEndpoints.cs, WebhookEndpoints.cs
 │
 tests/
 ├── Ordinis.UnitTests
+│   ├── Domain/             # Aggregate, value object, state machine tests (Phase 2 — complete)
+│   ├── Application/        # Validator and handler unit tests (Phase 9)
+│   └── Common/             # Shared test infrastructure
 ├── Ordinis.IntegrationTests
-└── Ordinis.Benchmarks   # added in Phase 8
+│   ├── Tasks/              # API-level tests per resource (Phase 9)
+│   ├── Projects/
+│   └── Common/             # WebApplicationFactory setup, test DB helpers
+└── Ordinis.Benchmarks      # EF Core vs Dapper, mapping, middleware (Phase 9)
 ```
 
 ---
 
-## Parallel execution map
-
-Some phases have hard dependencies; others can run concurrently once their prerequisites are done.
+## Dependency map
 
 ```
-Phase 1 ──► Phase 2 ──┬──► Phase 3 ──┬──► Phase 5 ──► Phase 6
-                       │              │
-                       └──► Phase 4 ──┘
-                                           Phase 7  (can start alongside Phase 5)
-                                           Phase 8  (grows incrementally from Phase 3 onward)
-                                           Phase 9  (can start alongside Phase 5)
-                                           Phase 10 (can start alongside Phase 4)
+Phase 1 ──► Phase 2 ──► Phase 3 ──┬──► Phase 4 ──┬──► Phase 6 ──► Phase 7
+                                    │              │
+                                    └──► Phase 5 ──┘
+                                                        Phase 8   (starts after Phase 4)
+                                                        Phase 9   (starts after Phase 6; grows continuously)
+                                                        Phase 10  (starts after Phase 6)
+                                                        Phase 11  (starts after Phase 5)
+                                                        Phase 12  (starts after Phase 10)
 ```
 
-| Phase | Depends on | Can run in parallel with |
-|---|---|---|
-| 1 — Solution setup | — | — |
-| 2 — Domain | 1 | — |
-| 3 — Application (CQRS) | 2 | 4 |
-| 4 — Infrastructure | 2 | 3 |
-| 5 — Core REST endpoints | 3, 4 | 7, 9, 10 |
-| 6 — Advanced REST features | 5 | 7, 8 |
-| 7 — Security | 3 | 5, 6, 8 |
-| 8 — Testing | 3 (grows continuously) | all |
-| 9 — Docs & DX | 5 | 6, 7, 10 |
-| 10 — CI/CD & Docker | 4 | 5, 6, 7, 9 |
+| Phase | Name | Depends on | Can run in parallel with |
+|---|---|---|---|
+| 1 | Solution setup | — | — |
+| 2 | Domain layer | 1 | — |
+| 3 | Application layer — infrastructure | 2 | — |
+| 4 | Application layer — features | 3 | 5 |
+| 5 | Infrastructure layer | 3 | 4 |
+| 6 | API layer — core endpoints | 4, 5 | 8, 11 |
+| 7 | API layer — advanced REST | 6 | 9, 10 |
+| 8 | Security | 4 | 6, 7, 9 |
+| 9 | Testing & benchmarking | 4 (grows continuously) | all |
+| 10 | Developer experience & docs | 6 | 7, 8, 9, 11, 12 |
+| 11 | CI/CD & Docker | 5 | 6, 7, 8, 9, 10, 12 |
+| 12 | Polish & portfolio hardening | 10, 11 | — |
 
 ---
 
-## How to work on individual tasks with Claude
+## How to work on individual phases with Claude
 
-Use this prompt pattern in a new message:
+Use this prompt pattern to start a new session:
 
 > **"Let's work on Phase X — [task description]"**
 
 Examples:
-- *"Let's work on Phase 2 — define the Task aggregate root"* → get C# code with invariants, value objects, domain events
-- *"Let's work on Phase 4 — configure dual provider DbContext"* → full startup wiring with appsettings switching
-- *"Let's work on Phase 6 — implement ETags and If-Match"* → middleware/filter code ready to drop in
-- *"Let's work on Phase 7 — JWT + refresh token flow"* → full auth setup with endpoint examples
+- *"Let's work on Phase 4 — Task commands and validators"*
+- *"Let's work on Phase 5 — AppDbContext dual-provider setup"*
+- *"Let's work on Phase 6 — TasksController CRUD endpoints"*
+- *"Let's work on Phase 7 — ETags and If-Match"*
+- *"Let's work on Phase 8 — JWT and refresh token flow"*
 
-You can also paste existing code and ask to review, extend, or debug it in the context of a specific task.
+Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design decisions before writing code.
 
 ---
 
-## Phase 1 — Repository & solution setup
+## Phase 1 — Repository & solution setup ✅
 
 - [x] Create GitHub repo with `.gitignore` (dotnet) and MIT license
 - [x] Scaffold solution: `dotnet new sln`
-- [x] Add projects: Api, Application, Domain, Infrastructure, UnitTests, IntegrationTests
+- [x] Add projects: `Ordinis.Api`, `Ordinis.Application`, `Ordinis.Domain`, `Ordinis.Infrastructure`, `Ordinis.UnitTests`, `Ordinis.IntegrationTests`
 - [x] Wire project references (Clean Architecture layers)
-- [x] Establish feature-folder structure within each project (Tasks/, Projects/, Boards/, Comments/, Users/, Common/)
+- [x] Establish feature-folder structure within each project
 - [x] Add README with architecture overview and setup instructions
-- [x] Configure EditorConfig and .NET code style ruleset
-- [x] Initialize ASP.NET Core User Secrets for the Api project (`dotnet user-secrets init`)
+- [x] Configure `.editorconfig` and .NET code style ruleset (`Directory.Build.props`)
+- [x] Initialize ASP.NET Core User Secrets for `Ordinis.Api` (`dotnet user-secrets init`)
+
+**Git tag:** `v0.1-phase1-solution-setup`
 
 ---
 
-## Phase 2 — Domain layer
+## Phase 2 — Domain layer ✅
 
-> ⚠️ Required before Phase 3 and Phase 4 can start.
+> No external dependencies in this layer. `Ordinis.Domain.csproj` has zero `PackageReference`s.
 
-- [x] Define core entities: `Organization`, `Project`, `Board`, `ProjectTask` (renamed from `Task` to avoid colliding with `System.Threading.Tasks.Task`), `Comment`, `Attachment`, `User`, `ProjectMember`
-- [x] Add `ValueObject` base class (`Domain/Common/ValueObject.cs`) — structural equality infrastructure for future complex value objects (e.g. `EmailAddress`, `TaskTitle`)
-- [x] Add domain enumerations: `TaskStatus` (with `TaskStatusExtensions` state machine), `Priority`, `Role`
-- [x] Add `TaskStatusExtensions` transition map — drives `ProjectTask.Move()` invariant guards (Phase 2) and HATEOAS link generation (Phase 6)
-- [x] Define domain events: `TaskCreated`, `TaskMoved`, `TaskAssigned`, `TaskUnassigned`, `CommentAdded`, `CommentRemoved`, `AttachmentAdded`, `AttachmentRemoved`
-- [x] Add aggregate roots and invariant guards
-- [x] Domain methods take `DateTimeOffset` as an explicit parameter wherever a timestamp is needed (event `OccurredAt`, `SoftDelete`, due-date validation, `ProjectMember.JoinedAt`, `Attachment.UploadedAt`) — `Ordinis.Domain` never references `TimeProvider` or calls `DateTimeOffset.UtcNow` itself
-- [x] Add soft delete support: `IsDeleted` / `DeletedAt` fields on entities that should not be hard-deleted (`ProjectTask`, `Project`, `Board`, `Comment`)
-- [x] Add concurrency tokens (`RowVersion`) to entities subject to concurrent edits (`ProjectTask`, `Project`, `Board`)
-- [x] No external dependencies in this layer (confirmed — `Ordinis.Domain.csproj` has zero `PackageReference`s)
+- [x] Add base classes: `Entity`, `AuditableEntity`, `AggregateRoot`, `ValueObject`, `IDomainEvent` (`Domain/Common/`)
+- [x] Add `InternalsVisibleTo` assembly attributes for `Ordinis.Infrastructure`, `Ordinis.UnitTests`, `Ordinis.IntegrationTests`
+- [x] Define aggregate roots with invariant guards: `Organization`, `Project`, `Board`, `ProjectTask`, `User`
+- [x] Define supporting entities: `Comment` (inherits `AuditableEntity`), `Attachment` (inherits `Entity`), `ProjectMember`
+- [x] Add domain enumerations: `ProjectTaskStatus` (renamed from `TaskStatus` — avoids collision), `Priority`, `Role`
+- [x] Add `ProjectTaskStatusExtensions` state machine — adjacency list of valid transitions; consumed by `ProjectTask.Move()` and later by HATEOAS link generation (Phase 7)
+- [x] Define domain events as `sealed record`: `TaskCreated`, `TaskMoved`, `TaskAssigned`, `TaskUnassigned`, `CommentAdded`, `CommentRemoved`, `AttachmentAdded`, `AttachmentRemoved`
+- [x] Domain methods accept `DateTimeOffset now` as an explicit parameter — `Ordinis.Domain` never calls `DateTimeOffset.UtcNow` or references `TimeProvider`
+- [x] Soft delete: `IsDeleted` / `DeletedAt` on `ProjectTask`, `Project`, `Board`, `Comment`
+- [x] Concurrency tokens: `RowVersion` (byte array) on `ProjectTask`, `Project`, `Board`
+- [x] Primary keys: `Guid.CreateVersion7()` (UUIDv7 — time-ordered, no index fragmentation)
 
----
+**Key decisions locked:**
+- Flat base class hierarchy (`Entity → AuditableEntity → AggregateRoot`) — no interface noise
+- `internal` constructors on child entities (`Comment`, `Attachment`, `ProjectMember`, `Board`) — aggregate roots own their children's lifecycle
+- `internal` visibility on `ClearDomainEvents()` — only `Ordinis.Infrastructure` may clear events after Outbox dispatch
+- `CreatedAt` / `UpdatedAt` — `internal set`, populated by `AppDbContext.SaveChanges` via injected `TimeProvider`
+- `DeletedAt`, `JoinedAt`, `UploadedAt` — `private set`, set explicitly via domain method parameters
 
-## Phase 3 — Application layer (CQRS)
-
-> ✅ Can run in parallel with Phase 4 once Phase 2 is done.
-
-- [x] Install FluentValidation
-- [x] Define `ICommandHandler<TCommand>` and `IQueryHandler<TQuery, TResult>` interfaces (plus `ICommandHandler<TCommand, TResult>` for commands that must return data, e.g. `CreateTask` -> `TaskDto`)
-- [ ] Add Commands: `CreateTask`, `UpdateTask`, `DeleteTask`, `MoveTask`, `AssignTask`
-- [ ] Add Queries: `GetTaskById`, `GetTasksFiltered`, `GetProjectBoard`
-- [ ] Implement handlers for each command and query
-- [ ] Add FluentValidation validators for each command
-- [x] Add a dispatcher service to resolve and invoke handlers via DI — resolves handlers via closed generic DI lookups (no reflection); also resolves and runs the matching `IValidator<T>` (if registered) before invoking the handler, centralizing FluentValidation instead of repeating it per handler
-- [ ] Inject `AppDbContext` directly into handlers (no repository abstraction)
-- [ ] Inject `TimeProvider` into command handlers; resolve `now` once per command and pass it into domain method calls as an explicit `DateTimeOffset` parameter
-- [ ] Handle `DbUpdateConcurrencyException` in command handlers and translate to `409 Conflict` with Problem Details
-- [ ] Define DTOs and implement manual mapping (static mapper classes or extension methods); consider Mapster if boilerplate grows
+**Git tag:** `v0.2-phase2-domain`
 
 ---
 
-## Phase 4 — Infrastructure layer
+## Phase 3 — Application layer: infrastructure ✅
 
-> ✅ Can run in parallel with Phase 3 once Phase 2 is done.
-> ✅ Docker / CI setup (Phase 10) can start here.
+> Provides the CQRS skeleton. No feature handlers yet — those are Phase 4.
+> `Ordinis.Application` references `FluentValidation` and `Microsoft.Extensions.DependencyInjection.Abstractions` only.
 
-- [ ] Install EF Core with both `Microsoft.EntityFrameworkCore.SqlServer` and `Npgsql.EntityFrameworkCore.PostgreSQL`
-- [ ] Select provider via `appsettings.json` (`DatabaseProvider: "SqlServer"` or `"PostgreSQL"`)
-- [ ] Configure `AppDbContext` and register the correct provider at startup based on config
-- [ ] Define entity configurations (Fluent API, separate `IEntityTypeConfiguration<T>` classes)
-- [ ] Configure `RowVersion` concurrency tokens in entity configurations for `Task`, `Project`, `Board`
-- [ ] Configure global EF Core query filters for soft deletes (`HasQueryFilter(e => !e.IsDeleted)`)
-- [ ] Add and manage migrations per provider
-- [ ] Add Dapper for reporting / complex read queries
-- [ ] Configure structured logging (Serilog)
-- [ ] Add request/response logging middleware (method, path, status code, duration, correlation ID)
-- [ ] Add `X-Correlation-ID` header middleware — generate or propagate per request, attach to logs and responses
-- [ ] Add health check endpoint (`/health`)
-- [ ] Add background job infrastructure (Hangfire or hosted service)
-- [ ] Implement Outbox pattern for reliable domain event dispatch — store events in DB within the same transaction, deliver via background job
+- [x] Install `FluentValidation` (v11) and `Microsoft.Extensions.DependencyInjection.Abstractions`
+- [x] Define handler interfaces:
+  - `ICommandHandler<TCommand>` — void commands (delete, move, assign)
+  - `ICommandHandler<TCommand, TResult>` — typed-result commands (create → returns new ID / DTO)
+  - `IQueryHandler<TQuery, TResult>` — all queries
+- [x] Define `IDispatcher` interface — public contract for controllers
+- [x] Implement `Dispatcher` (`internal sealed`) — resolves handlers from `IServiceProvider`; resolves and runs `IValidator<T>` before invoking command handlers (queries are not validated); throws `ValidationException` on failure
+- [x] Define `ValidationException` (custom, in `Ordinis.Application`) — decouples the API layer from a direct FluentValidation dependency
+- [x] Define `ConcurrencyException` — thrown by command handlers catching `DbUpdateConcurrencyException`; decouples the API layer from EF Core
+- [x] Add `ApplicationAssemblyMarker` — anchors `AddValidatorsFromAssemblyContaining<T>()` assembly scanning
+- [x] Add `ApplicationServiceExtensions` — `AddApplicationServices(this IServiceCollection)` registers `IDispatcher`, all validators (via assembly scan), and calls per-feature handler registration methods added in Phase 4
 
----
+**Key decisions locked:**
+- Dispatcher owns validation pipeline — handlers receive already-validated commands
+- Queries are not validated in the dispatcher — handler throws `ArgumentException` on bad params → `400 Bad Request`
+- `ValidationException` is Ordinis-owned — `Ordinis.Api` never references `FluentValidation.ValidationException` directly
+- `ConcurrencyException` is Ordinis-owned — `Ordinis.Api` never references `DbUpdateConcurrencyException` directly
 
-## Phase 5 — API layer — core REST endpoints
-
-> ⚠️ Requires Phase 3 and Phase 4.
-> ✅ Phase 7 (security), Phase 9 (docs), and Phase 10 (CI/CD) can run alongside.
-
-- [ ] Scaffold controllers for resource-heavy endpoints: `Organizations`, `Projects`, `Boards`, `Tasks`, `Comments`, `Users`
-- [ ] Scaffold Minimal API endpoints for focused routes: auth (`/auth/login`, `/auth/refresh`), webhooks, search
-- [ ] CRUD endpoints for all resources
-- [ ] Resource relationship endpoints: `GET /projects/{id}/tasks`, `GET /tasks/{id}/comments`
-- [ ] Filtering: `GET /tasks?assignee=123&status=InProgress&priority=High`
-- [ ] Sorting: `GET /tasks?sort=-createdAt`
-- [ ] Pagination: `GET /tasks?page=1&pageSize=20`
-- [ ] Sparse fields: `GET /tasks?fields=id,title,status`
-- [ ] Search endpoint: `GET /tasks/search?q=login+bug`
+**Git tag:** `v0.3-phase3-app-infrastructure`
 
 ---
 
-## Phase 6 — Advanced REST features
+## Phase 4 — Application layer: features
 
-> ⚠️ Requires Phase 5.
+> ⚠️ Requires Phase 3.
+> ✅ Can run in parallel with Phase 5 (Infrastructure).
+>
+> Full CQRS feature implementation for every entity.
+> Work order: Tasks → Projects & Boards → Organizations → Users.
+> Tasks are done first — they set the pattern. Each subsequent entity follows the same shape.
 
-- [ ] State transitions: `POST /tasks/{id}/move`, `/assign`, `/close`, `/reopen`
-- [ ] HATEOAS: add `_links` to task and project responses
-- [ ] Optimistic concurrency with ETags and `If-Match` — tie ETag value to EF Core `RowVersion` for end-to-end consistency
-- [ ] Return `409 Conflict` with Problem Details on concurrent update collisions
-- [ ] Idempotency keys on POST endpoints to prevent duplicate command execution (`Idempotency-Key` header)
-- [ ] API versioning: `/api/v1` and `/api/v2` routes
-- [ ] Global exception handling middleware — catch all unhandled exceptions and map to Problem Details (RFC 9457) responses
-- [ ] Problem Details responses (RFC 9457) with consistent error shape across all endpoints
-- [ ] Rate limiting middleware (ASP.NET Core built-in)
-- [ ] Response caching headers
-- [ ] Webhooks: `POST /projects/{id}/webhooks`, fire on task events
-- [ ] Audit log endpoints: `GET /projects/{id}/audit`
+### Step 1 — Tasks (commands, validators, queries)
+
+**DTOs**
+- [ ] `TaskSummaryDto` — lean list view (no nested collections)
+- [ ] `TaskDto` — full detail view (embedded `CommentDto`, `AttachmentDto`)
+- [ ] `CommentDto`
+- [ ] `AttachmentDto`
+- [ ] `TaskMapper` — static extension methods; `ToSummaryDto()`, `ToDto()`, private helpers for comments and attachments
+
+**Commands**
+- [ ] `CreateTask` + `CreateTaskHandler` + `CreateTaskValidator`
+  - Returns `Guid` (new task ID)
+  - Handler injects `AppDbContext`, `TimeProvider`; resolves `now` once; calls `ProjectTask.Create(..., now)`
+  - Validator: `BoardId` required and exists, `Title` non-empty max 200 chars, `Priority` valid enum value
+- [ ] `UpdateTask` + `UpdateTaskHandler` + `UpdateTaskValidator`
+  - Updates `Title`, `Description`, `Priority`, `DueDate`
+  - Catches `DbUpdateConcurrencyException` → throws `ConcurrencyException`
+  - Validator: same field rules as create
+- [ ] `DeleteTask` + `DeleteTaskHandler`
+  - Soft delete via `task.SoftDelete(now)`
+  - No validator needed (ID-only command)
+- [ ] `MoveTask` + `MoveTaskHandler` + `MoveTaskValidator`
+  - Calls `task.Move(newStatus, userId, now)`
+  - Domain enforces valid transition via `ProjectTaskStatusExtensions`
+  - Validator: `NewStatus` is a valid enum value
+- [ ] `AssignTask` + `AssignTaskHandler` + `AssignTaskValidator`
+  - Calls `task.Assign(assigneeId, userId, now)`
+  - Validator: `AssigneeId` required and exists (user is a project member)
+- [ ] `UnassignTask` + `UnassignTaskHandler`
+  - Calls `task.Unassign(userId, now)`
+- [ ] `AddComment` + `AddCommentHandler` + `AddCommentValidator`
+  - Calls `task.AddComment(authorId, content, now)`
+  - Returns `Guid` (new comment ID)
+  - Validator: `Content` non-empty, max 10 000 chars
+- [ ] `EditComment` + `EditCommentHandler` + `EditCommentValidator`
+  - Validator: same content rules; author must own the comment
+- [ ] `RemoveComment` + `RemoveCommentHandler`
+  - Calls `task.RemoveComment(commentId, now)`
+- [ ] `AddAttachment` + `AddAttachmentHandler` + `AddAttachmentValidator`
+  - Calls `task.AddAttachment(fileName, contentType, sizeBytes, downloadUrl, now)`
+  - Returns `Guid` (new attachment ID)
+  - Validator: `FileName` non-empty, `SizeBytes` > 0, `ContentType` non-empty
+- [ ] `RemoveAttachment` + `RemoveAttachmentHandler`
+  - Calls `task.RemoveAttachment(attachmentId)`
+
+**Queries**
+- [ ] `GetTaskById` + `GetTaskByIdHandler`
+  - Loads task with comments and attachments (explicit `.Include()`)
+  - Resolves assignee name and comment author names via a single User lookup
+  - Returns `TaskDto`; throws `NotFoundException` if not found
+- [ ] `GetTasksFiltered` + `GetTasksFilteredHandler`
+  - Filter params: `BoardId?`, `AssigneeId?`, `Status?`, `Priority?`, `DueBefore?`, `DueAfter?`
+  - Pagination: `Page`, `PageSize` (max 100)
+  - Sorting: `SortBy` field name, `SortDescending` flag
+  - Returns `PagedResult<TaskSummaryDto>`
+
+**DI registration**
+- [ ] `AddTaskHandlers(this IServiceCollection)` — registers all Task command and query handlers as `Scoped`; called from `AddApplicationServices()`
 
 ---
 
-## Phase 7 — Security
+### Step 2 — Projects & Boards
 
-> ✅ Can start as soon as Phase 3 is done; wire into controllers during Phase 5.
+**DTOs**
+- [ ] `ProjectSummaryDto` — list view (id, name, status, member count, task count, created)
+- [ ] `ProjectDto` — detail view (includes `BoardSummaryDto[]`, `ProjectMemberDto[]`)
+- [ ] `ProjectMemberDto` — id, userId, userName, role, joinedAt
+- [ ] `BoardSummaryDto` — id, name, isArchived, taskCount
+- [ ] `BoardDto` — detail view (includes `TaskSummaryDto[]`)
+- [ ] `ProjectMapper` — static extension methods
 
-- [ ] JWT authentication (issue + validate tokens)
-- [ ] Refresh token flow
-- [ ] Role-based authorization (Admin, Member, Viewer)
-- [ ] Policy-based authorization (e.g. only project members can view tasks)
-- [ ] Secure endpoints with `[Authorize]` and custom policies
+**Commands**
+- [ ] `CreateProject` + `CreateProjectHandler` + `CreateProjectValidator`
+  - Returns `Guid`
+  - Validator: `OrganizationId` required and exists, `Name` non-empty max 100 chars
+- [ ] `UpdateProject` + `UpdateProjectHandler` + `UpdateProjectValidator`
+  - Updates `Name`, `Description`
+  - Catches concurrency exception → `ConcurrencyException`
+- [ ] `DeleteProject` + `DeleteProjectHandler`
+  - Soft delete via `project.SoftDelete(now)`
+- [ ] `AddProjectMember` + `AddProjectMemberHandler` + `AddProjectMemberValidator`
+  - Calls `project.AddMember(userId, role, now)`
+  - Validator: `UserId` exists, `Role` valid enum value, user not already a member
+- [ ] `RemoveProjectMember` + `RemoveProjectMemberHandler`
+  - Calls `project.RemoveMember(userId)`
+- [ ] `CreateBoard` + `CreateBoardHandler` + `CreateBoardValidator`
+  - Calls `project.AddBoard(name, now)`
+  - Returns `Guid`
+  - Validator: `Name` non-empty max 100 chars; project not archived
+- [ ] `ArchiveBoard` + `ArchiveBoardHandler`
+  - Calls `project.ArchiveBoard(boardId, now)`
+- [ ] `RenameBoard` + `RenameBoardHandler` + `RenameBoardValidator`
+  - Calls `project.RenameBoard(boardId, name)`
+  - Validator: `Name` non-empty max 100 chars; no duplicate name in project
+
+**Queries**
+- [ ] `GetProjectById` + `GetProjectByIdHandler` — returns `ProjectDto` with boards and members; throws `NotFoundException`
+- [ ] `GetProjectsFiltered` + `GetProjectsFilteredHandler`
+  - Filter: `OrganizationId?`, `MemberId?`
+  - Pagination + sorting
+  - Returns `PagedResult<ProjectSummaryDto>`
+- [ ] `GetProjectTasks` + `GetProjectTasksHandler` — all tasks across all boards in a project; same filter/sort/page params as `GetTasksFiltered`
+- [ ] `GetProjectMembers` + `GetProjectMembersHandler` — returns `ProjectMemberDto[]`
+- [ ] `GetBoardById` + `GetBoardByIdHandler` — returns `BoardDto` with tasks
+- [ ] `GetBoardTasks` + `GetBoardTasksHandler` — tasks for a specific board; same filter/sort/page params
+
+**DI registration**
+- [ ] `AddProjectHandlers(this IServiceCollection)`
 
 ---
 
-## Phase 8 — Testing & benchmarking
+### Step 3 — Organizations
 
-> ✅ Start unit tests from Phase 3 onward; integration tests from Phase 5 onward. Grows continuously.
+**DTOs**
+- [ ] `OrganizationDto` — id, name, createdAt, projectCount
+- [ ] `OrganizationMapper`
 
-- [x] Unit tests for domain logic (xUnit) — covers `Common` (`AggregateRoot`/`ValueObject` equality), `Organizations`, `Projects` (`Project`, `Board`), `Tasks` (`ProjectTask`, `ProjectTaskStatus` transitions, `Comment`), `Users` (`User`)
-- [ ] Unit tests for validators (xUnit) — blocked on Phase 3 (FluentValidation validators don't exist yet)
-- [ ] Unit tests for command/query handlers
-- [ ] Integration tests with `WebApplicationFactory` and test DB
-- [ ] API-level tests for all endpoints (happy path + error cases)
-- [ ] Concurrency conflict tests — simulate simultaneous edits and assert `409 Conflict` responses
-- [ ] Test coverage report
-- [ ] Benchmark EF Core vs Dapper for the same read query (e.g. `GetTasksFiltered`) using BenchmarkDotNet — scaffold `Ordinis.Benchmarks` project at this point
-- [ ] Benchmark manual mapping vs Mapster across varying collection sizes (1, 100, 10 000 items)
-- [ ] Benchmark middleware pipeline overhead — raw endpoint vs full middleware stack
-- [ ] Load test concurrent write throughput (`PUT /tasks/{id}`) to validate concurrency handling under pressure (k6 or NBomber)
+**Commands**
+- [ ] `CreateOrganization` + `CreateOrganizationHandler` + `CreateOrganizationValidator`
+  - Returns `Guid`
+  - Validator: `Name` non-empty max 100 chars
+- [ ] `UpdateOrganization` + `UpdateOrganizationHandler` + `UpdateOrganizationValidator`
+  - Updates `Name`
+  - Validator: same
+
+**Queries**
+- [ ] `GetOrganizationById` + `GetOrganizationByIdHandler` — returns `OrganizationDto`; throws `NotFoundException`
+- [ ] `GetOrganizationProjects` + `GetOrganizationProjectsHandler` — returns `PagedResult<ProjectSummaryDto>`
+
+**DI registration**
+- [ ] `AddOrganizationHandlers(this IServiceCollection)`
 
 ---
 
-## Phase 9 — Developer experience & docs
+### Step 4 — Users
+
+**DTOs**
+- [ ] `UserDto` — id, displayName, email, organizationId, createdAt
+- [ ] `UserMapper`
+
+**Commands**
+- [ ] `CreateUser` + `CreateUserHandler` + `CreateUserValidator`
+  - Returns `Guid`
+  - Validator: `Email` valid format and unique, `DisplayName` non-empty max 100 chars, `OrganizationId` exists
+- [ ] `UpdateUser` + `UpdateUserHandler` + `UpdateUserValidator`
+  - Updates `DisplayName`
+  - Validator: `DisplayName` non-empty max 100 chars
+
+**Queries**
+- [ ] `GetUserById` + `GetUserByIdHandler` — returns `UserDto`; throws `NotFoundException`
+- [ ] `GetUserTasks` + `GetUserTasksHandler` — tasks assigned to a user; same filter/sort/page params as `GetTasksFiltered`
+
+**DI registration**
+- [ ] `AddUserHandlers(this IServiceCollection)`
+
+---
+
+### Step 5 — Shared application infrastructure
+
+- [ ] Add `NotFoundException` to `Ordinis.Application/Common/` — thrown by query handlers; global middleware maps to `404 Not Found` with Problem Details
+- [ ] Add `PagedResult<T>` to `Ordinis.Application/Common/` — wraps list query results with `Items`, `TotalCount`, `Page`, `PageSize`
+- [ ] Add `TaskFilter`, `ProjectFilter` parameter records to respective `Queries/` folders — keep query objects slim, separate filter concerns from query dispatch
+- [ ] Finalize `AddApplicationServices()` — call all per-feature `AddXxxHandlers()` methods
+
+**Git tag:** `v0.4-phase4-app-features`
+
+---
+
+## Phase 5 — Infrastructure layer
+
+> ⚠️ Requires Phase 3.
+> ✅ Can run in parallel with Phase 4.
+> ✅ Phase 11 (CI/CD & Docker) can start here.
+
+- [ ] Install packages: `Microsoft.EntityFrameworkCore.SqlServer`, `Npgsql.EntityFrameworkCore.PostgreSQL`, `Microsoft.EntityFrameworkCore.Tools`, `Dapper`, `Hangfire` (or use `IHostedService` for Outbox dispatcher)
+- [ ] Configure `AppDbContext`:
+  - Constructor injects `TimeProvider` — sets `CreatedAt` / `UpdatedAt` in `SaveChangesAsync` override
+  - `DbSet<>` for all aggregate roots: `Organizations`, `Projects`, `Boards`, `Tasks`, `Users`, `OutboxMessages`
+  - Provider selected at startup via `appsettings.json` (`DatabaseProvider: "SqlServer"` | `"PostgreSQL"`)
+- [ ] Define `IEntityTypeConfiguration<T>` classes — one per entity, in feature folders:
+  - `OrganizationConfiguration` — PK, `Name` max length, `IsActive` default
+  - `ProjectConfiguration` — PK, FK to `Organization`, `RowVersion`, soft delete filter, `Name` max length
+  - `BoardConfiguration` — PK, FK to `Project`, `RowVersion`, `IsArchived` default, `Name` max length
+  - `ProjectTaskConfiguration` — PK, FK to `Board`, `RowVersion`, soft delete filter, `Status`/`Priority` stored as `varchar` via `.HasConversion<string>()`
+  - `CommentConfiguration` — PK, FK to `ProjectTask`, soft delete filter, `Content` max length
+  - `AttachmentConfiguration` — PK, FK to `ProjectTask`, `FileName`/`ContentType`/`DownloadUrl` max lengths
+  - `ProjectMemberConfiguration` — composite PK (`ProjectId`, `UserId`), FK to `Project`, FK to `User`, `Role` stored as `varchar`
+  - `UserConfiguration` — PK, FK to `Organization`, `Email` unique index, `DisplayName` max length
+  - `OutboxMessageConfiguration` — PK, `OccurredAt`, `Type`, `Payload` (`nvarchar(max)` / `text`), `ProcessedAt?`
+- [ ] Define `OutboxMessage` entity in `Persistence/`:
+  - `Id` (Guid, UUIDv7), `OccurredAt`, `Type` (event type name), `Payload` (JSON), `ProcessedAt?`
+- [ ] Add Outbox dispatch to `AppDbContext.SaveChangesAsync`:
+  - Intercept `AggregateRoot` instances with pending domain events
+  - Serialize each event to `OutboxMessage` and insert in same transaction
+  - Call `aggregate.ClearDomainEvents()` after insert
+- [ ] Add `OutboxDispatcherJob` — background service that polls `OutboxMessages` where `ProcessedAt` is null, deserializes and dispatches events, marks processed
+- [ ] Configure global EF Core query filters for soft deletes on `Project`, `Board`, `ProjectTask`, `Comment`
+- [ ] Add and manage migrations per provider — maintain separate migration folders for SQL Server and PostgreSQL
+- [ ] Add Dapper — used in query handlers for complex read queries (e.g. `GetTasksFiltered` with joins); inject `IDbConnection` from `AppDbContext.Database.GetDbConnection()`
+- [ ] Configure Serilog — structured logging, output to console (dev) and rolling file (prod); enrich with `CorrelationId`, `MachineName`
+- [ ] Add `CorrelationIdMiddleware` — generates or propagates `X-Correlation-ID` per request; attaches to `ILogger` scope and response headers
+- [ ] Add request/response logging middleware — logs method, path, status code, duration, correlation ID at `Information` level
+- [ ] Add health check endpoint (`/health`) — checks DB connectivity
+- [ ] Add `InfrastructureServiceExtensions` — `AddInfrastructureServices(this IServiceCollection, IConfiguration)` called from `Program.cs`; registers `AppDbContext`, `TimeProvider.System` as singleton, Serilog, health checks, background job host
+
+**Git tag:** `v0.5-phase5-infrastructure`
+
+---
+
+## Phase 6 — API layer: core endpoints
+
+> ⚠️ Requires Phase 4 and Phase 5.
+> ✅ Phase 9 (Testing), Phase 10 (Docs), Phase 11 (CI/CD) can run alongside.
+
+### Shared API infrastructure (do first)
+- [ ] Add `GlobalExceptionMiddleware` — catches `ValidationException` → `422`, `ConcurrencyException` → `409`, `NotFoundException` → `404`, unhandled → `500`; all responses use Problem Details (RFC 9457)
+- [ ] Add `ProblemDetailsFactory` helper — builds consistent `ProblemDetails` objects across all error cases
+- [ ] Add `CorrelationId` to all Problem Details responses via middleware
+- [ ] Register middleware in `Program.cs` in correct order: correlation ID → request logging → global exception → routing → auth (Phase 8) → endpoints
+- [ ] Add `ApiServiceExtensions` — `AddApiServices(this IServiceCollection)` wires controllers, rate limiting, response caching, CORS
+
+### Controllers (one file per resource)
+- [ ] `OrganizationsController`
+  - `GET    /api/v1/organizations/{id}` → `GetOrganizationById`
+  - `GET    /api/v1/organizations/{id}/projects` → `GetOrganizationProjects` (paged)
+  - `POST   /api/v1/organizations` → `CreateOrganization` → `201 Created` with `Location` header
+  - `PUT    /api/v1/organizations/{id}` → `UpdateOrganization` → `204 No Content`
+- [ ] `ProjectsController`
+  - `GET    /api/v1/projects` → `GetProjectsFiltered` (paged, filterable, sortable)
+  - `GET    /api/v1/projects/{id}` → `GetProjectById`
+  - `GET    /api/v1/projects/{id}/tasks` → `GetProjectTasks` (paged)
+  - `GET    /api/v1/projects/{id}/members` → `GetProjectMembers`
+  - `GET    /api/v1/projects/{id}/boards` → list boards (from `ProjectDto`)
+  - `POST   /api/v1/projects` → `CreateProject` → `201 Created`
+  - `PUT    /api/v1/projects/{id}` → `UpdateProject` → `204 No Content`
+  - `DELETE /api/v1/projects/{id}` → `DeleteProject` → `204 No Content`
+  - `POST   /api/v1/projects/{id}/members` → `AddProjectMember` → `201 Created`
+  - `DELETE /api/v1/projects/{id}/members/{userId}` → `RemoveProjectMember` → `204 No Content`
+- [ ] `BoardsController`
+  - `GET    /api/v1/boards/{id}` → `GetBoardById`
+  - `GET    /api/v1/boards/{id}/tasks` → `GetBoardTasks` (paged)
+  - `POST   /api/v1/projects/{id}/boards` → `CreateBoard` → `201 Created`
+  - `PUT    /api/v1/boards/{id}/name` → `RenameBoard` → `204 No Content`
+  - `POST   /api/v1/boards/{id}/archive` → `ArchiveBoard` → `204 No Content`
+- [ ] `TasksController`
+  - `GET    /api/v1/tasks` → `GetTasksFiltered` (paged, filterable by assignee/status/priority/board, sortable)
+  - `GET    /api/v1/tasks/{id}` → `GetTaskById`
+  - `GET    /api/v1/tasks/{id}/comments` → comments from `TaskDto` (no separate query needed)
+  - `GET    /api/v1/tasks/{id}/attachments` → attachments from `TaskDto`
+  - `POST   /api/v1/tasks` → `CreateTask` → `201 Created`
+  - `PUT    /api/v1/tasks/{id}` → `UpdateTask` → `204 No Content`
+  - `DELETE /api/v1/tasks/{id}` → `DeleteTask` → `204 No Content`
+  - `POST   /api/v1/tasks/{id}/comments` → `AddComment` → `201 Created`
+  - `PUT    /api/v1/tasks/{id}/comments/{commentId}` → `EditComment` → `204 No Content`
+  - `DELETE /api/v1/tasks/{id}/comments/{commentId}` → `RemoveComment` → `204 No Content`
+  - `POST   /api/v1/tasks/{id}/attachments` → `AddAttachment` → `201 Created`
+  - `DELETE /api/v1/tasks/{id}/attachments/{attachmentId}` → `RemoveAttachment` → `204 No Content`
+- [ ] `UsersController`
+  - `GET    /api/v1/users/{id}` → `GetUserById`
+  - `GET    /api/v1/users/{id}/tasks` → `GetUserTasks` (paged)
+  - `POST   /api/v1/users` → `CreateUser` → `201 Created`
+  - `PUT    /api/v1/users/{id}` → `UpdateUser` → `204 No Content`
+
+### Minimal API endpoints
+- [ ] `SearchEndpoints` (`/api/v1/search?q=&type=tasks|projects`) — delegates to `GetTasksFiltered` / `GetProjectsFiltered` with text search param
+- [ ] Auth endpoints scaffolded as placeholder (`/auth/login`, `/auth/refresh`) — fully implemented in Phase 8
+
+### Cross-cutting concerns on all endpoints
+- [ ] All list endpoints: filtering, sorting, pagination via query string; return `X-Total-Count` header
+- [ ] All list endpoints: sparse fields support via `?fields=` query string; mapper respects field list
+- [ ] All endpoints return Problem Details on error (enforced by `GlobalExceptionMiddleware`)
+- [ ] All `POST` endpoints: `201 Created` with `Location: /api/v1/{resource}/{id}` header
+- [ ] All `PUT` / `DELETE` endpoints: `204 No Content` on success
+- [ ] XML doc comments on all controller actions — used by OpenAPI in Phase 10
+
+**Git tag:** `v0.6-phase6-api-core`
+
+---
+
+## Phase 7 — API layer: advanced REST features
+
+> ⚠️ Requires Phase 6.
+
+### State transitions
+- [ ] `POST /api/v1/tasks/{id}/move` → `MoveTask` — body: `{ "status": "InProgress" }`
+- [ ] `POST /api/v1/tasks/{id}/assign` → `AssignTask` — body: `{ "assigneeId": "..." }`
+- [ ] `POST /api/v1/tasks/{id}/unassign` → `UnassignTask`
+- [ ] `POST /api/v1/tasks/{id}/close` → `MoveTask` with `status: Closed` (convenience alias)
+- [ ] `POST /api/v1/tasks/{id}/reopen` → `MoveTask` with `status: ToDo`
+
+### HATEOAS
+- [ ] Add `HateoasLinks` record — `{ rel, href, method }` list embedded in responses as `_links`
+- [ ] `TaskDto` gets `_links`: `self`, `move`, `assign`, `delete`, and valid next-status transitions (driven by `ProjectTaskStatusExtensions.GetValidTransitions()`)
+- [ ] `ProjectDto` gets `_links`: `self`, `tasks`, `boards`, `members`, `delete`
+
+### Optimistic concurrency
+- [ ] `TaskDto.ConcurrencyToken` (already defined in Phase 4) returned as `ETag` response header on `GET /tasks/{id}`
+- [ ] `PUT /tasks/{id}` and state transition endpoints require `If-Match` header — middleware extracts and passes to handler
+- [ ] Handler compares incoming token to current `RowVersion`; mismatch → `ConcurrencyException` → `409 Conflict`
+- [ ] `ConcurrencyTokenMiddleware` — reads `If-Match`, decodes Base64 → `byte[]`, attaches to `HttpContext.Items` for handlers to consume
+
+### Idempotency
+- [ ] `IdempotencyMiddleware` — reads `Idempotency-Key` header on `POST` requests; caches response by key (in-memory, 24h TTL); replays cached response on duplicate key
+- [ ] Applied to: `POST /tasks`, `POST /tasks/{id}/comments`, `POST /tasks/{id}/attachments`, `POST /projects`, `POST /projects/{id}/members`, `POST /projects/{id}/boards`, `POST /organizations`, `POST /users`
+
+### API versioning
+- [ ] Add URL-segment versioning — `/api/v1/` prefix on all existing routes
+- [ ] Add `/api/v2/tasks` as a demonstration endpoint — returns `TaskDto` with an additional `_links` field (v2 difference) to show versioning in practice
+
+### Rate limiting
+- [ ] Configure ASP.NET Core built-in rate limiting middleware
+- [ ] Fixed window policy: 100 requests / 60 seconds per IP (unauthenticated)
+- [ ] Sliding window policy: 500 requests / 60 seconds per authenticated user
+- [ ] `429 Too Many Requests` response with `Retry-After` header
+
+### Response caching
+- [ ] `Cache-Control` headers on read-only GET endpoints (e.g. `GET /tasks/{id}` → `max-age=30`)
+- [ ] `Vary: Accept-Encoding, Authorization` on cached responses
+
+### Webhooks
+- [ ] `POST /api/v1/projects/{id}/webhooks` → register a webhook URL for a project
+- [ ] `DELETE /api/v1/projects/{id}/webhooks/{webhookId}` → unregister
+- [ ] `WebhookEndpoints` Minimal API — lightweight registration; no controller
+- [ ] `WebhookDispatcherService` — subscribes to `OutboxMessage` events; fires HTTP POST to registered URLs on `TaskCreated`, `TaskMoved`, `TaskAssigned`, `CommentAdded`
+- [ ] Webhook payload: standard envelope `{ "event": "task.moved", "occurredAt": "...", "data": { ... } }`
+- [ ] Delivery: fire-and-forget with basic retry (3 attempts, exponential backoff); failures logged
+
+### Audit log
+- [ ] `GET /api/v1/projects/{id}/audit` → paginated list of domain events for all tasks in the project
+- [ ] Backed by `OutboxMessages` table — query by project ID via task/board FK join; no separate audit store needed at this stage
+- [ ] `AuditEntryDto` — `{ id, eventType, occurredAt, actorId, payload }`
+
+**Git tag:** `v0.7-phase7-api-advanced`
+
+---
+
+## Phase 8 — Security
+
+> ⚠️ Requires Phase 4.
+> ✅ Can run in parallel with Phase 6 and 7; wire `[Authorize]` into controllers during Phase 6.
+
+- [ ] Install `Microsoft.AspNetCore.Authentication.JwtBearer`
+- [ ] Implement `POST /auth/login` (Minimal API) — validates credentials, issues JWT access token + refresh token; stores refresh token hash in `User` entity
+- [ ] Implement `POST /auth/refresh` (Minimal API) — validates refresh token, issues new access token + rotated refresh token
+- [ ] Implement `POST /auth/logout` (Minimal API) — revokes refresh token
+- [ ] JWT configuration: issuer, audience, signing key from `appsettings` / User Secrets; token expiry 15 min (access), 7 days (refresh)
+- [ ] Add `RefreshToken` field to `User` entity (hashed); add `RefreshTokenExpiresAt` — update `UserConfiguration` accordingly
+- [ ] Role-based authorization: `Admin`, `Member`, `Viewer` roles encoded in JWT claims
+- [ ] Policy-based authorization:
+  - `ProjectMemberPolicy` — user must be a member of the project to access its resources
+  - `ProjectAdminPolicy` — user must be `Admin` role or project owner to delete/archive
+  - `TaskOwnerPolicy` — user must be assignee or project member to edit task
+- [ ] Apply `[Authorize]` to all controllers; apply specific policies per action
+- [ ] `AuthorizationHandlers` — custom `IAuthorizationHandler` implementations for each policy; inject `AppDbContext` to check membership
+- [ ] Public endpoints (no auth): `GET /health`, `POST /auth/login`, `POST /auth/refresh`
+
+**Git tag:** `v0.8-phase8-security`
+
+---
+
+## Phase 9 — Testing & benchmarking
+
+> ✅ Unit tests can start as soon as Phase 4 is done.
+> ✅ Integration tests can start as soon as Phase 6 is done.
+> Grows continuously — add tests as each feature is built, don't batch them all at the end.
+
+### Unit tests (Ordinis.UnitTests)
+- [x] Domain logic — aggregate invariants, state machine, value object equality (done in Phase 2 session)
+- [ ] FluentValidation validators — test each validator in isolation; use `TestValidate()` from FluentValidation.TestHelper
+- [ ] Command handler logic — use `FakeTimeProvider` from `Microsoft.Extensions.TimeProvider.Testing`; mock `AppDbContext` via in-memory provider or test doubles
+- [ ] `Dispatcher` — verify validation pipeline fires before handler; verify `ValidationException` is thrown on failure
+
+### Integration tests (Ordinis.IntegrationTests)
+- [ ] `WebApplicationFactory<Program>` setup with test `appsettings.json` pointing to SQLite or a real test DB
+- [ ] Shared `DatabaseFixture` — creates schema, seeds baseline data, resets between tests
+- [ ] API-level tests per controller (happy path + common error cases):
+  - Tasks: create, get, update, delete, move, assign, add comment, add attachment
+  - Projects: create, get, update, delete, add member, create board
+  - Organizations: create, get, update
+  - Users: create, get, update
+- [ ] Concurrency conflict tests — load same entity in two contexts, update both, assert second `PUT` returns `409 Conflict`
+- [ ] Validation error tests — submit invalid payloads, assert `422 Unprocessable Entity` with correct error fields
+- [ ] Auth tests — unauthenticated requests to protected endpoints return `401`; wrong role returns `403`
+- [ ] Rate limiting tests — exceed limit, assert `429 Too Many Requests` with `Retry-After` header
+- [ ] Idempotency tests — repeat `POST` with same `Idempotency-Key`, assert same response and no duplicate record
+
+### Benchmarks (Ordinis.Benchmarks)
+- [ ] Scaffold `Ordinis.Benchmarks` project with BenchmarkDotNet
+- [ ] EF Core vs Dapper: benchmark `GetTasksFiltered` with 10 000 task rows — measure p50/p99 query time
+- [ ] Manual mapping vs Mapster: benchmark `TaskMapper.ToDto()` across 1 / 100 / 10 000 items
+- [ ] Middleware pipeline overhead: benchmark raw endpoint response vs full middleware stack (correlation ID + request logging + exception handling)
+- [ ] Load test: k6 or NBomber script for `PUT /tasks/{id}` concurrent write throughput — validate `409 Conflict` handling under load; target 50 concurrent users
+
+**Git tag:** `v0.9-phase9-testing`
+
+---
+
+## Phase 10 — Developer experience & docs
+
+> ✅ Can start alongside Phase 6.
+
+- [ ] Configure .NET 10 built-in OpenAPI — enable XML doc generation in `.csproj`; add `AddOpenApi()` to DI; annotate controllers with `[ProducesResponseType]` and XML `<summary>` / `<param>` / `<returns>` comments
+- [ ] Add Scalar UI — `app.MapScalarApiReference()` at `/scalar`; configure title, theme
+- [ ] Document authentication in OpenAPI — add `SecurityScheme` for Bearer JWT; annotate secured endpoints
+- [ ] Add `requests.http` file — one example request per endpoint covering happy path; compatible with VS Code REST Client and JetBrains HTTP Client
+- [ ] Update README:
+  - Architecture diagram (Mermaid)
+  - Full local setup steps (clone → user secrets → run)
+  - Environment variable reference table
+  - Docker quick-start (`docker-compose up`)
+  - Link to Scalar UI and `requests.http`
+- [ ] Add `CONTRIBUTING.md` — branch naming, commit conventions, PR checklist; targets portfolio reviewers who may fork
+
+**Git tag:** `v0.10-phase10-docs`
+
+---
+
+## Phase 11 — CI/CD & Docker
 
 > ✅ Can start alongside Phase 5.
 
-- [ ] Configure built-in OpenAPI support (.NET 10) with XML comments and examples
-- [ ] Add Scalar UI as the interactive docs frontend
-- [ ] Add example HTTP files (`requests.http` / Bruno collection)
-- [ ] Update README: architecture diagram, local setup, env vars, Docker
+- [ ] `Dockerfile` — multi-stage build (sdk → publish → runtime); non-root user; `EXPOSE 8080`
+- [ ] `docker-compose.yml` — services: `api` + `db` (SQL Server or PostgreSQL selectable); volume for DB data; health check on `api`
+- [ ] `docker-compose.override.yml` — local dev overrides (e.g. mount source for hot reload)
+- [ ] GitHub Actions — `ci.yml`:
+  - Trigger: `push` to any branch, `pull_request` to `main`
+  - Steps: checkout → setup .NET 10 → restore → build → test → lint (via `dotnet format --verify-no-changes`)
+  - Test results uploaded as artifact
+- [ ] GitHub Actions — `publish.yml`:
+  - Trigger: `push` to `main` (after squash merge)
+  - Steps: build Docker image → push to GitHub Container Registry (`ghcr.io`)
+  - Tagged with git SHA and `latest`
+- [ ] Environment-specific `appsettings`:
+  - `appsettings.json` — defaults, no secrets
+  - `appsettings.Development.json` — verbose logging, CORS allow-all
+  - `appsettings.Production.json` — minimal logging, strict CORS
+- [ ] GitHub Actions Secrets for CI: `CONNECTION_STRING`, `JWT_SIGNING_KEY`; injected as environment variables into the test and publish steps
+- [ ] Document secrets strategy in README: User Secrets (local) → GitHub Actions Secrets (CI) → environment variables (Docker/production)
+
+**Git tag:** `v0.11-phase11-cicd`
 
 ---
 
-## Phase 10 — Cloud-ready & CI/CD
+## Phase 12 — Polish & portfolio hardening
 
-> ✅ Can start alongside Phase 4; finalize after Phase 5.
+> ⚠️ Requires Phase 10 and Phase 11.
+> Final pass before treating the project as showcase-ready.
 
-- [ ] Dockerfile for the API
-- [ ] `docker-compose` with API + database
-- [ ] GitHub Actions: build, test, lint on every PR
-- [ ] GitHub Actions: Docker image publish on main merge
-- [ ] Environment-specific `appsettings` (Development, Production)
-- [ ] Configure GitHub Actions Secrets for sensitive values (connection strings, JWT signing key) and inject as environment variables in the pipeline
-- [ ] Document secrets strategy in README: User Secrets for local dev, GitHub Actions Secrets for CI/CD, environment variables for Docker/production
+- [ ] Review all XML doc comments — ensure every public controller action, DTO property, and interface method is documented
+- [ ] Review OpenAPI spec in Scalar UI — verify all endpoints, request/response schemas, and error responses appear correctly
+- [ ] Review `PHASE2_DECISIONS.md` and `FUTURE_IDEAS.md` — ensure README links to them; add a `ARCHITECTURE.md` if decisions warrant a dedicated doc
+- [ ] Verify all `BUILD_PLAN.md` items are checked off
+- [ ] Final `dotnet format` pass — zero lint warnings
+- [ ] Final `dotnet test` pass — zero failures, coverage report generated
+- [ ] Run BenchmarkDotNet suite — capture baseline numbers; add results summary to README
+- [ ] Run k6/NBomber load test — capture results; add to README
+- [ ] Tag `main` as `v1.0-complete`
+- [ ] GitHub repo housekeeping: pin repo, add topics (`dotnet`, `csharp`, `rest-api`, `clean-architecture`, `cqrs`, `ddd`), write a compelling repo description targeting .NET hiring managers
+
+**Git tag:** `v1.0-complete`
 
 ---
 
-## Key design decisions
+## Key design decisions (locked)
 
-| Topic | Choice | Reason |
+| Topic | Decision | Reason |
 |---|---|---|
-| Architecture | Clean Architecture | Clear separation, testable, recruiter-recognized |
-| API style | Controllers + Minimal APIs | Controllers for resource endpoints, Minimal APIs for auth, health, webhooks |
-| CQRS | Manual dispatch (no MediatR) | Less indirection, explicit handler resolution via DI |
-| Mapping | Manual (static mappers / extensions) | Zero overhead, compiler-safe; Mapster available if scale demands it |
-| Validation | FluentValidation, invoked centrally in the `Dispatcher` | Rich rules; one consistent enforcement point for every command/query |
-| ORM | EF Core (no repository pattern) + Dapper | DbContext injected directly; Dapper for complex reads |
-| Database | SQL Server + PostgreSQL (switchable) | Provider selected via config; same migrations strategy |
-| Soft deletes | `IsDeleted` / `DeletedAt` + global query filter | Realistic for project management domain; no data loss |
-| Domain events | Outbox pattern (DB + background job) | Reliable delivery without distributed transaction |
-| Observability | Serilog + correlation IDs + request logging | Full traceability per request across logs |
-| Secrets | User Secrets (dev) → GitHub Actions Secrets (CI) → env vars (prod) | Standard .NET approach, no extra dependencies, no secrets in Git |
-| Docs | .NET 10 built-in OpenAPI + Scalar UI | No Swashbuckle dependency, modern interactive UI |
+| Architecture | Clean Architecture — Domain / Application / Infrastructure / Api | Clear separation; each layer has one job; recruiter-recognized |
+| Layer organization | Feature-folder (vertical slice) within each layer | Related code is co-located; easy to navigate by domain concept |
+| API style | Controllers for all resource endpoints; Minimal APIs for auth, search, webhooks | Controllers suit resource-heavy CRUD + relationships; Minimal APIs suit focused, non-resource routes |
+| CQRS | Manual dispatch — `ICommandHandler` / `IQueryHandler` + `IDispatcher`; no MediatR | Explicit DI resolution; no hidden pipeline magic; shows understanding of the pattern without a framework crutch |
+| Mapping | Manual static extension methods; Mapster only if boilerplate becomes excessive | Zero overhead; compiler-safe; no reflection |
+| Validation | FluentValidation; invoked centrally in `Dispatcher` before handler; `ValidationException` is Ordinis-owned | Single enforcement point; API layer decoupled from FluentValidation |
+| ORM | EF Core injected directly into handlers; Dapper for complex reads | No leaky repository abstraction; Dapper for read performance |
+| Database | SQL Server + PostgreSQL; provider via `appsettings.json` | Shows provider-agnostic EF Core config; real dual-DB setup |
+| Primary keys | `Guid.CreateVersion7()` (UUIDv7) | Sequential, time-ordered; no clustered index fragmentation; client-side generation works with Outbox |
+| Time | `TimeProvider` in `AppDbContext` and Application handlers; `DateTimeOffset now` passed explicitly into domain methods | Domain is free of infrastructure concerns; tests use `FakeTimeProvider` |
+| Soft deletes | `IsDeleted` / `DeletedAt` + global EF Core query filter | Realistic for PM domain; no data loss; filtered transparently |
+| Concurrency | `RowVersion` + ETag + `If-Match` | End-to-end optimistic concurrency; `409 Conflict` on collision |
+| Domain events | Outbox pattern — serialize to `OutboxMessages` in same transaction; background job dispatches | Reliable delivery without distributed transactions |
+| Exception handling | Custom exception types (`ValidationException`, `ConcurrencyException`, `NotFoundException`) mapped to Problem Details by global middleware | API layer decoupled from EF Core and FluentValidation internals |
+| Observability | Serilog + `X-Correlation-ID` + request/response middleware | Full per-request traceability |
+| Auth | JWT (15 min) + refresh tokens (7 days); role + policy based | Industry standard; covers both coarse-grained (role) and fine-grained (policy) authorization |
+| Docs | .NET 10 built-in OpenAPI + Scalar UI | No Swashbuckle dependency; modern interactive UI |
+| Secrets | User Secrets (dev) → GitHub Actions Secrets (CI) → env vars (prod) | Standard .NET approach; nothing in Git |
+
+**Hard constraints — never suggest:**
+- ❌ MediatR
+- ❌ AutoMapper
+- ❌ Swashbuckle / NSwag
+- ❌ Repository pattern or unit of work wrapper over EF Core
+- ❌ `DateTimeOffset.UtcNow` or `DateTime.UtcNow` anywhere in Domain or Infrastructure
 
 ---
 
 ## Git workflow
 
-| Topic | Choice |
+| Topic | Decision |
 |---|---|
-| Strategy | GitHub Flow — feature branches off `main`, merged via PR |
+| Strategy | GitHub Flow — feature branches off `main`, squash-merged via PR |
 | Branch naming | `feature/phase-N-description`, `fix/description`, `chore/description`, `docs/description` |
 | Commit style | Conventional Commits — `type(scope): description` |
-| Merge strategy | Squash merge to keep `main` history linear and readable |
-| Tagging | Tag `main` at the end of each phase: `v0.N-phaseN-description` |
+| Merge strategy | Squash merge — keeps `main` history linear and readable for portfolio reviewers |
+| Tagging | Tag `main` at end of each phase (see phase tags below) |
 
 ### Branch naming examples
 
 ```
-feature/phase-2-domain-entities
-feature/phase-3-cqrs-task-commands
-feature/phase-4-efcore-dual-provider
+feature/phase-4-task-commands
+feature/phase-5-efcore-dual-provider
+feature/phase-6-tasks-controller
+feature/phase-7-etags-if-match
 fix/task-concurrency-409-response
 chore/update-build-plan
 docs/readme-architecture-diagram
@@ -299,30 +733,34 @@ docs/readme-architecture-diagram
 
 ```
 feat(tasks): add CreateTask command handler with FluentValidation
+feat(projects): add GetProjectsFiltered query with pagination
 feat(auth): implement JWT token issuance and refresh flow
 fix(concurrency): translate DbUpdateConcurrencyException to 409 Conflict
 chore: update Directory.Build.props target framework
 docs: add architecture diagram to README
+test(tasks): add CreateTask validator unit tests
 ```
 
 ### Phase tags
 
 | Tag | Milestone |
 |---|---|
-| `v0.0-phase1-solution-setup` | Phase 1: Repository & solution setup complete |
-| `v0.1-phase1-setup` | Phase 1: Repository & solution setup complete |
-| `v0.2-phase2-domain` | Phase 2: Domain layer complete |
-| `v0.3-phase3-application` | Phase 3: Application / CQRS layer complete |
-| `v0.4-phase4-infrastructure` | Phase 4: Infrastructure layer complete |
-| `v0.5-phase5-core-api` | Phase 5: Core REST endpoints complete |
-| `v0.6-phase6-advanced-rest` | Phase 6: Advanced REST features complete |
-| `v0.7-phase7-security` | Phase 7: Security complete |
-| `v0.8-phase8-testing` | Phase 8: Testing & benchmarking complete |
-| `v0.9-phase9-docs` | Phase 9: Developer experience & docs complete |
-| `v0.10-phase10-cicd` | Phase 10: CI/CD & Docker complete |
+| `v0.1-phase1-solution-setup` | Phase 1: Repository & solution setup |
+| `v0.2-phase2-domain` | Phase 2: Domain layer |
+| `v0.3-phase3-app-infrastructure` | Phase 3: Application layer — CQRS infrastructure |
+| `v0.4-phase4-app-features` | Phase 4: Application layer — all commands, queries, DTOs |
+| `v0.5-phase5-infrastructure` | Phase 5: Infrastructure layer |
+| `v0.6-phase6-api-core` | Phase 6: API layer — core endpoints |
+| `v0.7-phase7-api-advanced` | Phase 7: API layer — advanced REST features |
+| `v0.8-phase8-security` | Phase 8: Security |
+| `v0.9-phase9-testing` | Phase 9: Testing & benchmarking |
+| `v0.10-phase10-docs` | Phase 10: Developer experience & docs |
+| `v0.11-phase11-cicd` | Phase 11: CI/CD & Docker |
+| `v1.0-complete` | Phase 12: Polish & portfolio hardening |
 
 ---
 
 ## Progress tracking
 
-Use the interactive checklist in the build plan chat thread, or check off items directly in this file.
+Check off items in this file as each task is completed.
+Each phase session should start by reading this file and confirming prerequisites.
