@@ -178,9 +178,10 @@ Prompt pattern:
 
 Examples:
 - *"Let's work on Phase 2 — define the Task aggregate root"*
-- *"Let's work on Phase 4 — configure dual-provider DbContext"*
-- *"Let's work on Phase 6 — implement ETags and If-Match"*
-- *"Let's work on Phase 7 — JWT + refresh token flow"*
+- *"Let's work on Phase 4 — Task commands and validators"*
+- *"Let's work on Phase 5 — configure dual-provider DbContext"*
+- *"Let's work on Phase 7 — implement ETags and If-Match"*
+- *"Let's work on Phase 8 — JWT + refresh token flow"*
 
 You can also paste existing code and ask to review, extend, or debug it
 in the context of a specific phase or task.
