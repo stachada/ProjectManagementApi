@@ -215,61 +215,61 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 ### Step 1 — Tasks (commands, validators, queries)
 
 **DTOs**
-- [ ] `TaskSummaryDto` — lean list view (no nested collections)
-- [ ] `TaskDto` — full detail view (embedded `CommentDto`, `AttachmentDto`)
-- [ ] `CommentDto`
-- [ ] `AttachmentDto`
-- [ ] `TaskMapper` — static extension methods; `ToSummaryDto()`, `ToDto()`, private helpers for comments and attachments
+- [x] `TaskSummaryDto` — lean list view (no nested collections)
+- [x] `TaskDto` — full detail view (embedded `CommentDto`, `AttachmentDto`)
+- [x] `CommentDto`
+- [x] `AttachmentDto`
+- [x] `TaskMapper` — static extension methods; `ToSummaryDto()`, `ToDto()`, private helpers for comments and attachments
 
 **Commands**
-- [ ] `CreateTask` + `CreateTaskHandler` + `CreateTaskValidator`
+- [x] `CreateTask` + `CreateTaskHandler` + `CreateTaskValidator`
   - Returns `Guid` (new task ID)
   - Handler injects `AppDbContext`, `TimeProvider`; resolves `now` once; calls `ProjectTask.Create(..., now)`
   - Validator: `BoardId` required and exists, `Title` non-empty max 200 chars, `Priority` valid enum value
-- [ ] `UpdateTask` + `UpdateTaskHandler` + `UpdateTaskValidator`
+- [x] `UpdateTask` + `UpdateTaskHandler` + `UpdateTaskValidator`
   - Updates `Title`, `Description`, `Priority`, `DueDate`
   - Catches `DbUpdateConcurrencyException` → throws `ConcurrencyException`
   - Validator: same field rules as create
-- [ ] `DeleteTask` + `DeleteTaskHandler`
+- [x] `DeleteTask` + `DeleteTaskHandler`
   - Soft delete via `task.SoftDelete(now)`
   - No validator needed (ID-only command)
-- [ ] `MoveTask` + `MoveTaskHandler` + `MoveTaskValidator`
+- [x] `MoveTask` + `MoveTaskHandler` + `MoveTaskValidator`
   - Calls `task.Move(newStatus, userId, now)`
   - Domain enforces valid transition via `ProjectTaskStatusExtensions`
   - Validator: `NewStatus` is a valid enum value
-- [ ] `AssignTask` + `AssignTaskHandler` + `AssignTaskValidator`
+- [x] `AssignTask` + `AssignTaskHandler` + `AssignTaskValidator`
   - Calls `task.Assign(assigneeId, userId, now)`
   - Validator: `AssigneeId` required and exists (user is a project member)
-- [ ] `UnassignTask` + `UnassignTaskHandler`
+- [x] `UnassignTask` + `UnassignTaskHandler`
   - Calls `task.Unassign(userId, now)`
-- [ ] `AddComment` + `AddCommentHandler` + `AddCommentValidator`
+- [x] `AddComment` + `AddCommentHandler` + `AddCommentValidator`
   - Calls `task.AddComment(authorId, content, now)`
   - Returns `Guid` (new comment ID)
   - Validator: `Content` non-empty, max 10 000 chars
-- [ ] `EditComment` + `EditCommentHandler` + `EditCommentValidator`
+- [x] `EditComment` + `EditCommentHandler` + `EditCommentValidator`
   - Validator: same content rules; author must own the comment
-- [ ] `RemoveComment` + `RemoveCommentHandler`
+- [x] `RemoveComment` + `RemoveCommentHandler`
   - Calls `task.RemoveComment(commentId, now)`
-- [ ] `AddAttachment` + `AddAttachmentHandler` + `AddAttachmentValidator`
+- [x] `AddAttachment` + `AddAttachmentHandler` + `AddAttachmentValidator`
   - Calls `task.AddAttachment(fileName, contentType, sizeBytes, downloadUrl, now)`
   - Returns `Guid` (new attachment ID)
   - Validator: `FileName` non-empty, `SizeBytes` > 0, `ContentType` non-empty
-- [ ] `RemoveAttachment` + `RemoveAttachmentHandler`
+- [x] `RemoveAttachment` + `RemoveAttachmentHandler`
   - Calls `task.RemoveAttachment(attachmentId)`
 
 **Queries**
-- [ ] `GetTaskById` + `GetTaskByIdHandler`
+- [x] `GetTaskById` + `GetTaskByIdHandler`
   - Loads task with comments and attachments (explicit `.Include()`)
   - Resolves assignee name and comment author names via a single User lookup
   - Returns `TaskDto`; throws `NotFoundException` if not found
-- [ ] `GetTasksFiltered` + `GetTasksFilteredHandler`
-  - Filter params: `BoardId?`, `AssigneeId?`, `Status?`, `Priority?`, `DueBefore?`, `DueAfter?`
+- [x] `GetTasksFiltered` + `GetTasksFilteredHandler`
+  - Filter params: `BoardId?`, `AssigneeId?`, `Status?`, `Priority?`, `DueBefore?`, `DueAfter?` (via `TaskFilter`)
   - Pagination: `Page`, `PageSize` (max 100)
   - Sorting: `SortBy` field name, `SortDescending` flag
   - Returns `PagedResult<TaskSummaryDto>`
 
 **DI registration**
-- [ ] `AddTaskHandlers(this IServiceCollection)` — registers all Task command and query handlers as `Scoped`; called from `AddApplicationServices()`
+- [x] `AddTaskHandlers(this IServiceCollection)` — registers all Task command and query handlers as `Scoped`; called from `AddApplicationServices()`
 
 ---
 
@@ -371,10 +371,11 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 
 ### Step 5 — Shared application infrastructure
 
-- [ ] Add `NotFoundException` to `Ordinis.Application/Common/` — thrown by query handlers; global middleware maps to `404 Not Found` with Problem Details
-- [ ] Add `PagedResult<T>` to `Ordinis.Application/Common/` — wraps list query results with `Items`, `TotalCount`, `Page`, `PageSize`
-- [ ] Add `TaskFilter`, `ProjectFilter` parameter records to respective `Queries/` folders — keep query objects slim, separate filter concerns from query dispatch
-- [ ] Finalize `AddApplicationServices()` — call all per-feature `AddXxxHandlers()` methods
+- [x] Add `NotFoundException` to `Ordinis.Application/Common/` — thrown by query handlers; global middleware maps to `404 Not Found` with Problem Details
+- [x] Add `PagedResult<T>` to `Ordinis.Application/Common/` — wraps list query results with `Items`, `TotalCount`, `Page`, `PageSize`
+- [x] Add `TaskFilter` parameter record to `Tasks/Queries/` — keep query objects slim, separate filter concerns from query dispatch (`GetTasksFiltered(TaskFilter? Filter, ...)`)
+- [ ] Add `ProjectFilter` parameter record to `Projects/Queries/` (Step 2 — not started)
+- [ ] Finalize `AddApplicationServices()` — call all per-feature `AddXxxHandlers()` methods (only `AddTaskHandlers()` wired so far; revisit once Steps 2–4 land)
 
 **Git tag:** `v0.4-phase4-app-features`
 
