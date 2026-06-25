@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
+using Ordinis.Application.Tasks;
 
 namespace Ordinis.Application.Common;
 
@@ -30,7 +31,7 @@ public static class ApplicationServiceExtensions
         // See Tasks/Commands/ and Tasks/Queries/ for examples.
         //
         // Handlers are added here as phase progress:
-        //  services.AddTaskHandlers();
+        services.AddTaskHandlers();
         //  services.AddProjectHandlers();
         //  etc.
 

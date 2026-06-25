@@ -94,7 +94,7 @@ public class ProjectTask : AggregateRoot
     /// <summary>
     /// The user who created the task. Required. Immutable after creation.
     /// </summary>
-    public Guid ReportedId { get; private set; }
+    public Guid ReporterId { get; private set; }
 
     /// <summary>
     /// The user currently responsible for completing the task.
@@ -146,7 +146,7 @@ public class ProjectTask : AggregateRoot
     /// <param name="boardId">The board to create the task on. Must not be empty.</param>
     /// <param name="reporterId">The user creating the task. Must not be empty.</param>
     /// <param name="title">Short task summary. Must not be empty.</param>
-    /// <param name="occurredAt">The time the task was created. Used for validating <paramref name="dueDate"/>.</param>
+    /// <param name="now">The time the task was created. Used for validating <paramref name="dueDate"/>.</param>
     /// <param name="priority">Urgency level. Defaults to <see cref="Priority.Medium"/>.</param>
     /// <param name="description">Optional detailed description.</param>
     /// <param name="dueDate">Optional deadline. Must be a future UTC date if provided.</param>
@@ -159,9 +159,9 @@ public class ProjectTask : AggregateRoot
     /// </exception>
     public static ProjectTask Create(
         Guid boardId,
-        Guid reportedId,
+        Guid reporterId,
         string title,
-        DateTimeOffset occurredAt,
+        DateTimeOffset now,
         Priority priority = Priority.Medium,
         string? description = null,
         DateTimeOffset? dueDate = null)
@@ -173,15 +173,15 @@ public class ProjectTask : AggregateRoot
             throw new ArgumentException("BoardId cannot be empty.", nameof(boardId));
         }
 
-        if (reportedId == Guid.Empty)
+        if (reporterId == Guid.Empty)
         {
-            throw new ArgumentException("ReportedId cannot be empty.", nameof(reportedId));
+            throw new ArgumentException("ReporterId cannot be empty.", nameof(reporterId));
         }
 
         var task = new ProjectTask
         {
             BoardId = boardId,
-            ReportedId = reportedId,
+            ReporterId = reporterId,
             Title = title.Trim(),
             Description = description?.Trim(),
             Priority = priority,
@@ -189,7 +189,7 @@ public class ProjectTask : AggregateRoot
             DueDate = dueDate,
         };
 
-        if (dueDate.HasValue && dueDate.Value <= occurredAt)
+        if (dueDate.HasValue && dueDate.Value <= now)
         {
             throw new DomainException(
                 "Due date must be in the future.",
@@ -200,9 +200,9 @@ public class ProjectTask : AggregateRoot
         task.RaiseDomainEvent(new TaskCreated(
             task.Id,
             boardId,
-            reportedId,
+            reporterId,
             title,
-            occurredAt));
+            now));
 
         return task;
     }
@@ -241,15 +241,15 @@ public class ProjectTask : AggregateRoot
     /// <param name="newDueDate">
     /// New due date (must be a future UTC value), or <c>null</c> to remove it.
     /// </param>
-    /// <param name="occurredAt">
+    /// <param name="now">
     /// The date and time when the change is occurring.
     /// </param>
     /// <exception cref="DomainException">Thrown if the task is in a terminal state or if the new due date is in the past.</exception>
-    public void SetDueDate(DateTimeOffset? newDueDate, DateTimeOffset occurredAt)
+    public void SetDueDate(DateTimeOffset? newDueDate, DateTimeOffset now)
     {
         EnsureNotTerminal();
 
-        if (newDueDate.HasValue && newDueDate.Value <= occurredAt)
+        if (newDueDate.HasValue && newDueDate.Value <= now)
         {
             throw new DomainException(
                 "Due date must be in the future.",
@@ -268,7 +268,7 @@ public class ProjectTask : AggregateRoot
     /// </summary>
     /// <param name="newStatus">The target status.</param>
     /// <param name="movedByUserId">The user requesting the transition. Carried in the domain event.</param>
-    /// <param name="occurredAt">The date and time when the transition is occurring. Carried in the domain event.</param>
+    /// <param name="now">The date and time when the transition is occurring. Carried in the domain event.</param>
     /// <exception cref="DomainException">
     /// Thrown if the transition from the current status to <paramref name="newStatus"/>
     /// is not permitted by the state machine, or if the task is already in a terminal state.
@@ -280,7 +280,7 @@ public class ProjectTask : AggregateRoot
     /// The HATEOAS layer (Phase 6) calls <see cref="ProjectTaskStatusExtensions.GetAllowedTransitions"/>
     /// on the current status to generate <c>_links</c> for valid next states.
     /// </remarks>
-    public void Move(ProjectTaskStatus newStatus, Guid movedByUserId, DateTimeOffset occurredAt)
+    public void Move(ProjectTaskStatus newStatus, Guid movedByUserId, DateTimeOffset now)
     {
         if (!Status.CanTransitionTo(newStatus))
         {
@@ -298,7 +298,7 @@ public class ProjectTask : AggregateRoot
             previousStatus,
             newStatus,
             movedByUserId,
-            occurredAt));
+            now));
     }
     #endregion
 
@@ -312,12 +312,12 @@ public class ProjectTask : AggregateRoot
     /// this method.
     /// </param>
     /// <param name="assignedByUserId">The user performing the assignment.</param>
-    /// <param name="occurredAt">The date and time when the assignment is occurring. Carried in the domain event.</param>
+    /// <param name="now">The date and time when the assignment is occurring. Carried in the domain event.</param>
     /// <exception cref="DomainException">
     /// Thrown if the task is in a terminal state, or if the user is already
     /// the current assignee.
     /// </exception>
-    public void Assign(Guid assigneeId, Guid assignedByUserId, DateTimeOffset occurredAt)
+    public void Assign(Guid assigneeId, Guid assignedByUserId, DateTimeOffset now)
     {
         EnsureNotTerminal();
 
@@ -340,7 +340,7 @@ public class ProjectTask : AggregateRoot
             Id,
             assigneeId,
             assignedByUserId,
-            occurredAt));
+            now));
     }
 
     /// <summary>
@@ -350,8 +350,8 @@ public class ProjectTask : AggregateRoot
     /// Thrown if the task is in a terminal state or is already unassigned.
     /// </exception>
     /// <param name="unassignedByUserId">The user performing the unassignment.</param>
-    /// <param name="occurredAt">The date and time when the unassignment is occurring. Carried in the domain event.</param>
-    public void Unassign(Guid unassignedByUserId, DateTimeOffset occurredAt)
+    /// <param name="now">The date and time when the unassignment is occurring. Carried in the domain event.</param>
+    public void Unassign(Guid unassignedByUserId, DateTimeOffset now)
     {
         EnsureNotTerminal();
 
@@ -370,7 +370,7 @@ public class ProjectTask : AggregateRoot
             Id,
             previousAssignedId,
             unassignedByUserId,
-            occurredAt));
+            now));
     }
     #endregion
 
@@ -380,11 +380,11 @@ public class ProjectTask : AggregateRoot
     /// </summary>
     /// <param name="content">The comment text. Must not be empty.</param>
     /// <param name="authorId">The user posting the comment.</param>
-    /// <param name="occurredAt">The date and time when the comment is being added. Carried in the domain event.</param>
+    /// <param name="now">The date and time when the comment is being added. Carried in the domain event.</param>
     /// <returns>The newly created <see cref="Comment"/>.</returns>
     /// <exception cref="DomainException">Thrown if the task is soft-deleted.</exception>
     /// <exception cref="ArgumentException">Thrown if <paramref name="content"/> is empty.</exception>
-    public Comment AddComment(string content, Guid authorId, DateTimeOffset occurredAt)
+    public Comment AddComment(string content, Guid authorId, DateTimeOffset now)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(content);
 
@@ -403,7 +403,7 @@ public class ProjectTask : AggregateRoot
             Id,
             comment.Id,
             authorId,
-            occurredAt));
+            now));
 
         return comment;
     }
@@ -417,11 +417,11 @@ public class ProjectTask : AggregateRoot
     /// may remove a comment — enforced by policy in Phase 7. The domain only
     /// enforces that the comment exists and belongs to this task.
     /// </param>
-    /// <param name="occurredAt">The date and time when the comment is being removed. Carried in the domain event.</param>
+    /// <param name="now">The date and time when the comment is being removed. Carried in the domain event.</param>
     /// <exception cref="DomainException">
     /// Thrown if the comment is not found on this task.
     /// </exception>
-    public void RemoveComment(Guid commentId, Guid requestingUserId, DateTimeOffset occurredAt)
+    public void RemoveComment(Guid commentId, Guid requestingUserId, DateTimeOffset now)
     {
         var comment = _comments.FirstOrDefault(c => c.Id == commentId)
             ?? throw new DomainException(
@@ -429,13 +429,13 @@ public class ProjectTask : AggregateRoot
                 "task.comment-not-found"
             );
 
-        comment.SoftDelete(occurredAt);
+        comment.SoftDelete(now);
 
         RaiseDomainEvent(new CommentRemoved(
             Id,
             commentId,
             requestingUserId,
-            occurredAt));
+            now));
     }
     #endregion
 
@@ -452,7 +452,7 @@ public class ProjectTask : AggregateRoot
     /// this entity only records the metadata.
     /// </param>
     /// <param name="uploadedByUserId">The user uploading the file.</param>
-    /// <param name="occurredAt">The date and time when the attachment is being added. Carried in the domain event.</param>
+    /// <param name="now">The date and time when the attachment is being added. Carried in the domain event.</param>
     /// <returns>The newly created <see cref="Attachment"/>.</returns>
     /// <exception cref="DomainException">Thrown if the task is soft-deleted.</exception>
     public Attachment AddAttachment(
@@ -461,7 +461,7 @@ public class ProjectTask : AggregateRoot
         long sizeInBytes,
         string storageUrl,
         Guid uploadedByUserId,
-        DateTimeOffset occurredAt)
+        DateTimeOffset now)
     {
         if (IsDeleted)
         {
@@ -478,7 +478,7 @@ public class ProjectTask : AggregateRoot
             sizeInBytes,
             storageUrl,
             uploadedByUserId,
-            occurredAt);
+            now);
         _attachments.Add(attachment);
 
         RaiseDomainEvent(new AttachmentAdded(
@@ -486,7 +486,7 @@ public class ProjectTask : AggregateRoot
             attachment.Id,
             fileName,
             uploadedByUserId,
-            occurredAt));
+            now));
 
         return attachment;
     }
@@ -496,13 +496,13 @@ public class ProjectTask : AggregateRoot
     /// </summary>
     /// <param name="attachmentId">The Id of the attachment to remove.</param>
     /// <param name="removedByUserId">The user performing the removal.</param>
-    /// <param name="occurredAt">The date and time when the attachment is being removed. Carried in the domain event.</param>
+    /// <param name="now">The date and time when the attachment is being removed. Carried in the domain event.</param>
     /// <exception cref="DomainException">Thrown if the attachment is not found on this task.</exception>
     /// <remarks>
     /// This method removes the metadata record only. The Application layer is
     /// responsible for also deleting the file from blob storage after calling this.
     /// </remarks>
-    public void RemoveAttachment(Guid attachmentId, Guid removedByUserId, DateTimeOffset occurredAt)
+    public void RemoveAttachment(Guid attachmentId, Guid removedByUserId, DateTimeOffset now)
     {
         Attachment attachment = _attachments.FirstOrDefault(a => a.Id == attachmentId)
             ?? throw new DomainException(
@@ -516,7 +516,7 @@ public class ProjectTask : AggregateRoot
             Id,
             attachmentId,
             removedByUserId,
-            occurredAt));
+            now));
     }
     #endregion
 
