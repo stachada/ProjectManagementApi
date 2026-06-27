@@ -22,6 +22,7 @@ src/
 ├── Ordinis.Application
 │   ├── Common/             # ICommandHandler.cs, IQueryHandler.cs, IDispatcher.cs, Dispatcher.cs
 │   │                       # ValidationException.cs, ConcurrencyException.cs
+│   │                       # IFileStorageService.cs
 │   │                       # ApplicationServiceExtensions.cs, ApplicationAssemblyMarker.cs
 │   ├── Tasks/
 │   │   ├── Commands/       # CreateTask.cs, UpdateTask.cs, DeleteTask.cs, MoveTask.cs
@@ -57,6 +58,7 @@ src/
 │
 ├── Ordinis.Infrastructure
 │   ├── Common/             # InfrastructureServiceExtensions.cs
+│   ├── FileStorage/        # LocalFileStorageService.cs, LocalStorageOptions.cs
 │   ├── Tasks/              # ProjectTaskConfiguration.cs, CommentConfiguration.cs, AttachmentConfiguration.cs
 │   ├── Projects/           # ProjectConfiguration.cs, BoardConfiguration.cs, ProjectMemberConfiguration.cs
 │   ├── Organizations/      # OrganizationConfiguration.cs
@@ -251,11 +253,13 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [x] `RemoveComment` + `RemoveCommentHandler`
   - Calls `task.RemoveComment(commentId, now)`
 - [x] `AddAttachment` + `AddAttachmentHandler` + `AddAttachmentValidator`
-  - Calls `task.AddAttachment(fileName, contentType, sizeBytes, downloadUrl, now)`
+  - Command carries `FileName`, `ContentType`, `SizeBytes`, `FileStream` (no `DownloadUrl` — produced by storage service)
+  - Handler calls `IFileStorageService.UploadAsync(...)` → receives `downloadUrl` → calls `task.AddAttachment(..., downloadUrl, now)`
   - Returns `Guid` (new attachment ID)
   - Validator: `FileName` non-empty, `SizeBytes` > 0, `ContentType` non-empty
 - [x] `RemoveAttachment` + `RemoveAttachmentHandler`
-  - Calls `task.RemoveAttachment(attachmentId)`
+  - Handler loads attachment to read `DownloadUrl`, calls `task.RemoveAttachment(attachmentId)`, saves, then calls `IFileStorageService.DeleteAsync(downloadUrl)`
+  - DB saved first — orphaned files on disk are recoverable; orphaned DB rows pointing to missing files are not
 
 **Queries**
 - [x] `GetTaskById` + `GetTaskByIdHandler`
@@ -402,6 +406,15 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
   - `ProjectMemberConfiguration` — composite PK (`ProjectId`, `UserId`), FK to `Project`, FK to `User`, `Role` stored as `varchar`
   - `UserConfiguration` — PK, FK to `Organization`, `Email` unique index, `DisplayName` max length
   - `OutboxMessageConfiguration` — PK, `OccurredAt`, `Type`, `Payload` (`nvarchar(max)` / `text`), `ProcessedAt?`
+- [ ] Add `IFileStorageService` to `Ordinis.Application/Common/` — contract: `UploadAsync(Stream, fileName, contentType) → string downloadUrl`; `DeleteAsync(downloadUrl)`
+- [ ] Implement `LocalFileStorageService` in `Ordinis.Infrastructure/FileStorage/`:
+  - Writes files to a configurable path (default `wwwroot/attachments/`) bound via `LocalStorageOptions`
+  - Filename strategy: `{guid}_{sanitizedOriginalName}` — guarantees uniqueness, prevents path traversal, preserves readability
+  - `DownloadUrl` returned as a relative path: `/attachments/{storedFileName}`
+  - `DeleteAsync` resolves the file path from the URL and deletes the file; logs a warning if the file is not found rather than throwing
+  - Register in `AddInfrastructureServices`: `services.AddScoped<IFileStorageService, LocalFileStorageService>()`
+  - Register static file middleware in `Program.cs` to serve `wwwroot/` — required for `DownloadUrl` links to resolve
+  - **Swap note:** replacing `LocalFileStorageService` with `AzureBlobStorageService` or `S3FileStorageService` is a one-class change — the interface contract and all handler code remain unchanged
 - [ ] Define `OutboxMessage` entity in `Persistence/`:
   - `Id` (Guid, UUIDv7), `OccurredAt`, `Type` (event type name), `Payload` (JSON), `ProcessedAt?`
 - [ ] Add Outbox dispatch to `AppDbContext.SaveChangesAsync`:
@@ -416,7 +429,7 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [ ] Add `CorrelationIdMiddleware` — generates or propagates `X-Correlation-ID` per request; attaches to `ILogger` scope and response headers
 - [ ] Add request/response logging middleware — logs method, path, status code, duration, correlation ID at `Information` level
 - [ ] Add health check endpoint (`/health`) — checks DB connectivity
-- [ ] Add `InfrastructureServiceExtensions` — `AddInfrastructureServices(this IServiceCollection, IConfiguration)` called from `Program.cs`; registers `AppDbContext`, `TimeProvider.System` as singleton, Serilog, health checks, background job host
+- [ ] Add `InfrastructureServiceExtensions` — `AddInfrastructureServices(this IServiceCollection, IConfiguration)` called from `Program.cs`; registers `AppDbContext`, `TimeProvider.System` as singleton, `IFileStorageService` (`LocalFileStorageService`), `LocalStorageOptions` (from config), Serilog, health checks, background job host
 
 **Git tag:** `v0.5-phase5-infrastructure`
 
