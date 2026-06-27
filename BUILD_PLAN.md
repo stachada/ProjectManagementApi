@@ -167,7 +167,7 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 
 **Key decisions locked:**
 - Flat base class hierarchy (`Entity → AuditableEntity → AggregateRoot`) — no interface noise
-- `internal` constructors on child entities (`Comment`, `Attachment`, `ProjectMember`, `Board`) — aggregate roots own their children's lifecycle
+- `internal` constructors on child entities (`Comment`, `Attachment`, `ProjectMember`) — aggregate roots own their children's lifecycle. `Board` was later promoted to an independent aggregate root with a public `Create` factory (Step 2 refactor)
 - `internal` visibility on `ClearDomainEvents()` — only `Ordinis.Infrastructure` may clear events after Outbox dispatch
 - `CreatedAt` / `UpdatedAt` — `internal set`, populated by `AppDbContext.SaveChanges` via injected `TimeProvider`
 - `DeletedAt`, `JoinedAt`, `UploadedAt` — `private set`, set explicitly via domain method parameters
@@ -298,13 +298,13 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [ ] `RemoveProjectMember` + `RemoveProjectMemberHandler`
   - Calls `project.RemoveMember(userId)`
 - [ ] `CreateBoard` + `CreateBoardHandler` + `CreateBoardValidator`
-  - Calls `project.AddBoard(name, now)`
+  - Creates the board directly via `Board.Create(projectId, name, createdByUserId)` — `Board` is an independent aggregate root
   - Returns `Guid`
-  - Validator: `Name` non-empty max 100 chars; project not archived
+  - Validator: `Name` non-empty max 100 chars; project exists and not archived; no duplicate name in project
 - [ ] `ArchiveBoard` + `ArchiveBoardHandler`
-  - Calls `project.ArchiveBoard(boardId, now)`
+  - Loads and archives the board directly via `BoardId` only (`board.Archive()`) — no `ProjectId` needed
 - [ ] `RenameBoard` + `RenameBoardHandler` + `RenameBoardValidator`
-  - Calls `project.RenameBoard(boardId, name)`
+  - Loads and renames the board directly via `BoardId` only (`board.Rename(name)`)
   - Validator: `Name` non-empty max 100 chars; no duplicate name in project
 
 **Queries**

@@ -7,8 +7,7 @@ namespace Ordinis.UnitTests.Projects;
 
 /// <summary>
 /// Verifies <see cref="Project"/> aggregate invariants:
-/// membership rules, last-Admin protection, board management,
-/// and archived-project guards.
+/// membership rules, last-Admin protection, and archived-project guards.
 /// </summary>
 public sealed class ProjectTests
 {
@@ -111,56 +110,6 @@ public sealed class ProjectTests
 
         ProjectMember member = project.Members.Single(m => m.UserId == creatorId);
         Assert.Equal(Role.Member, member.Role);
-    }
-    #endregion
-
-    #region AddBoard / ArchiveBoard
-    [Fact]
-    public void AddBoard_UniqueNameOnActiveProject_AddsBoard()
-    {
-        var creatorId = Guid.CreateVersion7();
-        Project project = ProjectBuilder.Create(createdByUserId: creatorId, now: Now);
-
-        project.AddBoard("Sprint 1", creatorId);
-
-        Assert.Single(project.Boards);
-        Assert.Equal("Sprint 1", project.Boards.Single().Name);
-    }
-
-    [Fact]
-    public void AddBoard_DuplicateName_ThrowsDomainException()
-    {
-        var creatorId = Guid.CreateVersion7();
-        Project project = ProjectBuilder.Create(createdByUserId: creatorId, now: Now);
-        project.AddBoard("Sprint 1", creatorId);
-
-        DomainException ex = Assert.Throws<DomainException>(() =>
-            project.AddBoard("Sprint 1", creatorId));
-
-        Assert.Equal("project.board-name-duplicate", ex.ErrorCode);
-    }
-
-    [Fact]
-    public void AddBoard_ArchivedProject_ThrowsDomainException()
-    {
-        Project project = ProjectBuilder.Create(now: Now);
-        project.Archive();
-
-        Assert.Throws<DomainException>(() =>
-            project.AddBoard("Sprint 1", Guid.CreateVersion7()));
-    }
-
-    [Fact]
-    public void ArchiveBoard_ExistingBoard_BoardIsArchived()
-    {
-        var creatorId = Guid.CreateVersion7();
-        Project project = ProjectBuilder.Create(createdByUserId: creatorId, now: Now);
-        project.AddBoard("Sprint 1", creatorId);
-        Guid boardId = project.Boards.Single().Id;
-
-        project.ArchiveBoard(boardId);
-
-        Assert.True(project.Boards.Single().IsArchived);
     }
     #endregion
 

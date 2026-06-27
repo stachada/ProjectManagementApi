@@ -10,10 +10,12 @@ namespace Ordinis.Domain.Projects;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Aggregate root.</b> All mutations to a project's membership, boards,
-/// and core data go through this class. Boards and <see cref="ProjectMember"/>
-/// records are owned by this aggregate and must not be created or removed
-/// directly from handlers.
+/// <b>Aggregate root.</b> All mutations to a project's membership and core
+/// data go through this class. <see cref="ProjectMember"/> records are
+/// owned by this aggregate and must not be created or removed directly
+/// from handlers. <see cref="Board"/> is a related but independent
+/// aggregate root — it is created and mutated directly, not through
+/// <see cref="Project"/>.
 /// </para>
 /// <para>
 /// <b>Membership and authorization:</b> A user must be a <see cref="ProjectMember"/>
@@ -98,8 +100,11 @@ public class Project : AggregateRoot
     public IReadOnlyCollection<ProjectMember> Members => _members.AsReadOnly();
 
     /// <summary>
-    /// All boards within this project. Managed via <see cref="AddBoard"/>
-    /// and <see cref="ArchiveBoard"/>.
+    /// All boards within this project. Read-only navigation collection,
+    /// populated by EF Core. <see cref="Board"/> is an independent aggregate
+    /// root — its lifecycle is managed directly via <c>CreateBoard</c>,
+    /// <c>ArchiveBoard</c>, and <c>RenameBoard</c> command handlers, not
+    /// through this property.
     /// </summary>
     public IReadOnlyCollection<Board> Boards => _boards.AsReadOnly();
     #endregion
@@ -319,58 +324,6 @@ public class Project : AggregateRoot
         }
 
         member.Role = newRole;
-    }
-    #endregion
-
-    #region Board management
-    /// <summary>
-    /// Creates a new board within this project.
-    /// </summary>
-    /// <param name="name">The board's display name. Must not be empty.</param>
-    /// <param name="createdByUserId">The user creating the board.</param>
-    /// <returns>The newly created <see cref="Board"/>.</returns>
-    /// <exception cref="DomainException">
-    /// Thrown if the project is archived, or if a board with the same name
-    /// already exists within this project.
-    /// </exception>
-    public Board AddBoard(string name, Guid createdByUserId)
-    {
-        EnsureNotArchived();
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-
-        if (_boards.Any(b => b.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase)))
-        {
-            throw new DomainException(
-                $"A board named '{name}' already exists in this project.",
-                "project.board-name-duplicate"
-            );
-        }
-
-        var board = Board.Create(Id, name, createdByUserId);
-        _boards.Add(board);
-
-        return board;
-    }
-
-    /// <summary>
-    /// Archives a board within this project.
-    /// Archived boards are read-only and hidden from active board listings.
-    /// </summary>
-    /// <param name="boardId">The Id of the board to archive.</param>
-    /// <exception cref="DomainException">
-    /// Thrown if the project is archived, or if the board is not found.
-    /// </exception>
-    public void ArchiveBoard(Guid boardId)
-    {
-        EnsureNotArchived();
-
-        Board board = _boards.FirstOrDefault(b => b.Id == boardId)
-            ?? throw new DomainException(
-                "Board not found in this project.",
-                "project.board-not-found"
-            );
-
-        board.Archive();
     }
     #endregion
 
