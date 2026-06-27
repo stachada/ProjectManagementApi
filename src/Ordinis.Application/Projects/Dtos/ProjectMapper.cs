@@ -13,6 +13,30 @@ namespace Ordinis.Application.Projects.Dtos;
 public static class ProjectMapper
 {
     /// <summary>
+    /// Maps a <see cref="Project"/> to a <see cref="ProjectSummaryDto"/> lean list view.
+    /// <see cref="Project.Members"/> must be loaded (e.g. via <c>.Include(p => p.Members)</c>)
+    /// for <see cref="ProjectSummaryDto.MemberCount"/> to be accurate. <see cref="Board"/> is
+    /// an independent aggregate root with no navigation from <see cref="Project"/>, so the
+    /// board count is always supplied explicitly by the calling handler.
+    /// </summary>
+    /// <param name="project">The project to map.</param>
+    /// <param name="boardCount">Pre-resolved board count for this project.</param>
+    public static ProjectSummaryDto ToSummaryDto(this Project project, int boardCount)
+        => new()
+        {
+            Id = project.Id,
+            Name = project.Name,
+            Slug = project.Slug,
+            Description = project.Description,
+            IsArchived = project.IsArchived,
+            OrganizationId = project.OrganizationId,
+            CreatedByUserId = project.CreatedByUserId,
+            MemberCount = project.Members.Count,
+            BoardCount = boardCount,
+            CreatedAt = project.CreatedAt
+        };
+
+    /// <summary>
     /// Maps a <see cref="Project"/> to a <see cref="ProjectDto"/> full detail view.
     /// Boards are ordered by <c>CreatedAt</c> ascending, capped at
     /// <see cref="ProjectDto.MaxEmbeddedCollectionSize"/>.
@@ -87,7 +111,7 @@ public static class ProjectMapper
             Role = member.Role,
             JoinedAt = member.JoinedAt
         };
-
+        
     /// <summary>
     /// Maps a <see cref="Board"/> to a <see cref="BoardSummaryDto"/>.
     /// <see cref="Board"/> carries no task navigation collection, so the
