@@ -24,15 +24,13 @@ src/
 │   │                       # ValidationException.cs, ConcurrencyException.cs
 │   │                       # IFileStorageService.cs
 │   │                       # ApplicationServiceExtensions.cs, ApplicationAssemblyMarker.cs
-│   ├── Tasks/
+│   ├── Tasks/               # (validators co-located in the same file as their command/query —
+│   │   │                    #  e.g. CreateTaskValidator lives inside CreateTask.cs, not a separate Validators/ folder)
 │   │   ├── Commands/       # CreateTask.cs, UpdateTask.cs, DeleteTask.cs, MoveTask.cs
 │   │   │                   # AssignTask.cs, UnassignTask.cs
 │   │   │                   # AddComment.cs, EditComment.cs, RemoveComment.cs
 │   │   │                   # AddAttachment.cs, RemoveAttachment.cs
 │   │   ├── Queries/        # GetTaskById.cs, GetTasksFiltered.cs
-│   │   ├── Validators/     # CreateTaskValidator.cs, UpdateTaskValidator.cs, MoveTaskValidator.cs
-│   │   │                   # AssignTaskValidator.cs, AddCommentValidator.cs, EditCommentValidator.cs
-│   │   │                   # AddAttachmentValidator.cs
 │   │   └── Dtos/           # TaskDto.cs, TaskSummaryDto.cs, CommentDto.cs, AttachmentDto.cs, TaskMapper.cs
 │   ├── Projects/
 │   │   ├── Commands/       # CreateProject.cs, UpdateProject.cs, DeleteProject.cs
@@ -41,19 +39,15 @@ src/
 │   │   ├── Queries/        # GetProjectById.cs, GetProjectsFiltered.cs
 │   │   │                   # GetProjectTasks.cs, GetProjectMembers.cs
 │   │   │                   # GetBoardById.cs, GetBoardTasks.cs
-│   │   ├── Validators/     # CreateProjectValidator.cs, UpdateProjectValidator.cs
-│   │   │                   # AddProjectMemberValidator.cs, CreateBoardValidator.cs, RenameBoardValidator.cs
 │   │   └── Dtos/           # ProjectDto.cs, ProjectSummaryDto.cs, ProjectMemberDto.cs
 │   │                       # BoardDto.cs, BoardSummaryDto.cs, ProjectMapper.cs
 │   ├── Organizations/
 │   │   ├── Commands/       # CreateOrganization.cs, UpdateOrganization.cs
 │   │   ├── Queries/        # GetOrganizationById.cs, GetOrganizationProjects.cs
-│   │   ├── Validators/     # CreateOrganizationValidator.cs, UpdateOrganizationValidator.cs
 │   │   └── Dtos/           # OrganizationDto.cs, OrganizationMapper.cs
 │   └── Users/
 │       ├── Commands/       # CreateUser.cs, UpdateUser.cs
 │       ├── Queries/        # GetUserById.cs, GetUserTasks.cs
-│       ├── Validators/     # CreateUserValidator.cs, UpdateUserValidator.cs
 │       └── Dtos/           # UserDto.cs, UserMapper.cs
 │
 ├── Ordinis.Infrastructure
@@ -147,7 +141,7 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [x] Configure `.editorconfig` and .NET code style ruleset (`Directory.Build.props`)
 - [x] Initialize ASP.NET Core User Secrets for `Ordinis.Api` (`dotnet user-secrets init`)
 
-**Git tag:** `v0.1-phase1-solution-setup`
+**Git tag:** `v0.0-phase1-solution-setup`
 
 ---
 
@@ -194,6 +188,10 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [x] Define `ConcurrencyException` — thrown by command handlers catching `DbUpdateConcurrencyException`; decouples the API layer from EF Core
 - [x] Add `ApplicationAssemblyMarker` — anchors `AddValidatorsFromAssemblyContaining<T>()` assembly scanning
 - [x] Add `ApplicationServiceExtensions` — `AddApplicationServices(this IServiceCollection)` registers `IDispatcher`, all validators (via assembly scan), and calls per-feature handler registration methods added in Phase 4
+- [x] Add `[assembly: InternalsVisibleTo]` (`AssemblyInfo.cs`) for `Ordinis.UnitTests` and `Ordinis.IntegrationTests`
+  - **Added later:** introduced in the attachment-storage-handlers work (alongside #21/#22) so Phase 9
+    tests can construct `internal` command handlers (e.g. `AddAttachmentHandler`) directly — mirrors
+    the equivalent Domain-layer attribute from Phase 2.
 
 **Key decisions locked:**
 - Dispatcher owns validation pipeline — handlers receive already-validated commands
@@ -253,12 +251,12 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [x] `RemoveComment` + `RemoveCommentHandler`
   - Calls `task.RemoveComment(commentId, now)`
 - [x] `AddAttachment` + `AddAttachmentHandler` + `AddAttachmentValidator`
-  - Command carries `FileName`, `ContentType`, `SizeBytes`, `FileStream` (no `DownloadUrl` — produced by storage service)
+  - Command carries `FileName`, `ContentType`, `SizeInBytes`, `FileStream` (no `DownloadUrl` — produced by storage service)
   - Handler calls `IFileStorageService.UploadAsync(...)` → receives `downloadUrl` → calls `task.AddAttachment(..., downloadUrl, now)`
   - Returns `Guid` (new attachment ID)
-  - Validator: `FileName` non-empty, `SizeBytes` > 0, `ContentType` non-empty
+  - Validator: `FileName` non-empty, `SizeInBytes` > 0, `ContentType` non-empty
 - [x] `RemoveAttachment` + `RemoveAttachmentHandler`
-  - Handler loads attachment to read `DownloadUrl`, calls `task.RemoveAttachment(attachmentId)`, saves, then calls `IFileStorageService.DeleteAsync(downloadUrl)`
+  - Handler loads attachment to read its `StorageUrl`, calls `task.RemoveAttachment(attachmentId)`, saves, then calls `IFileStorageService.DeleteAsync(storageUrl)`
   - DB saved first — orphaned files on disk are recoverable; orphaned DB rows pointing to missing files are not
 
 **Queries**
@@ -406,7 +404,8 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
   - `ProjectMemberConfiguration` — composite PK (`ProjectId`, `UserId`), FK to `Project`, FK to `User`, `Role` stored as `varchar`
   - `UserConfiguration` — PK, FK to `Organization`, `Email` unique index, `DisplayName` max length
   - `OutboxMessageConfiguration` — PK, `OccurredAt`, `Type`, `Payload` (`nvarchar(max)` / `text`), `ProcessedAt?`
-- [ ] Add `IFileStorageService` to `Ordinis.Application/Common/` — contract: `UploadAsync(Stream, fileName, contentType) → string downloadUrl`; `DeleteAsync(downloadUrl)`
+- [x] Add `IFileStorageService` to `Ordinis.Application/Common/` — contract: `UploadAsync(Stream, fileName, contentType) → string downloadUrl`; `DeleteAsync(downloadUrl)`
+  - **Pulled forward:** implemented ahead of the rest of Phase 5, alongside the `AddAttachment`/`RemoveAttachment` handler rework (branch `feature/phase-4-attachment-storage-handlers`) — the handlers needed the contract to call synchronously. Only the interface exists; `LocalFileStorageService` and DI wiring are still pending below.
 - [ ] Implement `LocalFileStorageService` in `Ordinis.Infrastructure/FileStorage/`:
   - Writes files to a configurable path (default `wwwroot/attachments/`) bound via `LocalStorageOptions`
   - Filename strategy: `{guid}_{sanitizedOriginalName}` — guarantees uniqueness, prevents path traversal, preserves readability
@@ -596,6 +595,11 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [x] Domain logic — aggregate invariants, state machine, value object equality (done in Phase 2 session)
 - [ ] FluentValidation validators — test each validator in isolation; use `TestValidate()` from FluentValidation.TestHelper
 - [ ] Command handler logic — use `FakeTimeProvider` from `Microsoft.Extensions.TimeProvider.Testing`; mock `AppDbContext` via in-memory provider or test doubles
+  - **Started:** `AddAttachmentHandler`/`RemoveAttachmentHandler` covered (#22) using a hand-rolled
+    `FakeTimeProvider` and a minimal EF Core InMemory-backed `TestAppDbContext` test double instead
+    of the `Microsoft.Extensions.TimeProvider.Testing` package — avoided pulling in an extra package
+    for two handlers; revisit if broader handler coverage justifies it. Remaining handlers (other
+    Tasks commands, Projects, Organizations, Users) still need tests, so the checkbox stays open.
 - [ ] `Dispatcher` — verify validation pipeline fires before handler; verify `ValidationException` is thrown on failure
 
 ### Integration tests (Ordinis.IntegrationTests)
@@ -759,7 +763,7 @@ test(tasks): add CreateTask validator unit tests
 
 | Tag | Milestone |
 |---|---|
-| `v0.1-phase1-solution-setup` | Phase 1: Repository & solution setup |
+| `v0.0-phase1-solution-setup` | Phase 1: Repository & solution setup |
 | `v0.2-phase2-domain` | Phase 2: Domain layer |
 | `v0.3-phase3-app-infrastructure` | Phase 3: Application layer — CQRS infrastructure |
 | `v0.4-phase4-app-features` | Phase 4: Application layer — all commands, queries, DTOs |
