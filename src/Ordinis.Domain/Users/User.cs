@@ -1,6 +1,5 @@
 using Ordinis.Domain.Common;
 using Ordinis.Domain.Organizations;
-using Ordinis.Domain.Projects;
 
 namespace Ordinis.Domain.Users;
 
@@ -26,10 +25,6 @@ namespace Ordinis.Domain.Users;
 /// </remarks>
 public class User : AggregateRoot
 {
-    #region Private backing fields for collections
-    private readonly List<ProjectMember> _projectMemberships = [];
-    #endregion
-
     #region Identity & profile
     /// <summary>
     /// The user's display name shown across the UI.
@@ -75,12 +70,6 @@ public class User : AggregateRoot
     /// The organization this user belongs to.
     /// </summary>
     public Organization? Organization { get; private set; }
-
-    /// <summary>
-    /// Project memberships for this user. Each entry carries the role
-    /// this user holds within that specific project.
-    /// </summary>
-    public IReadOnlyCollection<ProjectMember> ProjectMemberships => _projectMemberships.AsReadOnly();
     #endregion
 
     #region Refresh token (auth concern kept minimal in the domain)
