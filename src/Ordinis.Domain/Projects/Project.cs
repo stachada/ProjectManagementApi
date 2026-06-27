@@ -40,7 +40,6 @@ public class Project : AggregateRoot
 {
     #region Private backing fields
     private readonly List<ProjectMember> _members = [];
-    private readonly List<Board> _boards = [];
     #endregion
 
     #region Properties
@@ -98,15 +97,6 @@ public class Project : AggregateRoot
     /// <see cref="RemoveMember"/>, and <see cref="ChangeMemberRole"/>.
     /// </summary>
     public IReadOnlyCollection<ProjectMember> Members => _members.AsReadOnly();
-
-    /// <summary>
-    /// All boards within this project. Read-only navigation collection,
-    /// populated by EF Core. <see cref="Board"/> is an independent aggregate
-    /// root — its lifecycle is managed directly via <c>CreateBoard</c>,
-    /// <c>ArchiveBoard</c>, and <c>RenameBoard</c> command handlers, not
-    /// through this property.
-    /// </summary>
-    public IReadOnlyCollection<Board> Boards => _boards.AsReadOnly();
     #endregion
 
     #region Constructors
@@ -135,7 +125,7 @@ public class Project : AggregateRoot
         Guid createdByUserId,
         string name,
         string slug,
-        DateTimeOffset occurredAt,
+        DateTimeOffset now,
         string? description = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -162,7 +152,7 @@ public class Project : AggregateRoot
         };
 
         // The creator is automatically and Admin for the project they create.
-        project._members.Add(ProjectMember.Create(project.Id, createdByUserId, Role.Admin, occurredAt));
+        project._members.Add(ProjectMember.Create(project.Id, createdByUserId, Role.Admin, now));
 
         return project;
     }
