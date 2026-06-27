@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Ordinis.Application.Organizations;
 using Ordinis.Application.Projects;
 using Ordinis.Application.Tasks;
+using Ordinis.Application.Users;
 
 namespace Ordinis.Application.Common;
 
@@ -39,6 +40,7 @@ public static class ApplicationServiceExtensions
         services.AddTaskHandlers();
         services.AddProjectHandlers();
         services.AddOrganizationHandlers();
+        services.AddUserHandlers();
         //  etc.
 
         return services;
