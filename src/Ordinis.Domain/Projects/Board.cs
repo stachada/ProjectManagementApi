@@ -10,14 +10,18 @@ namespace Ordinis.Domain.Projects;
 /// <remarks>
 /// <para>
 /// <b>Aggregate root.</b> Board guards its own invariants: tasks cannot be
-/// added to an archived board, and the board's name must be unique within
-/// its project (enforced by <see cref="Project.AddBoard"/>).
+/// added to an archived board. Board has no visibility into sibling boards,
+/// so it cannot self-enforce name-uniqueness within its project as a domain
+/// invariant — that cross-aggregate check is an application-layer concern,
+/// enforced by <c>CreateBoardValidator</c> and <c>RenameBoardValidator</c>
+/// via direct <c>db.Boards</c> queries.
 /// </para>
 /// <para>
-/// <b>Ownership:</b> Board is created and archived exclusively through the
-/// <see cref="Project"/> aggregate (<see cref="Project.AddBoard"/> and
-/// <see cref="Project.ArchiveBoard"/>). Never instantiate or mutate a board
-/// directly from a command handler — always go through the Project.
+/// <b>Ownership:</b> Board is an independent aggregate root, related to
+/// <see cref="Project"/> via <see cref="ProjectId"/>. It is created and
+/// mutated directly by command handlers (<c>CreateBoard</c>,
+/// <c>ArchiveBoard</c>, <c>RenameBoard</c>) — not through the Project
+/// aggregate.
 /// </para>
 /// <para>
 /// <b>Tasks:</b> Tasks are owned by the Board aggregate. A task is created
@@ -37,8 +41,8 @@ public sealed class Board : AggregateRoot
     #region Properties
     /// <summary>
     /// The board's display name (e.g. "Sprint Board", "Backlog", "Bug Tracker").
-    /// Must be unique within the owning project — enforced by
-    /// <see cref="Project.AddBoard"/>.
+    /// Must be unique within the owning project — enforced at the application
+    /// layer by <c>CreateBoardValidator</c>/<c>RenameBoardValidator</c>.
     /// </summary>
     public string Name { get; private set; } = string.Empty;
 
@@ -75,7 +79,6 @@ public sealed class Board : AggregateRoot
 
     /// <summary>
     /// Creates a new active board within a project.
-    /// Called exclusively from <see cref="Project.AddBoard"/> — never directly.
     /// </summary>
     /// <param name="projectId">The owning project. Must not be empty.</param>
     /// <param name="name">Display name. Must not be empty.</param>
@@ -84,7 +87,7 @@ public sealed class Board : AggregateRoot
     /// Thrown if <paramref name="name"/> is empty or
     /// <paramref name="projectId"/> is <see cref="Guid.Empty"/>.
     /// </exception>
-    internal static Board Create(
+    public static Board Create(
         Guid projectId,
         string name,
         Guid createdByUserId)
@@ -129,12 +132,9 @@ public sealed class Board : AggregateRoot
         Description = newDescription?.Trim();
     }
 
-    /// <summary>
-    /// Archives this board. Called exclusively from
-    /// <see cref="Project.ArchiveBoard"/> — never directly from a handler.
-    /// </summary>
+    /// <summary>Archives this board.</summary>
     /// <exception cref="DomainException">Thrown if already archived.</exception>
-    internal void Archive()
+    public void Archive()
     {
         if (IsArchived)
         {
