@@ -61,6 +61,11 @@ public interface IAppDbContext
     DbSet<Organization> Organizations { get; }
 
     /// <summary>
+    /// Project members - queried by validators to verify membership before task creation and other operations.
+    /// </summary>
+    DbSet<ProjectMember> ProjectMembers { get; }
+
+    /// <summary>
     /// Persists all pending changes to the database within the current transaction.
     /// </summary>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
