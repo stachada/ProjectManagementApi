@@ -28,6 +28,8 @@ internal sealed class TestAppDbContext(DbContextOptions<TestAppDbContext> option
 
     public DbSet<Organization> Organizations => Set<Organization>();
 
+    public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
+
     /// <summary>
     /// Creates a fresh instance backed by a uniquely-named InMemory database, isolated from
     /// every other test.

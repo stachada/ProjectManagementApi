@@ -22,7 +22,11 @@ public sealed record TaskFilter(
     ProjectTaskStatus? Status = null,
     Priority? Priority = null,
     DateTimeOffset? DueBefore = null,
-    DateTimeOffset? DueAfter = null);
+    DateTimeOffset? DueAfter = null,
+    int Page = 1,
+    int PageSize = 20,
+    string SortBy = "createdAt",
+    bool SortDescending = false);
 
 // Query
 /// <summary>
@@ -37,12 +41,7 @@ public sealed record TaskFilter(
 /// Defaults to <c>createdAt</c>.
 /// </param>
 /// <param name="SortDescending">When <see langword="true"/>, results are sorted descending.</param>
-public sealed record GetTasksFiltered(
-    TaskFilter? Filter = null,
-    int Page = 1,
-    int PageSize = 20,
-    string SortBy = "createdAt",
-    bool SortDescending = false) : IQuery<PagedResult<TaskSummaryDto>>;
+public sealed record GetTasksFiltered(TaskFilter? Filter = null) : IQuery<PagedResult<TaskSummaryDto>>;
 
 // Handler
 /// <summary>
@@ -76,9 +75,9 @@ internal sealed class GetTasksFilteredHandler(IAppDbContext db) : IQueryHandler<
         GetTasksFiltered query,
         CancellationToken cancellationToken)
     {
-        var pageSize = Math.Min(query.PageSize, MaxPageSize);
-        var page = Math.Max(query.Page, 1);
         TaskFilter filter = query.Filter ?? new TaskFilter();
+        var pageSize = Math.Min(filter.PageSize, MaxPageSize);
+        var page = Math.Max(filter.Page, 1);
 
         // Start from the base queryable - the global soft-delete filter is applied
         // automatically by EF Core, so deleted tasks never appear here.
@@ -124,7 +123,7 @@ internal sealed class GetTasksFilteredHandler(IAppDbContext db) : IQueryHandler<
 
         // Switch on the sort field name; fall back to createdAt for unknown values.
         // Using a switch expression keeps all sort options visible in one place.
-        queryable = (query.SortBy.ToLowerInvariant(), query.SortDescending) switch
+        queryable = (filter.SortBy.ToLowerInvariant(), filter.SortDescending) switch
         {
             ("title", false) => queryable.OrderBy(t => t.Title),
             ("title", true) => queryable.OrderByDescending(t => t.Title),
