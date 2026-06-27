@@ -9,10 +9,12 @@ namespace Ordinis.Application.Tasks.Commands;
 /// Removes an attachment from a task.
 /// </summary>
 /// <remarks>
-/// Attachments used hard removal from the aggregate's collection - they have no
+/// Attachments use hard removal from the aggregate's collection - they have no
 /// soft-delete mechanism (<see cref="Attachment"/> inherits from <see cref="Entity"/>,
-/// not <see cref="AuditableEntity"/>). The <see cref="AttachmentRemoved"/> domain event
-/// signals downstream consumers (e.g. blob storage cleanup) via the Outbox.
+/// not <see cref="AuditableEntity"/>). The handler deletes the file from blob storage
+/// via <see cref="IFileStorageService"/> only after the database save succeeds —
+/// orphaned files on disk are recoverable; orphaned DB rows pointing at missing files
+/// are not.
 /// </remarks>
 /// <param name="TaskId">ID of the task that owns the attachment.</param>
 /// <param name="AttachmentId">ID of the attachment to remove.</param>
@@ -24,10 +26,12 @@ public sealed record RemoveAttachment(
 
 // Handler
 /// <summary>
-/// Handles <see cref="RemoveAttachment"/> by invoking <see cref="ProjectTask.RemoveAttachment"/>.
+/// Handles <see cref="RemoveAttachment"/> by invoking <see cref="ProjectTask.RemoveAttachment"/>
+/// and then deleting the file from storage via <see cref="IFileStorageService"/>.
 /// </summary>
 internal sealed class RemoveAttachmentHandler(
     IAppDbContext db,
+    IFileStorageService fileStorage,
     TimeProvider timeProvider) : ICommandHandler<RemoveAttachment>
 {
     public async Task HandleAsync(RemoveAttachment command, CancellationToken cancellationToken)
@@ -37,11 +41,17 @@ internal sealed class RemoveAttachmentHandler(
             .FirstOrDefaultAsync(t => t.Id == command.TaskId, cancellationToken)
                 ?? throw new NotFoundException(nameof(ProjectTask), command.TaskId);
 
+        Attachment attachment = task.Attachments.FirstOrDefault(a => a.Id == command.AttachmentId)
+            ?? throw new NotFoundException(nameof(Attachment), command.AttachmentId);
+        string storageUrl = attachment.StorageUrl;
+
         task.RemoveAttachment(
             attachmentId: command.AttachmentId,
             removedByUserId: command.RemovedByUserId,
             now: timeProvider.GetUtcNow());
 
         await db.SaveChangesAsync(cancellationToken);
+
+        await fileStorage.DeleteAsync(storageUrl, cancellationToken);
     }
 }
