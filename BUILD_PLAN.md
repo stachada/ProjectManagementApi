@@ -333,26 +333,34 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 
 ---
 
-### Step 3 — Organizations
+### Step 3 — Organizations ✅
 
 **DTOs**
-- [ ] `OrganizationDto` — id, name, createdAt, projectCount
-- [ ] `OrganizationMapper`
+- [x] `OrganizationDto` — id, name, description, isActive, createdAt, projectCount *(expanded beyond the original plan's id/name/createdAt/projectCount to include `Description` and `IsActive`, mirroring `ProjectDto`'s richer detail-view shape)*
+- [x] `OrganizationMapper` — static `ToDto(this Organization, int projectCount)`
 
 **Commands**
-- [ ] `CreateOrganization` + `CreateOrganizationHandler` + `CreateOrganizationValidator`
+- [x] `CreateOrganization` + `CreateOrganizationHandler` + `CreateOrganizationValidator`
   - Returns `Guid`
-  - Validator: `Name` non-empty max 100 chars
-- [ ] `UpdateOrganization` + `UpdateOrganizationHandler` + `UpdateOrganizationValidator`
-  - Updates `Name`
-  - Validator: same
+  - Slug is auto-generated from `Name` via the new shared `ISlugGenerator` (see below), checked for global uniqueness (organizations have no parent scope, unlike `Project.Slug` which is scoped per-organization)
+  - Validator: `Name` non-empty max 100 chars, generated slug globally unique
+- [x] `RenameOrganization` + `RenameOrganizationHandler` + `RenameOrganizationValidator` *(replaces the originally planned single `UpdateOrganization` — split into `Rename` + `UpdateOrganizationDescription` below, one command per mutation, matching the granularity of the underlying `Organization.Rename()` / `Organization.UpdateDescription()` domain methods)*
+  - Updates `Name` only — slug is immutable after creation
+  - Catches `DbUpdateConcurrencyException` → `ConcurrencyException`
+- [x] `UpdateOrganizationDescription` + `UpdateOrganizationDescriptionHandler` + `UpdateOrganizationDescriptionValidator` *(added beyond original plan)*
+  - Updates `Description` (nullable, clears when `null`)
+  - Catches concurrency exception → `ConcurrencyException`
+- [x] `SuspendOrganization` + `SuspendOrganizationHandler` *(added beyond original plan — wraps the `Organization.Suspend()` domain method that already existed from Phase 2, same pattern as `ArchiveProject`/`UnarchiveProject` in Step 2)*
+- [x] `ReactivateOrganization` + `ReactivateOrganizationHandler` *(added beyond original plan — counterpart to `SuspendOrganization`)*
 
 **Queries**
-- [ ] `GetOrganizationById` + `GetOrganizationByIdHandler` — returns `OrganizationDto`; throws `NotFoundException`
-- [ ] `GetOrganizationProjects` + `GetOrganizationProjectsHandler` — returns `PagedResult<ProjectSummaryDto>`
+- [x] `GetOrganizationById` + `GetOrganizationByIdHandler` — returns `OrganizationDto`; throws `NotFoundException`; project count resolved via a separate scalar `CountAsync` (no navigation collection across the Organization → Project aggregate boundary)
+- [x] `GetOrganizationProjects` + `GetOrganizationProjectsHandler` — returns `PagedResult<ProjectSummaryDto>`; validates the organization exists (`NotFoundException` if not), reuses `ProjectFilter` for sort/page/`IncludeArchived`/`MemberId`, maps via the new `ProjectMapper.ToSummaryDto(this Project, int boardCount)` overload (board count resolved via a separate grouped query, same pattern as `ProjectMapper.ToDto`'s `boardTaskCounts`)
 
 **DI registration**
-- [ ] `AddOrganizationHandlers(this IServiceCollection)`
+- [x] `AddOrganizationHandlers(this IServiceCollection)` — wired into `AddApplicationServices()`
+
+**Found during review:** Extracted slug generation into a shared `ISlugGenerator` / `SlugGenerator` (`Ordinis.Application/Common/`, registered as a singleton — stateless, compiled regex) so `CreateOrganization` and `CreateProject` derive slugs the same way instead of each running its own inline regex. `CreateProjectHandler`/`CreateProjectValidator` (Step 2) were retrofitted to inject `ISlugGenerator` as part of this change, removing their original private `Slugify` method.
 
 ---
 
