@@ -203,7 +203,7 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 
 ---
 
-## Phase 4 — Application layer: features
+## Phase 4 — Application layer: features ✅
 
 > ⚠️ Requires Phase 3.
 > ✅ Can run in parallel with Phase 5 (Infrastructure).
@@ -364,26 +364,28 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 
 ---
 
-### Step 4 — Users
+### Step 4 — Users ✅
 
 **DTOs**
-- [ ] `UserDto` — id, displayName, email, organizationId, createdAt
-- [ ] `UserMapper`
+- [x] `UserDto` — id, displayName, email, organizationId, createdAt *(expanded beyond the original plan to include `OrgRole`, `IsActive`, `OrganizationName`, `UpdatedAt`, mirroring the richer detail-view shape used by `ProjectDto`/`OrganizationDto`)*
+- [x] `UserMapper`
 
 **Commands**
-- [ ] `CreateUser` + `CreateUserHandler` + `CreateUserValidator`
+- [x] `CreateUser` + `CreateUserHandler` + `CreateUserValidator`
   - Returns `Guid`
-  - Validator: `Email` valid format and unique, `DisplayName` non-empty max 100 chars, `OrganizationId` exists
-- [ ] `UpdateUser` + `UpdateUserHandler` + `UpdateUserValidator`
+  - Validator: `Email` valid format and unique (scoped per organization), `DisplayName` non-empty max 100 chars, `OrganizationId` exists
+- [x] `UpdateUser` + `UpdateUserHandler` + `UpdateUserValidator`
   - Updates `DisplayName`
   - Validator: `DisplayName` non-empty max 100 chars
 
 **Queries**
-- [ ] `GetUserById` + `GetUserByIdHandler` — returns `UserDto`; throws `NotFoundException`
-- [ ] `GetUserTasks` + `GetUserTasksHandler` — tasks assigned to a user; same filter/sort/page params as `GetTasksFiltered`
+- [x] `GetUserById` + `GetUserByIdHandler` — returns `UserDto`; throws `NotFoundException`
+- [x] `GetUserTasks` + `GetUserTasksHandler` — tasks assigned to a user; same filter/sort/page params as `GetTasksFiltered`
 
 **DI registration**
-- [ ] `AddUserHandlers(this IServiceCollection)`
+- [x] `AddUserHandlers(this IServiceCollection)` — wired into `AddApplicationServices()`
+
+**Found during review:** Authentication groundwork was pulled forward from Phase 8 — `IPasswordHasher` (`Hash`/`Verify`) added to `Ordinis.Application/Common/` (implementation still pending in `Ordinis.Infrastructure`); `User` gained `PasswordHash`, `RefreshToken`, `RefreshTokenExpiresAt` fields plus `ChangePasswordHash`/`SetRefreshToken`/`RevokeRefreshToken` domain methods. `CreateUserHandler` hashes the incoming plaintext password via `IPasswordHasher.Hash()` before calling `User.Create(...)` — the domain never sees plaintext. `CreateUserValidator` also validates a `Password` field (min 8 chars), required because `CreateUser` now accepts one. `RefreshToken`/`RefreshTokenExpiresAt` are intentionally excluded from `UserDto` (auth-sensitive, never serialized to API responses). Three commands were added beyond the original plan, mirroring the `SuspendOrganization`/`ReactivateOrganization` pattern from Step 3: `DeactivateUser` + `DeactivateUserHandler` and `ReactivateUser` + `ReactivateUserHandler` (wrap the new `User.Deactivate()`/`Reactivate()` domain methods), and `ChangeUserOrgRole` + `ChangeUserOrgRoleHandler` + `ChangeUserOrgRoleValidator` (separates org-role changes from display-name updates, same granularity precedent as `RenameOrganization`/`UpdateOrganizationDescription` in Step 3). Phase 8 still owns the `IPasswordHasher` implementation, JWT issuance/refresh endpoints, and wiring `[Authorize]`/policies — only the domain/application groundwork has been pulled forward here.
 
 ---
 
@@ -393,7 +395,7 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [x] Add `PagedResult<T>` to `Ordinis.Application/Common/` — wraps list query results with `Items`, `TotalCount`, `Page`, `PageSize`
 - [x] Add `TaskFilter` parameter record to `Tasks/Queries/` — keep query objects slim, separate filter concerns from query dispatch. Pagination/sort fields (`Page`, `PageSize`, `SortBy`, `SortDescending`) live on the filter record itself (`GetTasksFiltered(TaskFilter? Filter)`) — moved off `GetTasksFiltered` during the Step 2 review so `GetProjectTasks`/`GetBoardTasks` could reuse `TaskFilter` unchanged
 - [x] Add `ProjectFilter` parameter record to `Projects/Queries/` — mirrors `TaskFilter`'s shape
-- [ ] Finalize `AddApplicationServices()` — call all per-feature `AddXxxHandlers()` methods (`AddTaskHandlers()` and `AddProjectHandlers()` wired so far; revisit once Steps 3–4 — Organizations, Users — land)
+- [x] Finalize `AddApplicationServices()` — call all per-feature `AddXxxHandlers()` methods (`AddTaskHandlers()`, `AddProjectHandlers()`, `AddOrganizationHandlers()`, and `AddUserHandlers()` all wired — confirmed in `ApplicationServiceExtensions.cs`)
 
 **Git tag:** `v0.4-phase4-app-features`
 
