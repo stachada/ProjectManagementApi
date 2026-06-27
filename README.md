@@ -45,7 +45,7 @@ tests/
 | ORM | EF Core injected directly into handlers (no repository pattern, no unit of work) |
 | Database | SQL Server + PostgreSQL — provider selected via `appsettings.json` |
 | Read queries | Dapper for complex reporting / read queries |
-| Validation | FluentValidation, wired manually into command handlers |
+| Validation | FluentValidation, resolved per-type via `IValidator<T>` and run centrally in the dispatcher |
 | Mapping | Manual (static mapper classes / extension methods) — no AutoMapper |
 | Logging | Serilog with structured logging, correlation IDs, request/response middleware |
 | Auth | JWT + refresh tokens, role-based (Admin, Member, Viewer) + policy-based authorization |
@@ -120,14 +120,16 @@ decisions behind each phase.
 | --- | --- |
 | 1 — Repository & solution setup | ✅ Complete |
 | 2 — Domain layer | ✅ Complete |
-| 3 — Application layer (CQRS) | ⏳ Not started |
-| 4 — Infrastructure layer | ⏳ Not started |
-| 5 — API layer — core REST endpoints | ⏳ Not started |
-| 6 — Advanced REST features | ⏳ Not started |
-| 7 — Security | ⏳ Not started |
-| 8 — Testing & benchmarking | ⏳ Not started |
-| 9 — Developer experience & docs | ⏳ Not started |
-| 10 — Cloud-ready & CI/CD | ⏳ Not started |
+| 3 — Application layer: infrastructure | ✅ Complete |
+| 4 — Application layer: features (Tasks; Projects & Boards done — Organizations, Users, shared infra remain) | 🚧 In progress |
+| 5 — Infrastructure layer | ⏳ Not started |
+| 6 — API layer: core endpoints | ⏳ Not started |
+| 7 — API layer: advanced REST features | ⏳ Not started |
+| 8 — Security | ⏳ Not started |
+| 9 — Testing & benchmarking | ⏳ Not started |
+| 10 — Developer experience & docs | ⏳ Not started |
+| 11 — CI/CD & Docker | ⏳ Not started |
+| 12 — Polish & portfolio hardening | ⏳ Not started |
 
 ## License
 
