@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
+using Ordinis.Application.Organizations;
 using Ordinis.Application.Projects;
 using Ordinis.Application.Tasks;
 
@@ -20,6 +21,9 @@ public static class ApplicationServiceExtensions
         // Dispatcher - scoped so it shares the same DI scope as handlers
         services.AddScoped<IDispatcher, Dispatcher>();
 
+        // Slug generation - singleton; stateless and uses a compiled regex
+        services.AddSingleton<ISlugGenerator, SlugGenerator>();
+
         // Auto-register all validators in this assembly.
         // AssemblyScanner finds every IValidator<T> implementation
         // and registers it with DI.
@@ -34,6 +38,7 @@ public static class ApplicationServiceExtensions
         // Handlers are added here as phase progress:
         services.AddTaskHandlers();
         services.AddProjectHandlers();
+        services.AddOrganizationHandlers();
         //  etc.
 
         return services;

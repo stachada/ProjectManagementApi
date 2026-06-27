@@ -2,7 +2,6 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Ordinis.Application.Common;
 using Ordinis.Domain.Projects;
-using System.Text.RegularExpressions;
 
 namespace Ordinis.Application.Projects.Commands;
 
@@ -29,12 +28,13 @@ public sealed record CreateProject(
 /// </summary>
 public sealed class CreateProjectHandler(
     IAppDbContext db,
-    TimeProvider timeProvider) : ICommandHandler<CreateProject, Guid>
+    TimeProvider timeProvider,
+    ISlugGenerator slugGenerator) : ICommandHandler<CreateProject, Guid>
 {
     public async Task<Guid> HandleAsync(CreateProject command, CancellationToken cancellationToken = default)
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
-        var slug = Slugify(command.Name);
+        var slug = slugGenerator.Slugify(command.Name);
 
         var project = Project.Create(
             organizationId: command.OrganizationId,
@@ -49,17 +49,6 @@ public sealed class CreateProjectHandler(
 
         return project.Id;
     }
-
-    /// <summary>
-    /// Coverts a display name to a URL-friendly slug.
-    /// "Backend API v2" -> "backend-api-v2"
-    /// "My Project!" -> "my-project"
-    /// "  Leading and trailing  " -> "leading-and-trailing"
-    /// </summary>
-    private static string Slugify(string name)
-    => Regex
-        .Replace(name.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "-")
-        .Trim('-');
 }
 
 /// <summary>
@@ -69,7 +58,9 @@ public sealed class CreateProjectHandler(
 /// </summary>
 public sealed class CreateProjectValidator : AbstractValidator<CreateProject>
 {
-    public CreateProjectValidator(IAppDbContext db)
+    public CreateProjectValidator(
+        IAppDbContext db,
+        ISlugGenerator slugGenerator)
     {
         RuleFor(x => x.OrganizationId)
             .NotEmpty()
@@ -84,9 +75,7 @@ public sealed class CreateProjectValidator : AbstractValidator<CreateProject>
             .MaximumLength(100)
             .MustAsync(async (command, name, ct) =>
             {
-                var slug = Regex
-                    .Replace(name.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "-")
-                    .Trim('-');
+                var slug = slugGenerator.Slugify(name);
 
                 return !await db.Projects.AnyAsync(p => p.OrganizationId == command.OrganizationId && p.Slug == slug, ct);
             })
