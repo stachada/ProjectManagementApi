@@ -275,53 +275,61 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 
 ---
 
-### Step 2 — Projects & Boards
+### Step 2 — Projects & Boards ✅
 
 **DTOs**
-- [ ] `ProjectSummaryDto` — list view (id, name, status, member count, task count, created)
-- [ ] `ProjectDto` — detail view (includes `BoardSummaryDto[]`, `ProjectMemberDto[]`)
-- [ ] `ProjectMemberDto` — id, userId, userName, role, joinedAt
-- [ ] `BoardSummaryDto` — id, name, isArchived, taskCount
-- [ ] `BoardDto` — detail view (includes `TaskSummaryDto[]`)
-- [ ] `ProjectMapper` — static extension methods
+- [x] `ProjectSummaryDto` — list view (id, name, status, member count, task count, created)
+- [x] `ProjectDto` — detail view (includes `BoardSummaryDto[]`, `ProjectMemberDto[]`)
+- [x] `ProjectMemberDto` — id, userId, userName, role, joinedAt
+- [x] `BoardSummaryDto` — id, name, isArchived, taskCount
+- [x] `BoardDto` — detail view (includes `TaskSummaryDto[]`)
+- [x] `ProjectMapper` — static extension methods
 
 **Commands**
-- [ ] `CreateProject` + `CreateProjectHandler` + `CreateProjectValidator`
+- [x] `CreateProject` + `CreateProjectHandler` + `CreateProjectValidator`
   - Returns `Guid`
-  - Validator: `OrganizationId` required and exists, `Name` non-empty max 100 chars
-- [ ] `UpdateProject` + `UpdateProjectHandler` + `UpdateProjectValidator`
+  - Slug is auto-generated from `Name` by the handler (not a caller-supplied field)
+  - Validator: `OrganizationId` required and exists, `Name` non-empty max 100 chars, generated slug unique within the organization
+- [x] `UpdateProject` + `UpdateProjectHandler` + `UpdateProjectValidator`
   - Updates `Name`, `Description`
   - Catches concurrency exception → `ConcurrencyException`
-- [ ] `DeleteProject` + `DeleteProjectHandler`
+- [x] `DeleteProject` + `DeleteProjectHandler`
   - Soft delete via `project.SoftDelete(now)`
-- [ ] `AddProjectMember` + `AddProjectMemberHandler` + `AddProjectMemberValidator`
+- [x] `ArchiveProject` + `ArchiveProjectHandler` *(added beyond original plan — wraps the `Project.Archive()` domain method that already existed from Phase 2)*
+- [x] `UnarchiveProject` + `UnarchiveProjectHandler` *(added beyond original plan — counterpart to `ArchiveProject`)*
+- [x] `AddProjectMember` + `AddProjectMemberHandler` + `AddProjectMemberValidator`
   - Calls `project.AddMember(userId, role, now)`
   - Validator: `UserId` exists, `Role` valid enum value, user not already a member
-- [ ] `RemoveProjectMember` + `RemoveProjectMemberHandler`
+- [x] `RemoveProjectMember` + `RemoveProjectMemberHandler`
   - Calls `project.RemoveMember(userId)`
-- [ ] `CreateBoard` + `CreateBoardHandler` + `CreateBoardValidator`
+- [x] `ChangeMemberRole` + `ChangeMemberRoleHandler` + `ChangeMemberRoleValidator` *(added beyond original plan — wraps the `Project.ChangeMemberRole()` domain method that already existed from Phase 2)*
+- [x] `CreateBoard` + `CreateBoardHandler` + `CreateBoardValidator`
   - Creates the board directly via `Board.Create(projectId, name, createdByUserId)` — `Board` is an independent aggregate root
   - Returns `Guid`
   - Validator: `Name` non-empty max 100 chars; project exists and not archived; no duplicate name in project
-- [ ] `ArchiveBoard` + `ArchiveBoardHandler`
+- [x] `ArchiveBoard` + `ArchiveBoardHandler`
   - Loads and archives the board directly via `BoardId` only (`board.Archive()`) — no `ProjectId` needed
-- [ ] `RenameBoard` + `RenameBoardHandler` + `RenameBoardValidator`
+- [x] `RenameBoard` + `RenameBoardHandler` + `RenameBoardValidator`
   - Loads and renames the board directly via `BoardId` only (`board.Rename(name)`)
   - Validator: `Name` non-empty max 100 chars; no duplicate name in project
 
 **Queries**
-- [ ] `GetProjectById` + `GetProjectByIdHandler` — returns `ProjectDto` with boards and members; throws `NotFoundException`
-- [ ] `GetProjectsFiltered` + `GetProjectsFilteredHandler`
-  - Filter: `OrganizationId?`, `MemberId?`
-  - Pagination + sorting
+- [x] `GetProjectById` + `GetProjectByIdHandler` — returns `ProjectDto` with boards and members; throws `NotFoundException`
+  - Per-board task counts resolved via a separate grouped query (`Board` carries no task navigation collection) and passed into `ProjectMapper.ToDto`
+- [x] `GetProjectsFiltered` + `GetProjectsFilteredHandler`
+  - Filter: `OrganizationId?`, `MemberId?`, `IncludeArchived` (via `ProjectFilter`, mirrors the `TaskFilter` shape — pagination/sort fields live on the filter record, not the query)
   - Returns `PagedResult<ProjectSummaryDto>`
-- [ ] `GetProjectTasks` + `GetProjectTasksHandler` — all tasks across all boards in a project; same filter/sort/page params as `GetTasksFiltered`
-- [ ] `GetProjectMembers` + `GetProjectMembersHandler` — returns `ProjectMemberDto[]`
-- [ ] `GetBoardById` + `GetBoardByIdHandler` — returns `BoardDto` with tasks
-- [ ] `GetBoardTasks` + `GetBoardTasksHandler` — tasks for a specific board; same filter/sort/page params
+- [x] `GetProjectTasks` + `GetProjectTasksHandler` — all tasks across all boards in a project; reuses `TaskFilter` scoped via `task.Board.ProjectId`
+- [x] `GetProjectMembers` + `GetProjectMembersHandler` — returns `ProjectMemberDto[]`
+- [x] `GetBoardById` + `GetBoardByIdHandler` — returns `BoardDto` with capped embedded tasks
+- [x] `GetBoardTasks` + `GetBoardTasksHandler` — tasks for a specific board; reuses `TaskFilter`
 
 **DI registration**
-- [ ] `AddProjectHandlers(this IServiceCollection)`
+- [x] `AddProjectHandlers(this IServiceCollection)` — wired into `AddApplicationServices()`
+
+**Found during review:** `GetTasksFiltered`'s `Page`/`PageSize`/`SortBy`/`SortDescending` were moved from the query record onto `TaskFilter` itself (matching the new `ProjectFilter` shape), so `GetProjectTasks`/`GetBoardTasks` could reuse `TaskFilter` without duplicating pagination params. Also fixed a bug found during this review where `ProjectMapper.ToDto`'s embedded boards always reported `TaskCount = 0` (the dead no-arg `Board.ToSummaryDto()` overload hardcoded it, and has been removed) — `GetProjectByIdHandler` now resolves real per-board counts via a grouped query.
+
+**Removed `Project.Boards` navigation collection** (domain model fix, found during this review): `Project` held a live `List<Board> _boards` / `Boards` navigation even though `Board` is documented as an independent aggregate root reached everywhere else via `db.Boards` directly (`CreateBoardValidator`, `ArchiveBoardHandler`, `RenameBoardHandler`, `GetBoardById`, `GetBoardTasks`). Holding a sibling aggregate root as a live object-graph navigation violates the rule that aggregates reference each other by ID only — `Project.Members` is the correct pattern (`ProjectMember` is genuinely owned), `Project.Boards` was not. Removed the field/property from `Project`; `GetProjectByIdHandler` and `GetProjectsFilteredHandler` now query `db.Boards` directly by `ProjectId` instead. The same anti-pattern was found on `User.ProjectMemberships` (a dead, zero-caller navigation into `Project`'s owned `ProjectMember` collection) and removed too. Both are now documented as a standing convention in `CLAUDE.md`'s "Key design decisions" table ("Aggregate references").
 
 ---
 
@@ -375,9 +383,9 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 
 - [x] Add `NotFoundException` to `Ordinis.Application/Common/` — thrown by query handlers; global middleware maps to `404 Not Found` with Problem Details
 - [x] Add `PagedResult<T>` to `Ordinis.Application/Common/` — wraps list query results with `Items`, `TotalCount`, `Page`, `PageSize`
-- [x] Add `TaskFilter` parameter record to `Tasks/Queries/` — keep query objects slim, separate filter concerns from query dispatch (`GetTasksFiltered(TaskFilter? Filter, ...)`)
-- [ ] Add `ProjectFilter` parameter record to `Projects/Queries/` (Step 2 — not started)
-- [ ] Finalize `AddApplicationServices()` — call all per-feature `AddXxxHandlers()` methods (only `AddTaskHandlers()` wired so far; revisit once Steps 2–4 land)
+- [x] Add `TaskFilter` parameter record to `Tasks/Queries/` — keep query objects slim, separate filter concerns from query dispatch. Pagination/sort fields (`Page`, `PageSize`, `SortBy`, `SortDescending`) live on the filter record itself (`GetTasksFiltered(TaskFilter? Filter)`) — moved off `GetTasksFiltered` during the Step 2 review so `GetProjectTasks`/`GetBoardTasks` could reuse `TaskFilter` unchanged
+- [x] Add `ProjectFilter` parameter record to `Projects/Queries/` — mirrors `TaskFilter`'s shape
+- [ ] Finalize `AddApplicationServices()` — call all per-feature `AddXxxHandlers()` methods (`AddTaskHandlers()` and `AddProjectHandlers()` wired so far; revisit once Steps 3–4 — Organizations, Users — land)
 
 **Git tag:** `v0.4-phase4-app-features`
 
