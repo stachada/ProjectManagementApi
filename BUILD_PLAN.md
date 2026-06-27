@@ -611,14 +611,160 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 
 ### Unit tests (Ordinis.UnitTests)
 - [x] Domain logic — aggregate invariants, state machine, value object equality (done in Phase 2 session)
-- [ ] FluentValidation validators — test each validator in isolation; use `TestValidate()` from FluentValidation.TestHelper
-- [ ] Command handler logic — use `FakeTimeProvider` from `Microsoft.Extensions.TimeProvider.Testing`; mock `AppDbContext` via in-memory provider or test doubles
-  - **Started:** `AddAttachmentHandler`/`RemoveAttachmentHandler` covered (#22) using a hand-rolled
-    `FakeTimeProvider` and a minimal EF Core InMemory-backed `TestAppDbContext` test double instead
-    of the `Microsoft.Extensions.TimeProvider.Testing` package — avoided pulling in an extra package
-    for two handlers; revisit if broader handler coverage justifies it. Remaining handlers (other
-    Tasks commands, Projects, Organizations, Users) still need tests, so the checkbox stays open.
-- [ ] `Dispatcher` — verify validation pipeline fires before handler; verify `ValidationException` is thrown on failure
+
+#### Part 1 — Test infrastructure + Task validator tests
+> Establishes shared test infrastructure reused by all subsequent parts.
+
+**Shared infrastructure (build first)**
+- [ ] `TestDbContextFactory` — creates a fresh EF Core InMemory `AppDbContext` per test; each test gets an isolated database name (`Guid.NewGuid().ToString()`) to prevent state leakage between tests
+- [ ] `DomainFactory` — static helper methods that create and seed realistic domain objects via their real aggregate factories (`Organization.Create(...)`, `Project.Create(...)`, `Board.Create(...)`, `User.Create(...)`, `ProjectTask.Create(...)`); used by both validator and handler tests to avoid repeating seeding boilerplate
+
+**Task validators** (each tested in isolation via `FluentValidation.TestHelper`; `MustAsync` checks seeded via `TestDbContextFactory`)
+- [ ] `CreateTaskValidator` — `BoardId` required and exists (not archived); `Title` non-empty max 200 chars; `Priority` valid enum value
+- [ ] `UpdateTaskValidator` — `Title` non-empty max 200 chars; `Priority` valid enum value
+- [ ] `MoveTaskValidator` — `NewStatus` is a valid `ProjectTaskStatus` enum value
+- [ ] `AssignTaskValidator` — `AssigneeId` required; user exists and is a project member
+- [ ] `AddCommentValidator` — `Content` non-empty, max 10 000 chars
+- [ ] `EditCommentValidator` — `Content` non-empty, max 10 000 chars; requesting user is the comment author
+- [ ] `AddAttachmentValidator` — `FileName` non-empty; `SizeInBytes` > 0; `ContentType` non-empty
+
+**Git tag (after Part 1):** `v0.9-part1-task-validators`
+
+---
+
+#### Part 2 — Project, Board, Organization, and User validator tests
+> Reuses all infrastructure from Part 1. Mechanical — follows the same shape.
+
+**Project & Board validators**
+- [ ] `CreateProjectValidator` — `OrganizationId` required and exists; `Name` non-empty max 100 chars; generated slug unique within the organization
+- [ ] `AddProjectMemberValidator` — `UserId` exists; `Role` valid enum value; user not already a member
+- [ ] `ChangeMemberRoleValidator` — `Role` valid enum value
+- [ ] `CreateBoardValidator` — `Name` non-empty max 100 chars; project exists and is not archived; no duplicate board name within the project
+- [ ] `RenameBoardValidator` — `Name` non-empty max 100 chars; no duplicate board name within the project
+
+**Organization validators**
+- [ ] `CreateOrganizationValidator` — `Name` non-empty max 100 chars; generated slug globally unique
+- [ ] `RenameOrganizationValidator` — `Name` non-empty max 100 chars
+- [ ] `UpdateOrganizationDescriptionValidator` — `Description` max length (if constrained)
+
+**User validators**
+- [ ] `CreateUserValidator` — `Email` valid format and unique within the organization; `DisplayName` non-empty max 100 chars; `OrganizationId` exists; `Password` min 8 chars
+- [ ] `UpdateUserValidator` — `DisplayName` non-empty max 100 chars
+- [ ] `ChangeUserOrgRoleValidator` — `Role` valid enum value
+
+**Git tag (after Part 2):** `v0.9-part2-remaining-validators`
+
+---
+
+#### Part 3 — Mapper tests
+> Pure function tests — no EF Core, no DI, no async. No shared infrastructure needed.
+
+**TaskMapper**
+- [ ] `ToSummaryDto` — all fields map correctly; null `AssigneeId` maps to null `AssigneeName`; no nested collections
+- [ ] `ToDto` — embedded `CommentDto` list maps correctly; `IsEdited` flag derived from `Comment.IsEdited`; embedded `AttachmentDto` list maps correctly; `userLookup` resolves assignee and comment author display names; missing user ID in lookup maps gracefully
+
+**ProjectMapper**
+- [ ] `ToSummaryDto` — all fields map correctly; `boardCount` and `memberCount` parameters flow through
+- [ ] `ToDto` — embedded `BoardSummaryDto[]` maps correctly with per-board `taskCount`; embedded `ProjectMemberDto[]` maps correctly; truncation flags set correctly when board/member counts exceed cap
+
+**OrganizationMapper**
+- [ ] `ToDto` — all fields map correctly; `projectCount` parameter flows through; `IsActive` and `Description` included
+
+**UserMapper**
+- [ ] `ToDto` — all fields map correctly; `OrganizationName` parameter flows through; auth-sensitive fields (`RefreshToken`, `RefreshTokenExpiresAt`, `PasswordHash`) are absent from the DTO
+
+**Git tag (after Part 3):** `v0.9-part3-mappers`
+
+---
+
+#### Part 4 — Task handler tests
+> Follows the `AddAttachmentHandler` / `RemoveAttachmentHandler` pattern already established. Reuses `TestDbContextFactory` and `DomainFactory` from Part 1.
+
+**Command handlers**
+- [x] `AddAttachmentHandler` — attachment stored via `IFileStorageService`; `AttachmentAdded` domain event raised; attachment ID returned (done)
+- [x] `RemoveAttachmentHandler` — attachment removed from task; `AttachmentRemoved` domain event raised; `IFileStorageService.DeleteAsync` called after DB save (done)
+- [ ] `CreateTaskHandler` — task created with correct fields; `TaskCreated` domain event raised; new task ID returned
+- [ ] `UpdateTaskHandler` — `Title`, `Description`, `Priority`, `DueDate` updated; `DbUpdateConcurrencyException` caught and translated to `ConcurrencyException`
+- [ ] `DeleteTaskHandler` — soft delete applied (`IsDeleted = true`, `DeletedAt` set); task no longer returned by default EF queries
+- [ ] `MoveTaskHandler` — status transition applied; `TaskMoved` domain event raised with correct previous and new status
+- [ ] `AssignTaskHandler` — `AssigneeId` set; `TaskAssigned` domain event raised
+- [ ] `UnassignTaskHandler` — `AssigneeId` cleared; `TaskUnassigned` domain event raised
+- [ ] `AddCommentHandler` — comment added to task; `CommentAdded` domain event raised; new comment ID returned
+- [ ] `EditCommentHandler` — `Content` updated; `IsEdited` set to `true`
+- [ ] `RemoveCommentHandler` — comment soft deleted; `CommentRemoved` domain event raised
+
+**Query handlers**
+- [ ] `GetTaskByIdHandler` — returns correct `TaskDto` with embedded comments and attachments; throws `NotFoundException` when task does not exist or is soft deleted
+- [ ] `GetTasksFilteredHandler` — returns correct page of `TaskSummaryDto`; each filter param (`BoardId`, `AssigneeId`, `Status`, `Priority`, `DueBefore`, `DueAfter`) applied correctly in isolation; `TotalCount` matches pre-pagination count; sort ascending and descending; `PageSize` cap enforced
+
+**Git tag (after Part 4):** `v0.9-part4-task-handlers`
+
+---
+
+#### Part 5 — Project and Board handler tests
+> Same pattern as Part 4.
+
+**Project command handlers**
+- [ ] `CreateProjectHandler` — project created; slug auto-generated from name via `ISlugGenerator`; new project ID returned
+- [ ] `UpdateProjectHandler` — `Name` and `Description` updated; `DbUpdateConcurrencyException` translated to `ConcurrencyException`
+- [ ] `DeleteProjectHandler` — soft delete applied
+- [ ] `ArchiveProjectHandler` — project archived; `IsArchived = true`
+- [ ] `UnarchiveProjectHandler` — project unarchived; `IsArchived = false`
+- [ ] `AddProjectMemberHandler` — member added to project with correct role and `JoinedAt`
+- [ ] `RemoveProjectMemberHandler` — member removed from project
+- [ ] `ChangeMemberRoleHandler` — member role updated
+
+**Board command handlers**
+- [ ] `CreateBoardHandler` — board created directly as independent aggregate root; new board ID returned
+- [ ] `ArchiveBoardHandler` — board archived; `IsArchived = true`
+- [ ] `RenameBoardHandler` — board name updated
+
+**Project query handlers**
+- [ ] `GetProjectByIdHandler` — returns correct `ProjectDto` with embedded boards and members; per-board task counts resolved correctly via grouped query; throws `NotFoundException` when not found
+- [ ] `GetProjectsFilteredHandler` — `OrganizationId` filter; `MemberId` filter; `IncludeArchived` flag; pagination and sort
+- [ ] `GetProjectTasksHandler` — returns paged tasks scoped to all boards in the project
+- [ ] `GetProjectMembersHandler` — returns all members for the project
+
+**Board query handlers**
+- [ ] `GetBoardByIdHandler` — returns correct `BoardDto` with embedded tasks (capped); throws `NotFoundException` when not found
+- [ ] `GetBoardTasksHandler` — returns paged tasks scoped to the board; filter and sort applied
+
+**Git tag (after Part 5):** `v0.9-part5-project-board-handlers`
+
+---
+
+#### Part 6 — Organization and User handler tests + Dispatcher tests
+
+**Organization command handlers**
+- [ ] `CreateOrganizationHandler` — organization created; slug auto-generated and globally unique; new organization ID returned
+- [ ] `RenameOrganizationHandler` — `Name` updated; `DbUpdateConcurrencyException` translated to `ConcurrencyException`
+- [ ] `UpdateOrganizationDescriptionHandler` — `Description` updated; clears when `null`; concurrency exception translated
+- [ ] `SuspendOrganizationHandler` — organization suspended; `IsActive = false`
+- [ ] `ReactivateOrganizationHandler` — organization reactivated; `IsActive = true`
+
+**Organization query handlers**
+- [ ] `GetOrganizationByIdHandler` — returns correct `OrganizationDto`; `projectCount` resolved via separate scalar query; throws `NotFoundException` when not found
+- [ ] `GetOrganizationProjectsHandler` — returns paged `ProjectSummaryDto`; `IncludeArchived` flag; `MemberId` filter; throws `NotFoundException` when organization not found
+
+**User command handlers**
+- [ ] `CreateUserHandler` — plaintext password hashed via `IPasswordHasher` before `User.Create()`; domain never receives plaintext; new user ID returned
+- [ ] `UpdateUserHandler` — `DisplayName` updated
+- [ ] `DeactivateUserHandler` — user deactivated; `IsActive = false`
+- [ ] `ReactivateUserHandler` — user reactivated; `IsActive = true`
+- [ ] `ChangeUserOrgRoleHandler` — org role updated
+
+**User query handlers**
+- [ ] `GetUserByIdHandler` — returns correct `UserDto`; auth-sensitive fields absent; throws `NotFoundException` when not found
+- [ ] `GetUserTasksHandler` — returns paged tasks assigned to the user; filter and sort applied
+
+**Dispatcher**
+- [ ] Valid command with passing validator reaches handler and returns result
+- [ ] Invalid command fires `IValidator<T>` before handler; handler is never invoked; `ValidationException` thrown with correct field-level errors
+- [ ] Valid command with no registered validator reaches handler directly (no validation skip error)
+- [ ] Query bypasses the validation pipeline entirely regardless of whether a validator is registered
+- [ ] Command with no registered handler throws `InvalidOperationException`
+
+**Git tag (after Part 6):** `v0.9-part6-org-user-handlers-dispatcher`
 
 ### Integration tests (Ordinis.IntegrationTests)
 - [ ] `WebApplicationFactory<Program>` setup with test `appsettings.json` pointing to SQLite or a real test DB
