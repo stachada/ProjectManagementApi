@@ -18,16 +18,16 @@ public class RemoveAttachmentHandlerTests
     [Fact]
     public async Task HandleAsync_ExistingAttachment_RemovesFromDbAndDeletesFromStorageAfterSave()
     {
-        using TestAppDbContext db = TestAppDbContext.CreateInMemory();
+        using TestAppDbContext db = TestDbContextFactory.Create();
         ProjectTask task = TaskBuilder.Create(now: Now);
         Attachment attachment = task.AddAttachment(
-            "report.pdf", "application/pdf", 12_345, "https://storage.test/files/report.pdf", Guid.NewGuid(), Now);
+            "report.pdf", "application/pdf", 12_345, "https://storage.test/files/report.pdf", Guid.CreateVersion7(), Now);
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
 
         var fileStorage = new FakeFileStorageService();
         var handler = new RemoveAttachmentHandler(db, fileStorage, new FakeTimeProvider(Now));
-        var removerId = Guid.NewGuid();
+        var removerId = Guid.CreateVersion7();
 
         await handler.HandleAsync(
             new RemoveAttachment(task.Id, attachment.Id, removerId),
@@ -44,13 +44,13 @@ public class RemoveAttachmentHandlerTests
     [Fact]
     public async Task HandleAsync_UnknownTaskId_ThrowsNotFoundExceptionAndDoesNotDelete()
     {
-        using TestAppDbContext db = TestAppDbContext.CreateInMemory();
+        using TestAppDbContext db = TestDbContextFactory.Create();
         var fileStorage = new FakeFileStorageService();
         var handler = new RemoveAttachmentHandler(db, fileStorage, new FakeTimeProvider(Now));
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.HandleAsync(
-                new RemoveAttachment(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()),
+                new RemoveAttachment(Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7()),
                 CancellationToken.None));
 
         Assert.Null(fileStorage.DeletedDownloadUrl);
@@ -59,7 +59,7 @@ public class RemoveAttachmentHandlerTests
     [Fact]
     public async Task HandleAsync_UnknownAttachmentId_ThrowsNotFoundExceptionAndDoesNotDelete()
     {
-        using TestAppDbContext db = TestAppDbContext.CreateInMemory();
+        using TestAppDbContext db = TestDbContextFactory.Create();
         ProjectTask task = TaskBuilder.Create(now: Now);
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
@@ -69,7 +69,7 @@ public class RemoveAttachmentHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.HandleAsync(
-                new RemoveAttachment(task.Id, Guid.NewGuid(), Guid.NewGuid()),
+                new RemoveAttachment(task.Id, Guid.CreateVersion7(), Guid.CreateVersion7()),
                 CancellationToken.None));
 
         Assert.Null(fileStorage.DeletedDownloadUrl);

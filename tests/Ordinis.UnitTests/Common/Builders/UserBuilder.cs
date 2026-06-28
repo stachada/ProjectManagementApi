@@ -14,7 +14,7 @@ internal static class UserBuilder
         string passwordHash = "hashed-password",
         Role orgRole = Role.Member) =>
         User.Create(
-            organizationId ?? Guid.NewGuid(),
+            organizationId ?? Guid.CreateVersion7(),
             displayName,
             email,
             passwordHash,

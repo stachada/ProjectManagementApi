@@ -12,7 +12,7 @@ internal static class BoardBuilder
         string name = "Test Board",
         Guid? createdByUserId = null) =>
         Board.Create(
-            projectId ?? Guid.NewGuid(),
+            projectId ?? Guid.CreateVersion7(),
             name,
-            createdByUserId ?? Guid.NewGuid());
+            createdByUserId ?? Guid.CreateVersion7());
 }

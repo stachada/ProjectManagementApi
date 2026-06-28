@@ -192,7 +192,7 @@ public class ProjectTaskTests
     {
         ProjectTask task = TaskBuilder.Create(now: Now);
         var assignedId = Guid.CreateVersion7();
-        var assignedBy = Guid.NewGuid();
+        var assignedBy = Guid.CreateVersion7();
 
         task.Assign(assignedId, assignedBy, Now);
 
@@ -268,11 +268,11 @@ public class ProjectTaskTests
     public void RemoveComment_ExistingComment_SoftDeletesItAndRaisesEvent()
     {
         ProjectTask task = TaskBuilder.Create(now: Now);
-        var authorId = Guid.NewGuid();
+        var authorId = Guid.CreateVersion7();
         task.AddComment("Original.", authorId, Now);
         Comment comment = task.Comments.Single();
 
-        task.RemoveComment(comment.Id, Guid.NewGuid(), Now);
+        task.RemoveComment(comment.Id, Guid.CreateVersion7(), Now);
 
         Assert.True(comment.IsDeleted);
         CommentRemoved evt = Assert.Single(task.DomainEvents.OfType<CommentRemoved>());
@@ -296,7 +296,7 @@ public class ProjectTaskTests
     public void AddAttachment_ActiveTask_AddsAttachmentAndRaisesEvent()
     {
         ProjectTask task = TaskBuilder.Create(now: Now);
-        var uploaderId = Guid.NewGuid();
+        var uploaderId = Guid.CreateVersion7();
 
         task.AddAttachment("report.pdf", "application/pdf", 12_345, "blobs/report.pdf", uploaderId, Now);
 
@@ -313,7 +313,7 @@ public class ProjectTaskTests
         task.SoftDelete(Now);
 
         DomainException ex = Assert.Throws<DomainException>(() =>
-            task.AddAttachment("x.pdf", "application/pdf", 1, "url", Guid.NewGuid(), Now));
+            task.AddAttachment("x.pdf", "application/pdf", 1, "url", Guid.CreateVersion7(), Now));
 
         Assert.Equal("task.deleted", ex.ErrorCode);
     }
@@ -322,10 +322,10 @@ public class ProjectTaskTests
     public void RemoveAttachment_ExistingAttachment_RemovesItAndRaisesEvent()
     {
         ProjectTask task = TaskBuilder.Create(now: Now);
-        var uploaderId = Guid.NewGuid();
+        var uploaderId = Guid.CreateVersion7();
         task.AddAttachment("report.pdf", "application/pdf", 1, "blobs/x", uploaderId, Now);
         Attachment attachment = task.Attachments.Single();
-        var removerId = Guid.NewGuid();
+        var removerId = Guid.CreateVersion7();
 
         task.RemoveAttachment(attachment.Id, removerId, Now);
 
