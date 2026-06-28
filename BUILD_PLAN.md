@@ -616,17 +616,17 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 > Establishes shared test infrastructure reused by all subsequent parts.
 
 **Shared infrastructure (build first)**
-- [ ] `TestDbContextFactory` — creates a fresh EF Core InMemory `AppDbContext` per test; each test gets an isolated database name (`Guid.NewGuid().ToString()`) to prevent state leakage between tests
-- [ ] `DomainFactory` — static helper methods that create and seed realistic domain objects via their real aggregate factories (`Organization.Create(...)`, `Project.Create(...)`, `Board.Create(...)`, `User.Create(...)`, `ProjectTask.Create(...)`); used by both validator and handler tests to avoid repeating seeding boilerplate
+- [x] `TestDbContextFactory` — creates a fresh EF Core InMemory `AppDbContext` per test; each test gets an isolated database name (`Guid.NewGuid().ToString()`) to prevent state leakage between tests (done — `tests/Ordinis.UnitTests/Common/TestDbContextFactory.cs`; factory construction split out of the `TestAppDbContext` double itself, and the existing `AddAttachmentHandler`/`RemoveAttachmentHandler` tests switched over from the old `TestAppDbContext.CreateInMemory()` static method)
+- [x] `DomainFactory` — static helper methods that create and seed realistic domain objects via their real aggregate factories (`Organization.Create(...)`, `Project.Create(...)`, `Board.Create(...)`, `User.Create(...)`, `ProjectTask.Create(...)`); used by both validator and handler tests to avoid repeating seeding boilerplate (done — kept the existing per-entity `Common/Builders/*Builder` classes, already established for `Task`/`Board`/`Comment`/`Project`/`User`, rather than introducing a single combined class; added the missing `OrganizationBuilder` to complete the set)
 
 **Task validators** (each tested in isolation via `FluentValidation.TestHelper`; `MustAsync` checks seeded via `TestDbContextFactory`)
-- [ ] `CreateTaskValidator` — `BoardId` required and exists (not archived); `Title` non-empty max 200 chars; `Priority` valid enum value
-- [ ] `UpdateTaskValidator` — `Title` non-empty max 200 chars; `Priority` valid enum value
-- [ ] `MoveTaskValidator` — `NewStatus` is a valid `ProjectTaskStatus` enum value
-- [ ] `AssignTaskValidator` — `AssigneeId` required; user exists and is a project member
-- [ ] `AddCommentValidator` — `Content` non-empty, max 10 000 chars
-- [ ] `EditCommentValidator` — `Content` non-empty, max 10 000 chars; requesting user is the comment author
-- [ ] `AddAttachmentValidator` — `FileName` non-empty; `SizeInBytes` > 0; `ContentType` non-empty
+- [x] `CreateTaskValidator` — `BoardId` required and exists (not archived); `Title` non-empty max 200 chars; `Priority` valid enum value (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/CreateTaskValidatorTests.cs`, using `FluentValidation.TestHelper`'s `TestValidateAsync` since the `BoardId`/`AssigneeId` rules are async `MustAsync` checks against the database; also covers the `AssigneeId` and `RequestedByUserId` rules)
+- [x] `UpdateTaskValidator` — `Title` non-empty max 200 chars; `Priority` valid enum value (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/UpdateTaskValidatorTests.cs`; also covers `TaskId`/`RequestedByUserId` and a valid-command no-errors baseline)
+- [x] `MoveTaskValidator` — `NewStatus` is a valid `ProjectTaskStatus` enum value (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/MoveTaskValidatorTests.cs`; also covers `TaskId`)
+- [x] `AssignTaskValidator` — `AssigneeId` required; user exists and is a project member (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/AssignTaskValidatorTests.cs`; the validator itself only checks user existence — project-membership is deliberately deferred to the authorization layer per its own remarks, so the tests don't cover that; also covers `TaskId`/`RequestedByUserId`)
+- [x] `AddCommentValidator` — `Content` non-empty, max 10 000 chars (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/AddCommentValidatorTests.cs`; also covers `TaskId` and the 10,000-char boundary; no `AuthorId` rule exists in the validator, so none is tested)
+- [x] `EditCommentValidator` — `Content` non-empty, max 10 000 chars; requesting user is the comment author (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/EditCommentValidatorTests.cs`; also covers `TaskId`/`CommentId`/`RequestedByUserId` and the 10,000-char boundary)
+- [x] `AddAttachmentValidator` — `FileName` non-empty; `SizeInBytes` > 0; `ContentType` non-empty (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/AddAttachmentValidatorTests.cs`; also covers `TaskId`/`FileStream`/`UploadedByUserId` and the `FileName`/`ContentType` length boundaries)
 
 **Git tag (after Part 1):** `v0.9-part1-task-validators`
 
