@@ -1,6 +1,6 @@
 using Ordinis.Domain.Projects;
 
-namespace Ordinis.UnitTests.Common;
+namespace Ordinis.UnitTests.Common.Builders;
 
 /// <summary>
 /// Creates valid <see cref="Project"/> instances for unit tests.
@@ -18,8 +18,8 @@ internal static class ProjectBuilder
         string? description = null,
         DateTimeOffset? now = null) =>
         Project.Create(
-            organizationId ?? Guid.NewGuid(),
-            createdByUserId ?? Guid.NewGuid(),
+            organizationId ?? Guid.CreateVersion7(),
+            createdByUserId ?? Guid.CreateVersion7(),
             name,
             slug,
             now ?? DefaultNow,

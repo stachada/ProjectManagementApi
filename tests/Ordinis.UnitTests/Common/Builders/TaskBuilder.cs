@@ -22,8 +22,8 @@ internal static class TaskBuilder
         DateTimeOffset? dueDate = null,
         DateTimeOffset? now = null) =>
         ProjectTask.Create(
-            boardId ?? Guid.NewGuid(),
-            reporterId ?? Guid.NewGuid(),
+            boardId ?? Guid.CreateVersion7(),
+            reporterId ?? Guid.CreateVersion7(),
             title,
             now ?? DefaultNow,
             priority,

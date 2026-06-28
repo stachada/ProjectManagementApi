@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Ordinis.Application.Common;
 using Ordinis.Domain.Organizations;
 using Ordinis.Domain.Projects;
@@ -31,19 +32,6 @@ internal sealed class TestAppDbContext(DbContextOptions<TestAppDbContext> option
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
 
     /// <summary>
-    /// Creates a fresh instance backed by a uniquely-named InMemory database, isolated from
-    /// every other test.
-    /// </summary>
-    public static TestAppDbContext CreateInMemory()
-    {
-        DbContextOptions<TestAppDbContext> options = new DbContextOptionsBuilder<TestAppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new TestAppDbContext(options);
-    }
-
-    /// <summary>
     /// Every aggregate/entity in this domain generates its <c>Id</c> client-side
     /// (<c>Guid.CreateVersion7()</c>) rather than relying on the database. Without this,
     /// EF Core's default convention marks Guid keys <c>ValueGenerated.OnAdd</c>, and an entity
@@ -55,7 +43,7 @@ internal sealed class TestAppDbContext(DbContextOptions<TestAppDbContext> option
     /// </summary>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        foreach (IMutableEntityType entityType in modelBuilder.Model.GetEntityTypes())
         {
             if (entityType.FindProperty("Id") is not null)
             {

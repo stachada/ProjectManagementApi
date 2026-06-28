@@ -12,7 +12,7 @@ internal static class CommentBuilder
         Guid? authorId = null,
         string content = "Test comment") =>
         Comment.Create(
-            taskId ?? Guid.NewGuid(),
-            authorId ?? Guid.NewGuid(),
+            taskId ?? Guid.CreateVersion7(),
+            authorId ?? Guid.CreateVersion7(),
             content);
 }

@@ -18,7 +18,7 @@ public class AddAttachmentHandlerTests
     [Fact]
     public async Task HandleAsync_ValidCommand_UploadsFileAndPersistsAttachmentWithReturnedUrl()
     {
-        using TestAppDbContext db = TestAppDbContext.CreateInMemory();
+        using TestAppDbContext db = TestDbContextFactory.Create();
         ProjectTask task = TaskBuilder.Create(now: Now);
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
@@ -28,7 +28,7 @@ public class AddAttachmentHandlerTests
             DownloadUrlToReturn = "https://storage.test/files/report.pdf"
         };
         var handler = new AddAttachmentHandler(db, fileStorage, new FakeTimeProvider(Now));
-        var uploaderId = Guid.NewGuid();
+        var uploaderId = Guid.CreateVersion7();
 
         using var content = new MemoryStream();
         Guid attachmentId = await handler.HandleAsync(
@@ -49,14 +49,14 @@ public class AddAttachmentHandlerTests
     [Fact]
     public async Task HandleAsync_UnknownTaskId_ThrowsNotFoundExceptionAndDoesNotUpload()
     {
-        using TestAppDbContext db = TestAppDbContext.CreateInMemory();
+        using TestAppDbContext db = TestDbContextFactory.Create();
         var fileStorage = new FakeFileStorageService();
         var handler = new AddAttachmentHandler(db, fileStorage, new FakeTimeProvider(Now));
 
         using var content = new MemoryStream();
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.HandleAsync(
-                new AddAttachment(Guid.NewGuid(), "x.pdf", "application/pdf", 1, content, Guid.NewGuid()),
+                new AddAttachment(Guid.CreateVersion7(), "x.pdf", "application/pdf", 1, content, Guid.CreateVersion7()),
                 CancellationToken.None));
 
         Assert.Null(fileStorage.UploadedFileName);

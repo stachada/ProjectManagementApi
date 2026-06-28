@@ -1,7 +1,7 @@
 using Ordinis.Domain.Common;
 using Ordinis.Domain.Projects;
 using Ordinis.Domain.Users;
-using Ordinis.UnitTests.Common;
+using Ordinis.UnitTests.Common.Builders;
 
 namespace Ordinis.UnitTests.Projects;
 
