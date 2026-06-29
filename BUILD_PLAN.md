@@ -636,21 +636,21 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 > Reuses all infrastructure from Part 1. Mechanical — follows the same shape.
 
 **Project & Board validators**
-- [ ] `CreateProjectValidator` — `OrganizationId` required and exists; `Name` non-empty max 100 chars; generated slug unique within the organization
-- [ ] `AddProjectMemberValidator` — `UserId` exists; `Role` valid enum value; user not already a member
-- [ ] `ChangeMemberRoleValidator` — `Role` valid enum value
-- [ ] `CreateBoardValidator` — `Name` non-empty max 100 chars; project exists and is not archived; no duplicate board name within the project
-- [ ] `RenameBoardValidator` — `Name` non-empty max 100 chars; no duplicate board name within the project
+- [x] `CreateProjectValidator` — `OrganizationId` required and exists; `Name` non-empty max 100 chars; generated slug unique within the organization (done — `tests/Ordinis.UnitTests/Application/Projects/Validators/CreateProjectValidatorTests.cs`; also covers `CreatedByUserId` and `Description` max length 1000; fixed a bug found while testing — the `Name` rule lacked `Cascade(CascadeMode.Stop)`, so an empty `Name` let the slug-uniqueness `MustAsync` run anyway and throw inside `SlugGenerator.Slugify` instead of failing validation cleanly)
+- [x] `AddProjectMemberValidator` — `UserId` exists; `Role` valid enum value; user not already a member (done — `tests/Ordinis.UnitTests/Application/Projects/Validators/AddProjectMemberValidatorTests.cs`; also covers `ProjectId`; fixed a gap found while testing — the validator had no rule for `Role` at all, so an out-of-range value passed silently; added `RuleFor(x => x.Role).IsInEnum()`, matching `ChangeMemberRoleValidator`)
+- [x] `ChangeMemberRoleValidator` — `Role` valid enum value (done — `tests/Ordinis.UnitTests/Application/Projects/Validators/ChangeMemberRoleValidatorTests.cs`; also covers `ProjectId`/`UserId`; purely synchronous, no DB state needed; the unused `IAppDbContext db` constructor parameter flagged earlier has since been removed)
+- [x] `CreateBoardValidator` — `Name` non-empty max 100 chars; project exists and is not archived; no duplicate board name within the project (done — `tests/Ordinis.UnitTests/Application/Projects/Validators/CreateBoardValidatorTests.cs`; also covers `ProjectId`/`CreatedByUserId` and case-insensitive duplicate-name scoping per project; no bugs found)
+- [x] `RenameBoardValidator` — `Name` non-empty max 100 chars; no duplicate board name within the project (done — `tests/Ordinis.UnitTests/Application/Projects/Validators/RenameBoardValidatorTests.cs`; also covers `BoardId`, renaming to its own current name, and case-insensitive duplicate scoping per project; fixed a latent bug found while testing — the board-lookup `Select(b => b.ProjectId)` projected a non-nullable `Guid`, so `SingleOrDefaultAsync` returned `Guid.Empty` instead of `null` when the board didn't exist, leaving the intended `if (projectId is null)` branch dead; cast to `(Guid?)` in the `Select` so it behaves as written)
 
 **Organization validators**
-- [ ] `CreateOrganizationValidator` — `Name` non-empty max 100 chars; generated slug globally unique
-- [ ] `RenameOrganizationValidator` — `Name` non-empty max 100 chars
-- [ ] `UpdateOrganizationDescriptionValidator` — `Description` max length (if constrained)
+- [x] `CreateOrganizationValidator` — `Name` non-empty max 100 chars; generated slug globally unique (done — `tests/Ordinis.UnitTests/Application/Organizations/Validators/CreateOrganizationValidatorTests.cs`; also covers `Description` max length 1000; fixed the same `Cascade(CascadeMode.Stop)` gap as `CreateProjectValidator` — an empty `Name` let the slug-uniqueness `MustAsync` run anyway and throw inside `SlugGenerator.Slugify`. Audited all 19 validators in `Ordinis.Application` for the same pattern — `Slugify` is the only throwing call reached from a validator's `MustAsync`/`Must`, and it only appears in these two validators, so no other instances exist)
+- [x] `RenameOrganizationValidator` — `Name` non-empty max 100 chars (done — `tests/Ordinis.UnitTests/Application/Organizations/Validators/RenameOrganizationValidatorTests.cs`; also covers `OrganizationId`; purely synchronous, no DB state needed; no bugs found)
+- [x] `UpdateOrganizationDescriptionValidator` — `Description` max length (if constrained) (done — `tests/Ordinis.UnitTests/Application/Organizations/Validators/UpdateOrganizationDescriptionValidatorTests.cs`; also covers `OrganizationId`; purely synchronous, no DB state needed; no bugs found)
 
 **User validators**
-- [ ] `CreateUserValidator` — `Email` valid format and unique within the organization; `DisplayName` non-empty max 100 chars; `OrganizationId` exists; `Password` min 8 chars
-- [ ] `UpdateUserValidator` — `DisplayName` non-empty max 100 chars
-- [ ] `ChangeUserOrgRoleValidator` — `Role` valid enum value
+- [x] `CreateUserValidator` — `Email` valid format and unique within the organization; `DisplayName` non-empty max 100 chars; `OrganizationId` exists; `Password` min 8 chars (done — `tests/Ordinis.UnitTests/Application/Users/Validators/CreateUserValidatorTests.cs`; also covers `OrganizationId` suspended-org rejection, case-insensitive email uniqueness scoped per organization, and `OrgRole` enum validity; no bugs found)
+- [x] `UpdateUserValidator` — `DisplayName` non-empty max 100 chars (done — `tests/Ordinis.UnitTests/Application/Users/Validators/UpdateUserValidatorTests.cs`; also covers `UserId`/`RequestedByUserId`; purely synchronous, no DB state needed; no bugs found)
+- [x] `ChangeUserOrgRoleValidator` — `Role` valid enum value (done — `tests/Ordinis.UnitTests/Application/Users/Validators/ChangeUserOrgRoleValidatorTests.cs`; also covers `UserId`/`RequestedByUserId`; purely synchronous, no DB state needed; no bugs found)
 
 **Git tag (after Part 2):** `v0.9-part2-remaining-validators`
 
