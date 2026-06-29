@@ -59,7 +59,7 @@ public sealed class RenameBoardValidator : AbstractValidator<RenameBoard>
                 // Fetch the board's ProjectId without loading the full aggregate.
                 Guid? projectId = await db.Boards
                     .Where(b => b.Id == command.BoardId)
-                    .Select(b => b.ProjectId)
+                    .Select(b => (Guid?)b.ProjectId)
                     .SingleOrDefaultAsync(ct);
 
                 if (projectId is null)

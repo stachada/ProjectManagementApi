@@ -71,6 +71,7 @@ public sealed class CreateProjectValidator : AbstractValidator<CreateProject>
             .NotEmpty();
 
         RuleFor(x => x.Name)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty()
             .MaximumLength(100)
             .MustAsync(async (command, name, ct) =>

@@ -64,6 +64,10 @@ public sealed class AddProjectMemberValidator : AbstractValidator<AddProjectMemb
             .MustAsync(async (id, ct) => await db.Users.AnyAsync(u => u.Id == id, ct))
             .WithMessage("User not found.");
 
+        RuleFor(x => x.Role)
+            .IsInEnum()
+            .WithMessage("Invalid role value.");
+
         RuleFor(x => x)
             .MustAsync(async (command, ct) =>
                 !await db.ProjectMembers
