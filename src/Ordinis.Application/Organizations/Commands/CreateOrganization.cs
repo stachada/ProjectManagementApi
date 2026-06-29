@@ -56,6 +56,7 @@ public sealed class CreateOrganizationValidator : AbstractValidator<CreateOrgani
         ISlugGenerator slugGenerator)
     {
         RuleFor(x => x.Name)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty()
             .MaximumLength(100)
             .MustAsync(async (name, ct) =>

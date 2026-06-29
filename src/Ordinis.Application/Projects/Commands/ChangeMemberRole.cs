@@ -39,7 +39,7 @@ public sealed class ChangeMemberRoleHandler(IAppDbContext db) : ICommandHandler<
 /// </summary>
 public sealed class ChangeMemberRoleValidator : AbstractValidator<ChangeMemberRole>
 {
-    public ChangeMemberRoleValidator(IAppDbContext db)
+    public ChangeMemberRoleValidator()
     {
         RuleFor(x => x.ProjectId).NotEmpty();
         RuleFor(x => x.UserId).NotEmpty();
