@@ -660,18 +660,18 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 > Pure function tests — no EF Core, no DI, no async. No shared infrastructure needed.
 
 **TaskMapper**
-- [ ] `ToSummaryDto` — all fields map correctly; null `AssigneeId` maps to null `AssigneeName`; no nested collections
-- [ ] `ToDto` — embedded `CommentDto` list maps correctly; `IsEdited` flag derived from `Comment.IsEdited`; embedded `AttachmentDto` list maps correctly; `userLookup` resolves assignee and comment author display names; missing user ID in lookup maps gracefully
+- [x] `ToSummaryDto` — all fields map correctly; null `AssigneeId` maps to null `AssigneeName`; no nested collections (done — `tests/Ordinis.UnitTests/Application/Tasks/Dtos/TaskMapperTests.cs`; also covers comment/attachment counts excluding soft-deleted comments)
+- [x] `ToDto` — embedded `CommentDto` list maps correctly; `IsEdited` flag derived from `Comment.IsEdited`; embedded `AttachmentDto` list maps correctly; `userLookup` resolves assignee and comment author display names; missing user ID in lookup maps gracefully (done — same file; comments/attachments are attached via `ProjectTask`'s own public API (`AddComment`/`RemoveComment`/`AddAttachment`) rather than constructed directly, keeping the tests pure-function with no EF Core/DI/async; also covers the unpersisted-task `ConcurrencyToken` empty-string guard and the asymmetry between `AssigneeDisplayName` falling back to `null` vs. `CommentDto.AuthorDisplayName` falling back to `string.Empty` for a missing lookup entry — both intentional in the mapper, not bugs)
 
 **ProjectMapper**
-- [ ] `ToSummaryDto` — all fields map correctly; `boardCount` and `memberCount` parameters flow through
-- [ ] `ToDto` — embedded `BoardSummaryDto[]` maps correctly with per-board `taskCount`; embedded `ProjectMemberDto[]` maps correctly; truncation flags set correctly when board/member counts exceed cap
+- [x] `ToSummaryDto` — all fields map correctly; `boardCount` and `memberCount` parameters flow through (done — `tests/Ordinis.UnitTests/Application/Projects/Dtos/ProjectMapperTests.cs`; `MemberCount` is derived from `Project.Members.Count`, not a parameter, so coverage confirms it stays correct independent of the `boardCount` parameter rather than testing it as a pass-through)
+- [x] `ToDto` — embedded `BoardSummaryDto[]` maps correctly with per-board `taskCount`; embedded `ProjectMemberDto[]` maps correctly; truncation flags set correctly when board/member counts exceed cap (done — same file; boards/members attached via `Board.Create`/`Project.AddMember` rather than constructed directly; `BoardsAreTruncated`/`MembersAreTruncated` are derived properties on `ProjectDto` itself (`Boards.Count < BoardCount`), so coverage exercises them by supplying `ProjectDto.MaxEmbeddedCollectionSize + 1` boards/members rather than asserting a mapper-set flag; also covers the per-board `taskCount` lookup miss defaulting to `0` and the per-member `userLookup` miss falling back to `"Unknown"`)
 
 **OrganizationMapper**
-- [ ] `ToDto` — all fields map correctly; `projectCount` parameter flows through; `IsActive` and `Description` included
+- [x] `ToDto` — all fields map correctly; `projectCount` parameter flows through; `IsActive` and `Description` included (done — `tests/Ordinis.UnitTests/Application/Organizations/Dtos/OrganizationMapperTests.cs`; also covers a `null` `Description` and `IsActive` reflecting a suspended organization)
 
 **UserMapper**
-- [ ] `ToDto` — all fields map correctly; `OrganizationName` parameter flows through; auth-sensitive fields (`RefreshToken`, `RefreshTokenExpiresAt`, `PasswordHash`) are absent from the DTO
+- [x] `ToDto` — all fields map correctly; `OrganizationName` parameter flows through; auth-sensitive fields (`RefreshToken`, `RefreshTokenExpiresAt`, `PasswordHash`) are absent from the DTO (done — `tests/Ordinis.UnitTests/Application/Users/Dtos/UserMapperTests.cs`; the auth-sensitive-fields check uses reflection over `UserDto`'s properties so it fails if any of those three are ever re-introduced, not just when mapped; also covers `OrgRole` enum-to-string mapping and `IsActive` for a deactivated user)
 
 **Git tag (after Part 3):** `v0.9-part3-mappers`
 
