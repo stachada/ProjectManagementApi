@@ -63,9 +63,7 @@ internal sealed class UpdateTaskHandler(
 
         DateTimeOffset now = timeProvider.GetUtcNow();
 
-        task.UpdateDetails(command.Title, command.Description);
-        task.ChangePriority(command.Priority);
-        task.SetDueDate(command.DueDate, now);
+        task.Update(command.Title, command.Description, command.Priority, command.DueDate, command.RequestedByUserId, now);
 
         try
         {

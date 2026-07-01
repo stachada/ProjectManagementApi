@@ -210,46 +210,28 @@ public class ProjectTask : AggregateRoot
 
     #region Core task behaviour
     /// <summary>
-    /// Updates the task's title and/or description.
+    /// Updates the task's title, description, priority, and due date in a single
+    /// operation, raising one <see cref="TaskUpdated"/> domain event describing
+    /// only the fields whose value actually changed.
     /// </summary>
-    /// <param name="title">New title, Must not be empty</param>
-    /// <param name="description">New description, or <c>null</c> to clear it.</param>
-    /// <exception cref="DomainException">Thrown if the task is in a terminal state.</exception>
-    public void UpdateDetails(string title, string? description)
+    /// <remarks>
+    /// The four fields are intentionally updated together through one method, rather than
+    /// exposed as separate public setters - a caller mutating just one field still goes
+    /// through here, so <see cref="TaskUpdated"/> is never skipped for a partial edit.
+    /// </remarks>
+    /// <param name="title">New title. Must not be empty.</param>
+    /// <param name="description">New description, or <see langword="null"/> to clear it.</param>
+    /// <param name="priority">New priority level.</param>
+    /// <param name="dueDate">New due date (must be a future UTC value), or <see langword="null"/> to remove it.</param>
+    /// <param name="updatedByUserId">The user performing the update. Carried in the domain event.</param>
+    /// <param name="now">The date and time when the update is occurring. Carried in the domain event.</param>
+    /// <exception cref="DomainException">Thrown if the task is in a terminal state or the new due date is in the past.</exception>
+    public void Update(string title, string? description, Priority priority, DateTimeOffset? dueDate, Guid updatedByUserId, DateTimeOffset now)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         EnsureNotTerminal();
 
-        Title = title.Trim();
-        Description = description?.Trim();
-    }
-
-    /// <summary>
-    /// Changes the task's priority.
-    /// </summary>
-    /// <param name="newPriority">The new priority level.</param>
-    /// <exception cref="DomainException">Thrown if the task is in a terminal state.</exception>
-    public void ChangePriority(Priority newPriority)
-    {
-        EnsureNotTerminal();
-        Priority = newPriority;
-    }
-
-    /// <summary>
-    /// Sets or clears the task's due date.
-    /// </summary>
-    /// <param name="newDueDate">
-    /// New due date (must be a future UTC value), or <c>null</c> to remove it.
-    /// </param>
-    /// <param name="now">
-    /// The date and time when the change is occurring.
-    /// </param>
-    /// <exception cref="DomainException">Thrown if the task is in a terminal state or if the new due date is in the past.</exception>
-    public void SetDueDate(DateTimeOffset? newDueDate, DateTimeOffset now)
-    {
-        EnsureNotTerminal();
-
-        if (newDueDate.HasValue && newDueDate.Value <= now)
+        if (dueDate.HasValue && dueDate.Value <= now)
         {
             throw new DomainException(
                 "Due date must be in the future.",
@@ -257,7 +239,33 @@ public class ProjectTask : AggregateRoot
             );
         }
 
-        DueDate = newDueDate;
+        var newTitle = title.Trim();
+        var newDescription = description?.Trim();
+
+        var changes = new Dictionary<string, (object? Before, object? After)>();
+        if (Title != newTitle)
+        {
+            changes[nameof(Title)] = (Title, newTitle);
+        }
+        if (Description != newDescription)
+        {
+            changes[nameof(Description)] = (Description, newDescription);
+        }
+        if (Priority != priority)
+        {
+            changes[nameof(Priority)] = (Priority, priority);
+        }
+        if (DueDate != dueDate)
+        {
+            changes[nameof(DueDate)] = (DueDate, dueDate);
+        }
+
+        Title = newTitle;
+        Description = newDescription;
+        Priority = priority;
+        DueDate = dueDate;
+
+        RaiseDomainEvent(new TaskUpdated(Id, changes, updatedByUserId, now));
     }
     #endregion
 
