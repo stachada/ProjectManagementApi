@@ -528,6 +528,32 @@ public class ProjectTask : AggregateRoot
     }
     #endregion
 
+    #region Soft delete
+    /// <summary>
+    /// Soft-deletes this task, making it invisible to default EF Core queries via the
+    /// global query filter, and raises a <see cref="TaskDeleted"/> domain event.
+    /// </summary>
+    /// <remarks>
+    /// Calling this method on an already-deleted task is a no-op — no event is raised.
+    /// Unlike other mutations, deletion is not gated on terminal state — a
+    /// <see cref="ProjectTaskStatus.Done"/> or <see cref="ProjectTaskStatus.Cancelled"/>
+    /// task can still be deleted.
+    /// </remarks>
+    /// <param name="deletedByUserId">The user requesting deletion. Carried in the domain event.</param>
+    /// <param name="now">The date and time when the deletion is occurring. Carried in the domain event.</param>
+    public void Delete(Guid deletedByUserId, DateTimeOffset now)
+    {
+        if (IsDeleted)
+        {
+            return;
+        }
+
+        SoftDelete(now);
+
+        RaiseDomainEvent(new TaskDeleted(Id, deletedByUserId, now));
+    }
+    #endregion
+
     #region Guards
     /// <summary>
     /// Asserts the task is not in a terminal state.

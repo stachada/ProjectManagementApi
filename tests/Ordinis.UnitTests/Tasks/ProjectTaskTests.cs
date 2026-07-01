@@ -13,8 +13,6 @@ public class ProjectTaskTests
 {
     private static readonly DateTimeOffset Now = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
 
-    private static readonly DateTimeOffset FutureDate = Now.AddDays(7);
-
     #region Create
     [Fact]
     public void Create_ValidArguments_TaskStartsInBacklog()
@@ -98,91 +96,94 @@ public class ProjectTaskTests
     }
     #endregion
 
-    #region UpdateDetails
+    #region Update
     [Fact]
-    public void UpdateDetails_ActiveTask_UpdatesTitleAndDescription()
+    public void Update_ActiveTask_UpdatesAllScalarFields()
     {
-        ProjectTask task = TaskBuilder.Create(now: Now);
+        ProjectTask task = TaskBuilder.Create(priority: Priority.Low, now: Now);
+        DateTimeOffset newDue = Now.AddDays(14);
 
-        task.UpdateDetails("New Title", "New Description");
+        task.Update("New Title", "New Description", Priority.Critical, newDue, Guid.CreateVersion7(), Now);
 
         Assert.Equal("New Title", task.Title);
         Assert.Equal("New Description", task.Description);
-    }
-
-    [Theory]
-    [InlineData(ProjectTaskStatus.Done)]
-    [InlineData(ProjectTaskStatus.Cancelled)]
-    public void UpdateDetails_TerminalTask_ThrowsDomainException(ProjectTaskStatus terminalStatus)
-    {
-        ProjectTask task = BuildTaskInStatus(terminalStatus);
-
-        Assert.Throws<DomainException>(() => task.UpdateDetails("Ignored", null));
-    }
-    #endregion
-
-    #region ChangePriority
-    [Fact]
-    public void ChangePriority_ActiveTask_UpdatesPriority()
-    {
-        ProjectTask task = TaskBuilder.Create(priority: Priority.Low, now: Now);
-
-        task.ChangePriority(Priority.Critical);
-
         Assert.Equal(Priority.Critical, task.Priority);
-    }
-
-    [Theory]
-    [InlineData(ProjectTaskStatus.Done)]
-    [InlineData(ProjectTaskStatus.Cancelled)]
-    public void ChangePriority_TerminalTask_ThrowsDomainException(ProjectTaskStatus terminalStatus)
-    {
-        ProjectTask task = BuildTaskInStatus(terminalStatus);
-
-        Assert.Throws<DomainException>(() => task.ChangePriority(Priority.High));
-    }
-    #endregion
-
-    #region SetDueDate
-    [Fact]
-    public void SetDueDate_FutureDate_UpdatesDueDate()
-    {
-        ProjectTask task = TaskBuilder.Create(now: Now);
-        DateTimeOffset newDue = Now.AddDays(14);
-
-        task.SetDueDate(newDue, Now);
-
         Assert.Equal(newDue, task.DueDate);
     }
 
     [Fact]
-    public void SetDueDate_Null_ClearsDueDate()
+    public void Update_NullDueDate_ClearsExistingDueDate()
     {
-        ProjectTask task = TaskBuilder.Create(dueDate: FutureDate, now: Now);
+        ProjectTask task = TaskBuilder.Create(dueDate: Now.AddDays(7), now: Now);
 
-        task.SetDueDate(null, Now);
+        task.Update("New Title", null, Priority.Medium, null, Guid.CreateVersion7(), Now);
 
         Assert.Null(task.DueDate);
     }
 
     [Fact]
-    public void SetDueDate_PastDate_ThrowsDomainException()
+    public void Update_ValidArguments_RaisesTaskUpdatedEventWithChangedFieldsOnly()
+    {
+        // Default task: Title = "Default Task Title", Description = null, Priority = Medium, DueDate = Now.AddDays(7)
+        ProjectTask task = TaskBuilder.Create(now: Now);
+        var updatedBy = Guid.CreateVersion7();
+
+        task.Update("New Title", null, Priority.High, null, updatedBy, Now);
+
+        TaskUpdated evt = Assert.Single(task.DomainEvents.OfType<TaskUpdated>());
+        Assert.Equal(task.Id, evt.TaskId);
+        Assert.Equal(updatedBy, evt.UpdatedByUserId);
+        Assert.Equal(Now, evt.OccurredAt);
+
+        // Description was null before and after, so it's omitted from Changes entirely.
+        Assert.Equal(["Title", "Priority", "DueDate"], evt.Changes.Keys.ToHashSet());
+
+        Assert.Equal("Default Task Title", evt.Changes["Title"].Before);
+        Assert.Equal("New Title", evt.Changes["Title"].After);
+
+        Assert.Equal(Priority.Medium, evt.Changes["Priority"].Before);
+        Assert.Equal(Priority.High, evt.Changes["Priority"].After);
+
+        Assert.Equal(Now.AddDays(7), evt.Changes["DueDate"].Before);
+        Assert.Null(evt.Changes["DueDate"].After);
+    }
+
+    [Fact]
+    public void Update_OnlyOneFieldActuallyChanges_RaisesEventWithSingleChangeEntry()
+    {
+        DateTimeOffset unchangedDueDate = Now.AddDays(7);
+        ProjectTask task = TaskBuilder.Create(title: "Same Title", description: null, priority: Priority.Medium, dueDate: unchangedDueDate, now: Now);
+
+        task.Update("Same Title", null, Priority.Critical, unchangedDueDate, Guid.CreateVersion7(), Now);
+
+        TaskUpdated evt = Assert.Single(task.DomainEvents.OfType<TaskUpdated>());
+        KeyValuePair<string, (object? Before, object? After)> onlyChange = Assert.Single(evt.Changes);
+        Assert.Equal("Priority", onlyChange.Key);
+        Assert.Equal(Priority.Medium, onlyChange.Value.Before);
+        Assert.Equal(Priority.Critical, onlyChange.Value.After);
+    }
+
+    [Fact]
+    public void Update_PastDueDate_ThrowsDomainExceptionAndRaisesNoEvent()
     {
         ProjectTask task = TaskBuilder.Create(now: Now);
 
-        DomainException ex = Assert.Throws<DomainException>(() => task.SetDueDate(Now.AddSeconds(-1), Now));
+        DomainException ex = Assert.Throws<DomainException>(
+            () => task.Update("New Title", null, Priority.High, Now.AddSeconds(-1), Guid.CreateVersion7(), Now));
 
         Assert.Equal("task.due-date-in-past", ex.ErrorCode);
+        Assert.Empty(task.DomainEvents.OfType<TaskUpdated>());
     }
 
     [Theory]
     [InlineData(ProjectTaskStatus.Done)]
     [InlineData(ProjectTaskStatus.Cancelled)]
-    public void SetDueDate_TerminalTask_ThrowsDomainException(ProjectTaskStatus terminalStatus)
+    public void Update_TerminalTask_ThrowsDomainException(ProjectTaskStatus terminalStatus)
     {
         ProjectTask task = BuildTaskInStatus(terminalStatus);
 
-        Assert.Throws<DomainException>(() => task.SetDueDate(FutureDate, Now));
+        Assert.Throws<DomainException>(
+            () => task.Update("Ignored", null, Priority.High, null, Guid.CreateVersion7(), Now));
     }
     #endregion
 
@@ -333,6 +334,49 @@ public class ProjectTaskTests
         AttachmentRemoved evt = Assert.Single(task.DomainEvents.OfType<AttachmentRemoved>());
         Assert.Equal(attachment.Id, evt.AttachmentId);
         Assert.Equal(removerId, evt.RemovedByUserId);
+    }
+    #endregion
+
+    #region Delete
+    [Fact]
+    public void Delete_ActiveTask_SetsIsDeletedAndRaisesTaskDeletedEvent()
+    {
+        ProjectTask task = TaskBuilder.Create(now: Now);
+        var deletedBy = Guid.CreateVersion7();
+
+        task.Delete(deletedBy, Now);
+
+        Assert.True(task.IsDeleted);
+        Assert.Equal(Now, task.DeletedAt);
+
+        TaskDeleted evt = Assert.Single(task.DomainEvents.OfType<TaskDeleted>());
+        Assert.Equal(task.Id, evt.TaskId);
+        Assert.Equal(deletedBy, evt.DeletedByUserId);
+        Assert.Equal(Now, evt.OccurredAt);
+    }
+
+    [Fact]
+    public void Delete_AlreadyDeletedTask_IsNoOp()
+    {
+        ProjectTask task = TaskBuilder.Create(now: Now);
+        task.Delete(Guid.CreateVersion7(), Now);
+
+        task.Delete(Guid.CreateVersion7(), Now);
+
+        Assert.Single(task.DomainEvents.OfType<TaskDeleted>());
+    }
+
+    [Theory]
+    [InlineData(ProjectTaskStatus.Done)]
+    [InlineData(ProjectTaskStatus.Cancelled)]
+    public void Delete_TerminalTask_SoftDeletesAndRaisesEvent(ProjectTaskStatus terminalStatus)
+    {
+        ProjectTask task = BuildTaskInStatus(terminalStatus);
+
+        task.Delete(Guid.CreateVersion7(), Now);
+
+        Assert.True(task.IsDeleted);
+        Assert.Single(task.DomainEvents.OfType<TaskDeleted>());
     }
     #endregion
 
