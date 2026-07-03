@@ -21,10 +21,11 @@ public sealed record RemoveComment(
 /// Handles <see cref="RemoveComment"/> by invoking <see cref="ProjectTask.RemoveComment"/>.
 /// </summary>
 /// <remarks>
-/// No validator is needed - the handler's <see cref="NotFoundException"/> provides
-/// sufficient guard for missing tasks and comments.
-/// Authorization (only the author or an admin may delete) is enforced by
-/// the policy layer.
+/// No validator is needed — the task ID is a non-empty GUID guaranteed by route binding
+/// and authentication middleware. A missing task throws <see cref="NotFoundException"/>;
+/// a missing or already-deleted comment throws <see cref="DomainException"/>
+/// (<c>task.comment-not-found</c>) from the aggregate.
+/// Authorization (only the author or an admin may delete) is enforced by the policy layer.
 /// </remarks>
 internal sealed class RemoveCommentHandler(
     IAppDbContext db,

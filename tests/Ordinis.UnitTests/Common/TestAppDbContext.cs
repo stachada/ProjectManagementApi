@@ -49,6 +49,11 @@ internal sealed class TestAppDbContext(DbContextOptions<TestAppDbContext> option
             {
                 modelBuilder.Entity(entityType.ClrType).Property("Id").ValueGeneratedNever();
             }
+
+            if (entityType.FindProperty("RowVersion") is not null)
+            {
+                modelBuilder.Entity(entityType.ClrType).Property("RowVersion").IsRowVersion();
+            }
         }
     }
 }

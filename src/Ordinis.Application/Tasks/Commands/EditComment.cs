@@ -30,6 +30,13 @@ public sealed record EditComment(
 /// entirely to the comment and carries no aggregate-level invariant that the task
 /// needs to enforce. The task is still loaded (and comments included) so EF Core
 /// tracks the change within the same unit of work.
+/// <para>
+/// <b>Concurrency:</b> Comment edits intentionally use last-write-wins. Only the
+/// original author may edit (<see cref="EditCommentValidator"/> enforces this), so
+/// a conflict requires the same user to submit twice simultaneously — a scenario
+/// where silently keeping the last write is acceptable. Adding a <c>RowVersion</c>
+/// to <see cref="Comment"/> for this edge case would be disproportionate.
+/// </para>
 /// </remarks>
 /// <param name="db"></param>
 internal sealed class EditCommentHandler(
