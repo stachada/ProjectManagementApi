@@ -147,7 +147,7 @@ public class Project : AggregateRoot
             CreatedByUserId = createdByUserId,
             Name = name.Trim(),
             Slug = slug.Trim().ToLowerInvariant(),
-            Description = description?.Trim(),
+            Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
             IsArchived = false
         };
 
@@ -182,7 +182,7 @@ public class Project : AggregateRoot
     public void UpdateDescription(string? newDescription)
     {
         EnsureNotArchived();
-        Description = newDescription?.Trim();
+        Description = string.IsNullOrWhiteSpace(newDescription) ? null : newDescription.Trim();
     }
 
     /// <summary>

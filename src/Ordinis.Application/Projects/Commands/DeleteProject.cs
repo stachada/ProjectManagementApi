@@ -26,7 +26,7 @@ public sealed class DeleteProjectHandler(IAppDbContext db, TimeProvider timeProv
             .SingleOrDefaultAsync(p => p.Id == command.ProjectId, cancellationToken)
                 ?? throw new NotFoundException(nameof(Project), command.ProjectId);
 
-        var now = timeProvider.GetUtcNow();
+        DateTimeOffset now = timeProvider.GetUtcNow();
         project.SoftDelete(now);
         await db.SaveChangesAsync(cancellationToken);
     }
