@@ -706,29 +706,30 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 > Same pattern as Part 4.
 
 **Project command handlers**
-- [ ] `CreateProjectHandler` — project created; slug auto-generated from name via `ISlugGenerator`; new project ID returned
-- [ ] `UpdateProjectHandler` — `Name` and `Description` updated; `DbUpdateConcurrencyException` translated to `ConcurrencyException`
-- [ ] `DeleteProjectHandler` — soft delete applied
-- [ ] `ArchiveProjectHandler` — project archived; `IsArchived = true`
-- [ ] `UnarchiveProjectHandler` — project unarchived; `IsArchived = false`
-- [ ] `AddProjectMemberHandler` — member added to project with correct role and `JoinedAt`
-- [ ] `RemoveProjectMemberHandler` — member removed from project
-- [ ] `ChangeMemberRoleHandler` — member role updated
+- [x] `CreateProjectHandler` — project created; slug auto-generated from name via `ISlugGenerator`; new project ID returned (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/CreateProjectHandlerTests.cs`; two bugs found and fixed: (1) `Project.Create` stored `""` instead of `null` for empty description — fixed to `string.IsNullOrWhiteSpace(description) ? null : description.Trim()`; (2) a test incorrectly expected the handler to append a `-1` suffix on slug collision — removed because collision prevention is the validator's responsibility, already covered by `CreateProjectValidatorTests`; added missing test verifying the creator is auto-added as an `Admin` `ProjectMember`)
+- [x] `UpdateProjectHandler` — `Name` and `Description` updated; `DbUpdateConcurrencyException` translated to `ConcurrencyException` (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/UpdateProjectHandlerTests.cs`; bugs found and fixed: (1) `Project.UpdateDescription` had the same empty-string-to-null gap as `Project.Create` — fixed to `string.IsNullOrWhiteSpace(newDescription) ? null : newDescription.Trim()`; (2) all `ProjectBuilder.Create` calls used `DateTimeOffset.UtcNow` unnecessarily — removed, builder's `DefaultNow` is used; (3) typo in test name `EmpyName` → `EmptyName`; (4) unused `using Ordinis.Domain.Tasks` removed; added missing tests for `null` and empty `NewDescription` both clearing description to null)
+- [x] `DeleteProjectHandler` — soft delete applied (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/DeleteProjectHandlerTests.cs`; issues found and fixed: (1) file/class name was `DeleteProjectHandlerTest` missing the plural `s` — renamed; (2) block-scoped namespace converted to file-scoped; (3) `Guid.NewGuid()` replaced with `Guid.CreateVersion7()` in the not-found test; no missing tests — `SoftDelete` is idempotent, so no double-delete case needed)
+- [x] `ArchiveProjectHandler` — project archived; `IsArchived = true` (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/ArchiveProjectHandlerTests.cs`; no bugs found; covers valid archive, not-found → `NotFoundException`, already-archived → `DomainException`)
+- [x] `UnarchiveProjectHandler` — project unarchived; `IsArchived = false` (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/UnarchiveProjectHandlerTests.cs`; no bugs found; covers valid unarchive, not-found → `NotFoundException`, not-archived → `DomainException`)
+- [x] `AddProjectMemberHandler` — member added to project with correct role and `JoinedAt` (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/AddProjectMemberHandlerTests.cs`; no bugs found; covers valid add with role+`JoinedAt` assertions, not-found → `NotFoundException`, already-member → `DomainException` (triggered via creator auto-added as Admin), archived project → `DomainException`)
+- [x] `RemoveProjectMemberHandler` — member removed from project (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/RemoveProjectMemberHandlerTests.cs`; no bugs found; covers valid remove verified via `ProjectMembers` DbSet, not-found → `NotFoundException`, not-a-member → `DomainException`, last-admin guard → `DomainException`, archived project → `DomainException`)
+- [x] `ChangeMemberRoleHandler` — member role updated (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/ChangeMemberRoleHandlerTests.cs`; no bugs found; covers valid role change verified via `ProjectMembers` DbSet, not-found → `NotFoundException`, not-a-member → `DomainException`, demoting last admin → `DomainException`, archived project → `DomainException`)
 
 **Board command handlers**
-- [ ] `CreateBoardHandler` — board created directly as independent aggregate root; new board ID returned
-- [ ] `ArchiveBoardHandler` — board archived; `IsArchived = true`
-- [ ] `RenameBoardHandler` — board name updated
+- [x] `CreateBoardHandler` — board created directly as independent aggregate root; new board ID returned (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/CreateBoardHandlerTests.cs`; no bugs found; covers valid create with field assertions including whitespace trimming, empty name → `ArgumentException`, empty `ProjectId` → `ArgumentException`)
+- [x] `ArchiveBoardHandler` — board archived; `IsArchived = true` (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/ArchiveBoardHandlerTests.cs`; no bugs found; covers valid archive, not-found → `NotFoundException`, already-archived → `DomainException`)
+- [x] `RenameBoardHandler` — board name updated (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/RenameBoardHandlerTests.cs`; no bugs found; covers valid rename with whitespace-trim assertion, not-found → `NotFoundException`, empty name → `ArgumentException`, archived board → `DomainException`)
 
 **Project query handlers**
-- [ ] `GetProjectByIdHandler` — returns correct `ProjectDto` with embedded boards and members; per-board task counts resolved correctly via grouped query; throws `NotFoundException` when not found
-- [ ] `GetProjectsFilteredHandler` — `OrganizationId` filter; `MemberId` filter; `IncludeArchived` flag; pagination and sort
-- [ ] `GetProjectTasksHandler` — returns paged tasks scoped to all boards in the project
-- [ ] `GetProjectMembersHandler` — returns all members for the project
+- [x] `GetProjectByIdHandler` — returns correct `ProjectDto` with embedded boards and members; per-board task counts resolved correctly via grouped query; throws `NotFoundException` when not found (done — `tests/Ordinis.UnitTests/Application/Projects/Queries/GetProjectByIdHandlerTests.cs`; no bugs found; covers full happy path with field/count/display-name assertions, not-found → `NotFoundException`, per-board task count isolation via GroupBy, missing user row → `"Unknown"` display name fallback)
+- [x] `GetProjectsFilteredHandler` — `OrganizationId` filter; `MemberId` filter; `IncludeArchived` flag; pagination and sort (done — `tests/Ordinis.UnitTests/Application/Projects/Queries/GetProjectsFilteredHandlerTests.cs`; no bugs found; covers excludes-archived-by-default, includeArchived flag, org filter, member filter, pagination, board/member count projection)
+- [x] `GetProjectTasksHandler` — returns paged tasks scoped to all boards in the project (done — `tests/Ordinis.UnitTests/Application/Projects/Queries/GetProjectTasksHandlerTests.cs`; no bugs found; covers project-scoped task isolation, not-found, status filter using `Cancelled` via `Move()`, pagination)
+- [x] `GetProjectMembersHandler` — returns all members for the project (done — `tests/Ordinis.UnitTests/Application/Projects/Queries/GetProjectMembersHandlerTests.cs`; no bugs found; covers ordered-by-JoinedAt with display names, not-found, missing user → `"Unknown"` fallback)
 
 **Board query handlers**
-- [ ] `GetBoardByIdHandler` — returns correct `BoardDto` with embedded tasks (capped); throws `NotFoundException` when not found
-- [ ] `GetBoardTasksHandler` — returns paged tasks scoped to the board; filter and sort applied
+
+- [x] `GetBoardByIdHandler` — returns correct `BoardDto` with embedded tasks (capped); throws `NotFoundException` when not found (done — `tests/Ordinis.UnitTests/Application/Projects/Queries/GetBoardByIdHandlerTests.cs`; no bugs found; covers correct BoardDto with TaskCount=2 and Tasks.Count=2, not-found, zero-task board with TaskCount=0 and empty Tasks)
+- [x] `GetBoardTasksHandler` — returns paged tasks scoped to the board; filter and sort applied (done — `tests/Ordinis.UnitTests/Application/Projects/Queries/GetBoardTasksHandlerTests.cs`; no bugs found; covers board-scoped task isolation, not-found, status filter using `Cancelled` via `Move()`, pagination)
 
 **Git tag (after Part 5):** `v0.9-part5-project-board-handlers`
 
