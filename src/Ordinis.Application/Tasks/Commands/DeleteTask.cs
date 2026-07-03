@@ -53,7 +53,9 @@ internal sealed class DeleteTaskHandler(
             .FirstOrDefaultAsync(t => t.Id == command.TaskId, cancellationToken)
                 ?? throw new NotFoundException(nameof(ProjectTask), command.TaskId);
 
-        task.SoftDelete(timeProvider.GetUtcNow());
+        DateTimeOffset now = timeProvider.GetUtcNow();
+
+        task.Delete(command.RequestedByUserId, now);
 
         await db.SaveChangesAsync(cancellationToken);
     }

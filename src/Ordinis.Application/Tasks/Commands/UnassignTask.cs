@@ -9,9 +9,8 @@ namespace Ordinis.Application.Tasks.Commands;
 /// Removes the current assignee from a task.
 /// </summary>
 /// <remarks>
-/// If the task is already unassigned, <see cref="ProjectTask.Unassign"/> is a
-/// no-op at the domain level - no event is raised and the save is a no-change
-/// round-trip. This is intentional: idempotent commands are easier to retry safely.
+/// Throws a <see cref="DomainException"/> (<c>task.already-unassigned</c>) if the task
+/// has no current assignee. The API layer maps this to <c>422 Unprocessable Entity</c>.
 /// </remarks>
 /// <param name="TaskId">ID of the task to unassign.</param>
 /// <param name="RequestedByUserId">ID of the user issuing this command.</param>

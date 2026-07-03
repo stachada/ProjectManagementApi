@@ -236,6 +236,16 @@ public class ProjectTaskTests
 
         Assert.Throws<DomainException>(() => task.Unassign(Guid.CreateVersion7(), Now));
     }
+
+    [Fact]
+    public void Unassign_AlreadyUnassignedTask_ThrowsDomainException()
+    {
+        ProjectTask task = TaskBuilder.Create(now: Now);
+
+        DomainException ex = Assert.Throws<DomainException>(() => task.Unassign(Guid.CreateVersion7(), Now));
+
+        Assert.Equal("task.already-unassigned", ex.ErrorCode);
+    }
     #endregion
 
     #region AddComment

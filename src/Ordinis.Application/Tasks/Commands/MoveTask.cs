@@ -80,5 +80,8 @@ internal sealed class MoveTaskValidator : AbstractValidator<MoveTask>
         RuleFor(x => x.NewStatus)
             .IsInEnum()
             .WithMessage("NewStatus must be a valid ProjectTaskStatus value.");
+
+        RuleFor(x => x.RequestedByUserId)
+            .NotEmpty();
     }
 }
