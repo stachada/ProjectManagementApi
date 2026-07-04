@@ -426,13 +426,13 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
   - `OutboxMessageConfiguration` — PK, `Type` max 500, `Payload` uncapped (`nvarchar(max)` / `text`), index on `ProcessedAt` for unprocessed-row polling
 - [x] Add `IFileStorageService` to `Ordinis.Application/Common/` — contract: `UploadAsync(Stream, fileName, contentType) → string downloadUrl`; `DeleteAsync(downloadUrl)`
   - **Pulled forward:** implemented ahead of the rest of Phase 5, alongside the `AddAttachment`/`RemoveAttachment` handler rework (branch `feature/phase-4-attachment-storage-handlers`) — the handlers needed the contract to call synchronously. Only the interface exists; `LocalFileStorageService` and DI wiring are still pending below.
-- [ ] Implement `LocalFileStorageService` in `Ordinis.Infrastructure/FileStorage/`:
-  - Writes files to a configurable path (default `wwwroot/attachments/`) bound via `LocalStorageOptions`
-  - Filename strategy: `{guid}_{sanitizedOriginalName}` — guarantees uniqueness, prevents path traversal, preserves readability
-  - `DownloadUrl` returned as a relative path: `/attachments/{storedFileName}`
-  - `DeleteAsync` resolves the file path from the URL and deletes the file; logs a warning if the file is not found rather than throwing
-  - Register in `AddInfrastructureServices`: `services.AddScoped<IFileStorageService, LocalFileStorageService>()`
-  - Register static file middleware in `Program.cs` to serve `wwwroot/` — required for `DownloadUrl` links to resolve
+- [x] Implement `LocalFileStorageService` in `Ordinis.Infrastructure/FileStorage/` (`LocalFileStorageService.cs`, `LocalStorageOptions.cs`):
+  - `LocalStorageOptions` bound from `LocalStorage` config section; `BasePath` defaults to `wwwroot/attachments`, `UrlPrefix` defaults to `/attachments`
+  - Filename strategy: `{uuidv7}_{sanitizedOriginalName}` — `Path.GetFileName` strips path-traversal prefixes; invalid chars and spaces replaced with underscores
+  - `UploadAsync` creates the directory on first use; writes via async `FileStream`; returns `{UrlPrefix}/{storedFileName}`
+  - `DeleteAsync` logs a warning and returns successfully if the file is not found — prevents orphaned DB rows from a missing file blocking the delete operation
+  - Register in `AddInfrastructureServices` (pending): `services.AddScoped<IFileStorageService, LocalFileStorageService>()`
+  - Register `app.UseStaticFiles()` in `Program.cs` (Phase 6) to serve `wwwroot/` — required for `DownloadUrl` links to resolve
   - **Swap note:** replacing `LocalFileStorageService` with `AzureBlobStorageService` or `S3FileStorageService` is a one-class change — the interface contract and all handler code remain unchanged
 - [x] Define `OutboxMessage` entity in `Persistence/` (`OutboxMessage.cs`):
   - `Id` (Guid, UUIDv7), `OccurredAt`, `Type` (CLR `FullName` of the event — used by dispatcher to deserialize), `Payload` (JSON via `System.Text.Json`), `ProcessedAt?`
