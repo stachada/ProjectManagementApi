@@ -738,33 +738,38 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 #### Part 6 — Organization and User handler tests + Dispatcher tests
 
 **Organization command handlers**
-- [ ] `CreateOrganizationHandler` — organization created; slug auto-generated and globally unique; new organization ID returned
-- [ ] `RenameOrganizationHandler` — `Name` updated; `DbUpdateConcurrencyException` translated to `ConcurrencyException`
-- [ ] `UpdateOrganizationDescriptionHandler` — `Description` updated; clears when `null`; concurrency exception translated
-- [ ] `SuspendOrganizationHandler` — organization suspended; `IsActive = false`
-- [ ] `ReactivateOrganizationHandler` — organization reactivated; `IsActive = true`
+
+- [x] `CreateOrganizationHandler` — organization created; slug auto-generated and globally unique; new organization ID returned (done — `tests/Ordinis.UnitTests/Application/Organizations/Commands/CreateOrganizationHandlerTests.cs`; covers field assertions, slug generation, null description, and empty-name domain guard; no bugs found)
+- [x] `RenameOrganizationHandler` — `Name` updated; `DbUpdateConcurrencyException` translated to `ConcurrencyException` (done — `tests/Ordinis.UnitTests/Application/Organizations/Commands/RenameOrganizationHandlerTests.cs`; covers name update, slug immutability, not-found → `NotFoundException`, suspended org → `DomainException`, stale RowVersion → `ConcurrencyException`; no bugs found)
+- [x] `UpdateOrganizationDescriptionHandler` — `Description` updated; clears when `null`; concurrency exception translated (done — `tests/Ordinis.UnitTests/Application/Organizations/Commands/UpdateOrganizationDescriptionHandlerTests.cs`; covers update, null clears, not-found, suspended-org, concurrency; no bugs found)
+- [x] `SuspendOrganizationHandler` — organization suspended; `IsActive = false` (done — `tests/Ordinis.UnitTests/Application/Organizations/Commands/SuspendOrganizationHandlerTests.cs`; covers happy path, not-found, already-suspended → `DomainException`; no bugs found)
+- [x] `ReactivateOrganizationHandler` — organization reactivated; `IsActive = true` (done — `tests/Ordinis.UnitTests/Application/Organizations/Commands/ReactivateOrganizationHandlerTests.cs`; covers happy path, not-found, already-active → `DomainException`; no bugs found)
 
 **Organization query handlers**
-- [ ] `GetOrganizationByIdHandler` — returns correct `OrganizationDto`; `projectCount` resolved via separate scalar query; throws `NotFoundException` when not found
-- [ ] `GetOrganizationProjectsHandler` — returns paged `ProjectSummaryDto`; `IncludeArchived` flag; `MemberId` filter; throws `NotFoundException` when organization not found
+
+- [x] `GetOrganizationByIdHandler` — returns correct `OrganizationDto`; `projectCount` resolved via separate scalar query; throws `NotFoundException` when not found (done — `tests/Ordinis.UnitTests/Application/Organizations/Queries/GetOrganizationByIdHandlerTests.cs`; covers all fields, project count isolation across orgs, suspended org `IsActive = false`, not-found; note: `OrganizationDto` has no `Slug` field — the mapper doesn't expose the slug)
+- [x] `GetOrganizationProjectsHandler` — returns paged `ProjectSummaryDto`; `IncludeArchived` flag; `MemberId` filter; throws `NotFoundException` when organization not found (done — `tests/Ordinis.UnitTests/Application/Organizations/Queries/GetOrganizationProjectsHandlerTests.cs`; covers org-scoped project isolation, not-found, excludes-archived-by-default, includeArchived flag, member filter, and pagination; no bugs found)
 
 **User command handlers**
-- [ ] `CreateUserHandler` — plaintext password hashed via `IPasswordHasher` before `User.Create()`; domain never receives plaintext; new user ID returned
-- [ ] `UpdateUserHandler` — `DisplayName` updated
-- [ ] `DeactivateUserHandler` — user deactivated; `IsActive = false`
-- [ ] `ReactivateUserHandler` — user reactivated; `IsActive = true`
-- [ ] `ChangeUserOrgRoleHandler` — org role updated
+
+- [x] `CreateUserHandler` — plaintext password hashed via `IPasswordHasher` before `User.Create()`; domain never receives plaintext; new user ID returned (done — `tests/Ordinis.UnitTests/Application/Users/Commands/CreateUserHandlerTests.cs`; uses a `FakePasswordHasher` double; asserts `PasswordHash != plaintext` and `PasswordHash == fakeHasher.Hash(plaintext)`; also covers domain guards for empty `DisplayName` and `Email`; no bugs found)
+- [x] `UpdateUserHandler` — `DisplayName` updated (done — `tests/Ordinis.UnitTests/Application/Users/Commands/UpdateUserHandlerTests.cs`; covers display name update, not-found, empty name → `ArgumentException`, stale RowVersion → `ConcurrencyException`; no bugs found)
+- [x] `DeactivateUserHandler` — user deactivated; `IsActive = false` (done — `tests/Ordinis.UnitTests/Application/Users/Commands/DeactivateUserHandlerTests.cs`; covers happy path, not-found, already-inactive → `DomainException`; no bugs found)
+- [x] `ReactivateUserHandler` — user reactivated; `IsActive = true` (done — `tests/Ordinis.UnitTests/Application/Users/Commands/ReactivateUserHandlerTests.cs`; covers happy path, not-found, already-active → `DomainException`; no bugs found)
+- [x] `ChangeUserOrgRoleHandler` — org role updated (done — `tests/Ordinis.UnitTests/Application/Users/Commands/ChangeUserOrgRoleHandlerTests.cs`; covers role change, not-found, stale RowVersion → `ConcurrencyException`; no bugs found)
 
 **User query handlers**
-- [ ] `GetUserByIdHandler` — returns correct `UserDto`; auth-sensitive fields absent; throws `NotFoundException` when not found
-- [ ] `GetUserTasksHandler` — returns paged tasks assigned to the user; filter and sort applied
+
+- [x] `GetUserByIdHandler` — returns correct `UserDto`; auth-sensitive fields absent; throws `NotFoundException` when not found (done — `tests/Ordinis.UnitTests/Application/Users/Queries/GetUserByIdHandlerTests.cs`; covers all DTO fields, `OrgRole` serialized as string, org name resolved via scalar lookup, missing org → empty string fallback, deactivated user `IsActive = false`, auth-sensitive field absence enforced by reflection; no bugs found)
+- [x] `GetUserTasksHandler` — returns paged tasks assigned to the user; filter and sort applied (done — `tests/Ordinis.UnitTests/Application/Users/Queries/GetUserTasksHandlerTests.cs`; covers user-scoped task isolation, not-found, status filter (`Backlog → ToDo → InProgress` transition required — state machine does not allow direct Backlog→InProgress), pagination, assignee display name resolution; no bugs found)
 
 **Dispatcher**
-- [ ] Valid command with passing validator reaches handler and returns result
-- [ ] Invalid command fires `IValidator<T>` before handler; handler is never invoked; `ValidationException` thrown with correct field-level errors
-- [ ] Valid command with no registered validator reaches handler directly (no validation skip error)
-- [ ] Query bypasses the validation pipeline entirely regardless of whether a validator is registered
-- [ ] Command with no registered handler throws `InvalidOperationException`
+
+- [x] Valid command with passing validator reaches handler and returns result (done — `tests/Ordinis.UnitTests/Application/Common/DispatcherTests.cs`)
+- [x] Invalid command fires `IValidator<T>` before handler; handler is never invoked; `ValidationException` thrown with correct field-level errors (done — same file; `handler.Invoked` flag asserts handler was not called)
+- [x] Valid command with no registered validator reaches handler directly (done — same file)
+- [x] Query bypasses the validation pipeline entirely regardless of whether a validator is registered (done — same file; fixed latent bug: `Dispatcher.QueryAsync` was calling `ValidateAsync` despite the design decision that queries bypass validation — removed the call; test registers an always-failing query validator and asserts no `ValidationException` is thrown)
+- [x] Command with no registered handler throws `InvalidOperationException` (done — same file)
 
 **Git tag (after Part 6):** `v0.9-part6-org-user-handlers-dispatcher`
 
