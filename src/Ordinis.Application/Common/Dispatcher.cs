@@ -40,8 +40,8 @@ internal sealed class Dispatcher : IDispatcher
     public async Task<TResult> QueryAsync<TQuery, TResult>(TQuery query, CancellationToken cancellationToken = default)
         where TQuery : IQuery<TResult>
     {
-        await ValidateAsync(query, cancellationToken);
-
+        // Queries bypass the validation pipeline — they are read-only and carry no side effect.
+        // Bad query params throw ArgumentException in the handler → 400 Bad Request.
         IQueryHandler<TQuery, TResult> handler = serviceProvider.GetRequiredService<IQueryHandler<TQuery, TResult>>();
         return await handler.HandleAsync(query, cancellationToken);
     }
