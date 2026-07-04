@@ -407,21 +407,23 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 > ✅ Can run in parallel with Phase 4.
 > ✅ Phase 11 (CI/CD & Docker) can start here.
 
-- [ ] Install packages: `Microsoft.EntityFrameworkCore.SqlServer`, `Npgsql.EntityFrameworkCore.PostgreSQL`, `Microsoft.EntityFrameworkCore.Tools`, `Dapper`, `Hangfire` (or use `IHostedService` for Outbox dispatcher)
-- [ ] Configure `AppDbContext`:
+- [x] Install packages: `Microsoft.EntityFrameworkCore.SqlServer` (10.0.9), `Npgsql.EntityFrameworkCore.PostgreSQL` (10.0.2), `Microsoft.EntityFrameworkCore.Design` (10.0.9), `Dapper` (2.1.79) — all in `Ordinis.Infrastructure`; `IHostedService` chosen over Hangfire for the Outbox dispatcher (no extra package needed)
+- [x] Configure `AppDbContext` (`Ordinis.Infrastructure/Persistence/AppDbContext.cs`):
   - Constructor injects `TimeProvider` — sets `CreatedAt` / `UpdatedAt` in `SaveChangesAsync` override
   - `DbSet<>` for all aggregate roots: `Organizations`, `Projects`, `Boards`, `Tasks`, `Users`, `OutboxMessages`
-  - Provider selected at startup via `appsettings.json` (`DatabaseProvider: "SqlServer"` | `"PostgreSQL"`)
-- [ ] Define `IEntityTypeConfiguration<T>` classes — one per entity, in feature folders:
-  - `OrganizationConfiguration` — PK, `Name` max length, `IsActive` default
-  - `ProjectConfiguration` — PK, FK to `Organization`, `RowVersion`, soft delete filter, `Name` max length
-  - `BoardConfiguration` — PK, FK to `Project`, `RowVersion`, `IsArchived` default, `Name` max length
-  - `ProjectTaskConfiguration` — PK, FK to `Board`, `RowVersion`, soft delete filter, `Status`/`Priority` stored as `varchar` via `.HasConversion<string>()`
-  - `CommentConfiguration` — PK, FK to `ProjectTask`, soft delete filter, `Content` max length
-  - `AttachmentConfiguration` — PK, FK to `ProjectTask`, `FileName`/`ContentType`/`DownloadUrl` max lengths
-  - `ProjectMemberConfiguration` — composite PK (`ProjectId`, `UserId`), FK to `Project`, FK to `User`, `Role` stored as `varchar`
-  - `UserConfiguration` — PK, FK to `Organization`, `Email` unique index, `DisplayName` max length
-  - `OutboxMessageConfiguration` — PK, `OccurredAt`, `Type`, `Payload` (`nvarchar(max)` / `text`), `ProcessedAt?`
+  - `OutboxMessages` not exposed on `IAppDbContext` — only `AppDbContext` and `OutboxDispatcherJob` write to it
+  - `OnModelCreating` delegates entirely to `ApplyConfigurationsFromAssembly` — no inline configuration
+  - Provider selected at startup via `appsettings.json` — wired in `InfrastructureServiceExtensions` (pending)
+- [x] Define `IEntityTypeConfiguration<T>` classes — one per entity, in feature folders:
+  - `OrganizationConfiguration` — PK, `Name`/`Slug` max length, `Slug` unique index, `IsActive` default, `RowVersion`
+  - `ProjectConfiguration` — PK, FK to `Organization`/`CreatedByUser`, `RowVersion`, soft delete filter, `(OrganizationId, Slug)` composite unique index
+  - `BoardConfiguration` — PK, FK to `Project` (Cascade) / `CreatedByUser` (Restrict), `RowVersion`, `IsArchived` default
+  - `ProjectTaskConfiguration` — PK, FK to `Board` (Cascade) / `Reporter` (Restrict) / `Assignee` (SetNull, nullable), `RowVersion`, soft delete filter, `Status`/`Priority` stored as `varchar` via `.HasConversion<string>()`, `HasMany(Comments)`/`HasMany(Attachments)` with Cascade
+  - `CommentConfiguration` — PK, FK to `Author` (Restrict; Task FK configured from `ProjectTaskConfiguration`), soft delete filter, `Content` max 10 000
+  - `AttachmentConfiguration` — PK, FK to `UploadedByUser` (Restrict; Task FK configured from `ProjectTaskConfiguration`), `FileName`/`ContentType`/`StorageUrl` max lengths; no soft-delete filter (`Attachment` inherits `Entity`, not `AuditableEntity`)
+  - `ProjectMemberConfiguration` — composite PK (`ProjectId`, `UserId`), `Entity.Id` mapped as `ValueGeneratedNever()`, FK to `Project` (Cascade) / `User` (Restrict), `Role` stored as `varchar`
+  - `UserConfiguration` — PK, FK to `Organization` (Restrict), `Email` max 256, composite unique index `(OrganizationId, Email)`, `OrgRole` stored as `varchar`, `RowVersion`
+  - `OutboxMessageConfiguration` — PK, `Type` max 500, `Payload` uncapped (`nvarchar(max)` / `text`), index on `ProcessedAt` for unprocessed-row polling
 - [x] Add `IFileStorageService` to `Ordinis.Application/Common/` — contract: `UploadAsync(Stream, fileName, contentType) → string downloadUrl`; `DeleteAsync(downloadUrl)`
   - **Pulled forward:** implemented ahead of the rest of Phase 5, alongside the `AddAttachment`/`RemoveAttachment` handler rework (branch `feature/phase-4-attachment-storage-handlers`) — the handlers needed the contract to call synchronously. Only the interface exists; `LocalFileStorageService` and DI wiring are still pending below.
 - [ ] Implement `LocalFileStorageService` in `Ordinis.Infrastructure/FileStorage/`:
@@ -432,21 +434,21 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
   - Register in `AddInfrastructureServices`: `services.AddScoped<IFileStorageService, LocalFileStorageService>()`
   - Register static file middleware in `Program.cs` to serve `wwwroot/` — required for `DownloadUrl` links to resolve
   - **Swap note:** replacing `LocalFileStorageService` with `AzureBlobStorageService` or `S3FileStorageService` is a one-class change — the interface contract and all handler code remain unchanged
-- [ ] Define `OutboxMessage` entity in `Persistence/`:
-  - `Id` (Guid, UUIDv7), `OccurredAt`, `Type` (event type name), `Payload` (JSON), `ProcessedAt?`
-- [ ] Add Outbox dispatch to `AppDbContext.SaveChangesAsync`:
-  - Intercept `AggregateRoot` instances with pending domain events
-  - Serialize each event to `OutboxMessage` and insert in same transaction
-  - Call `aggregate.ClearDomainEvents()` after insert
-- [ ] Add `OutboxDispatcherJob` — background service that polls `OutboxMessages` where `ProcessedAt` is null, deserializes and dispatches events, marks processed
-- [ ] Configure global EF Core query filters for soft deletes on `Project`, `Board`, `ProjectTask`, `Comment`
+- [x] Define `OutboxMessage` entity in `Persistence/` (`OutboxMessage.cs`):
+  - `Id` (Guid, UUIDv7), `OccurredAt`, `Type` (CLR `FullName` of the event — used by dispatcher to deserialize), `Payload` (JSON via `System.Text.Json`), `ProcessedAt?`
+- [x] Add Outbox dispatch to `AppDbContext.SaveChangesAsync`:
+  - Intercepts `AggregateRoot` instances with pending domain events via `ChangeTracker`
+  - Serializes each event to `OutboxMessage.From(domainEvent)` and adds to change tracker
+  - Calls `aggregate.ClearDomainEvents()` after serialization, before `base.SaveChangesAsync` — committed atomically in same transaction
+- [ ] Add `OutboxDispatcherJob` — `IHostedService` that polls `OutboxMessages` where `ProcessedAt` is null, deserializes and dispatches events, marks processed
+- [x] Configure global EF Core query filters for soft deletes — applied in entity configurations via `HasQueryFilter`: `Project` (`!IsDeleted`), `ProjectTask` (`!IsDeleted`), `Comment` (`!IsDeleted`); `Board` has no soft-delete domain method so no filter added
 - [ ] Add and manage migrations per provider — maintain separate migration folders for SQL Server and PostgreSQL
-- [ ] Add Dapper — used in query handlers for complex read queries (e.g. `GetTasksFiltered` with joins); inject `IDbConnection` from `AppDbContext.Database.GetDbConnection()`
-- [ ] Configure Serilog — structured logging, output to console (dev) and rolling file (prod); enrich with `CorrelationId`, `MachineName`
+- [ ] Add Dapper — installed; wired into query handlers via `IDbConnection` from `AppDbContext.Database.GetDbConnection()` (pending — query handlers currently use EF Core LINQ)
+- [ ] Configure Serilog — deferred to `Ordinis.Api` (Serilog packages belong at the composition root, not in Infrastructure)
 - [ ] Add `CorrelationIdMiddleware` — generates or propagates `X-Correlation-ID` per request; attaches to `ILogger` scope and response headers
 - [ ] Add request/response logging middleware — logs method, path, status code, duration, correlation ID at `Information` level
 - [ ] Add health check endpoint (`/health`) — checks DB connectivity
-- [ ] Add `InfrastructureServiceExtensions` — `AddInfrastructureServices(this IServiceCollection, IConfiguration)` called from `Program.cs`; registers `AppDbContext`, `TimeProvider.System` as singleton, `IFileStorageService` (`LocalFileStorageService`), `LocalStorageOptions` (from config), Serilog, health checks, background job host
+- [ ] Add `InfrastructureServiceExtensions` — `AddInfrastructureServices(this IServiceCollection, IConfiguration)` called from `Program.cs`; registers `AppDbContext` (dual-provider selection via `DatabaseProvider` config key), `TimeProvider.System` as singleton, `IFileStorageService` (`LocalFileStorageService`), `LocalStorageOptions` (from config), health checks, `OutboxDispatcherJob` as hosted service
 
 **Git tag:** `v0.5-phase5-infrastructure`
 
