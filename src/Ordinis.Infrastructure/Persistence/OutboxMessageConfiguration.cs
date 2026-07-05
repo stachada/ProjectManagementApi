@@ -33,6 +33,14 @@ internal sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outb
         // "fetch all unprocessed messages" query efficient at scale.
         builder.Property(m => m.ProcessedAt);
 
+        builder.Property(m => m.RetryCount)
+            .HasDefaultValue(0);
+
+        // Stores the last handler exception message; null on success.
+        // Truncated to 2000 chars by OutboxDispatcherJob before assignment.
+        builder.Property(m => m.Error)
+            .HasMaxLength(2000);
+
         builder.HasIndex(m => m.ProcessedAt);
     }
 }

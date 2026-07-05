@@ -31,6 +31,19 @@ public sealed class OutboxMessage
     /// </summary>
     public DateTimeOffset? ProcessedAt { get; set; }
 
+    /// <summary>
+    /// Number of failed dispatch attempts. Incremented on each handler exception.
+    /// When it reaches <c>MaxRetries</c> (defined in <c>OutboxDispatcherJob</c>)
+    /// the message is marked dead and will not be retried.
+    /// </summary>
+    public int RetryCount { get; set; }
+
+    /// <summary>
+    /// Last dispatch error message, truncated to 2000 characters.
+    /// <c>null</c> when the message has not been attempted or succeeded.
+    /// </summary>
+    public string? Error { get; set; }
+
     private OutboxMessage() { }
 
     /// <summary>
