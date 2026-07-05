@@ -25,6 +25,8 @@ public static class ApplicationServiceExtensions
         // Slug generation - singleton; stateless and uses a compiled regex
         services.AddSingleton<ISlugGenerator, SlugGenerator>();
 
+        services.AddScoped<IPasswordHasher, PasswordHasher>();
+
         // Auto-register all validators in this assembly.
         // AssemblyScanner finds every IValidator<T> implementation
         // and registers it with DI.
