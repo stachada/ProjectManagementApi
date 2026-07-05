@@ -440,7 +440,17 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
   - Intercepts `AggregateRoot` instances with pending domain events via `ChangeTracker`
   - Serializes each event to `OutboxMessage.From(domainEvent)` and adds to change tracker
   - Calls `aggregate.ClearDomainEvents()` after serialization, before `base.SaveChangesAsync` — committed atomically in same transaction
-- [ ] Add `OutboxDispatcherJob` — `IHostedService` that polls `OutboxMessages` where `ProcessedAt` is null, deserializes and dispatches events, marks processed
+- [x] Add `IDomainEventHandler<TEvent>` to `Application/Common/` — handler contract for domain events dispatched from the Outbox; mirrors `ICommandHandler<T>` shape
+- [x] Add `OutboxDispatcherJob` (`Persistence/OutboxDispatcherJob.cs`) — `BackgroundService` that polls `OutboxMessages WHERE ProcessedAt IS NULL`, dispatches events, marks rows processed:
+  - `IServiceScopeFactory` injected — creates an async scope per tick so `AppDbContext` (scoped) is safe to use
+  - `TimeProvider` injected directly (singleton) — used to stamp `ProcessedAt` and `Error` without a per-tick scope allocation
+  - `ResolveEventType`: resolves CLR type from `FullName` via `AppDomain` assembly scan; results cached in `static ConcurrentDictionary<string, Type?>` so the scan runs once per event type
+  - `InvokeHandlersAsync`: dispatches to all registered `IDomainEventHandler<TEvent>` via `MakeGenericType` + `MethodInfo.Invoke`; `MethodInfo` cached per handler type in `static ConcurrentDictionary<Type, MethodInfo>`; `TargetInvocationException` unwrapped via `ExceptionDispatchInfo.Capture` so real handler exceptions propagate cleanly
+  - Retry logic: handler exceptions increment `OutboxMessage.RetryCount` and record `OutboxMessage.Error`; message is retried up to `MaxRetries = 3` then marked dead (`ProcessedAt = now`) — prevents transient failures from silently discarding events
+  - `ExecuteAsync` wraps `ProcessBatchAsync` in `try/catch (Exception ex) when (ex is not OperationCanceledException)` — a transient DB error logs and continues rather than stopping the host (default `BackgroundServiceExceptionBehavior.StopHost` in .NET 6+)
+  - `OutboxMessage.RetryCount` (int, default 0) and `OutboxMessage.Error` (string?, max 2000) added to entity and `OutboxMessageConfiguration`
+  - **Multi-instance note:** SELECT query has no row-level lock; in a multi-replica deployment add `FOR UPDATE SKIP LOCKED` (PostgreSQL) or `WITH (UPDLOCK, READPAST)` (SQL Server) via `FromSqlInterpolated` — deferred to `InfrastructureServiceExtensions` where the active provider is known
+  - `AddHostedService<OutboxDispatcherJob>()` registration deferred to `InfrastructureServiceExtensions` (pending)
 - [x] Configure global EF Core query filters for soft deletes — applied in entity configurations via `HasQueryFilter`: `Project` (`!IsDeleted`), `ProjectTask` (`!IsDeleted`), `Comment` (`!IsDeleted`); `Board` has no soft-delete domain method so no filter added
 - [ ] Add and manage migrations per provider — maintain separate migration folders for SQL Server and PostgreSQL
 - [ ] Add Dapper — installed; wired into query handlers via `IDbConnection` from `AppDbContext.Database.GetDbConnection()` (pending — query handlers currently use EF Core LINQ)
