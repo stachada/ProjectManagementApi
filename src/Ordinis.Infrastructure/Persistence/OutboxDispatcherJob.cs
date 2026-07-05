@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Ordinis.Application.Common;
 using Ordinis.Domain.Common;
 
@@ -22,11 +23,18 @@ namespace Ordinis.Infrastructure.Persistence;
 /// <c>MaxRetries</c> times before being marked dead. Handlers must be idempotent.
 /// </para>
 /// <para>
-/// <b>Multi-instance note:</b> the SELECT query does not use row-level locking.
-/// In a multi-replica deployment, replace the LINQ query with a provider-specific
-/// <c>FOR UPDATE SKIP LOCKED</c> (PostgreSQL) or <c>WITH (UPDLOCK, READPAST)</c>
-/// (SQL Server) query via <c>FromSqlInterpolated</c>, wired in
-/// <c>InfrastructureServiceExtensions</c> once the active provider is known.
+/// <b>Multi-instance safety:</b> <see cref="ProcessBatchAsync"/> wraps the entire
+/// fetch-dispatch-save cycle in an explicit transaction. <c>FOR UPDATE SKIP LOCKED</c>
+/// (PostgreSQL) and <c>WITH (UPDLOCK, READPAST)</c> (SQL Server) only hold row locks
+/// for the lifetime of the transaction that issued the SELECT — without
+/// <c>BeginTransactionAsync</c>, both hints are ineffective because the autocommit
+/// transaction releases the locks the moment the SELECT completes, before any handler
+/// or <c>SaveChangesAsync</c> runs.
+/// </para>
+/// <para>
+/// <b>SQL coupling:</b> the raw SQL strings in <see cref="FetchBatchAsync"/> reference
+/// table and column names that must stay in sync with <c>OutboxMessageConfiguration</c>.
+/// If the table or column names change in the EF Core configuration, update the queries here.
 /// </para>
 /// </remarks>
 internal sealed class OutboxDispatcherJob : BackgroundService
@@ -45,15 +53,18 @@ internal sealed class OutboxDispatcherJob : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<OutboxDispatcherJob> _logger;
+    private readonly string _databaseProvider;
 
     public OutboxDispatcherJob(
         IServiceScopeFactory scopeFactory,
         TimeProvider timeProvider,
-        ILogger<OutboxDispatcherJob> logger)
+        ILogger<OutboxDispatcherJob> logger,
+        IOptions<OutboxOptions> options)
     {
         _scopeFactory = scopeFactory;
         _timeProvider = timeProvider;
         _logger = logger;
+        _databaseProvider = options.Value.DatabaseProvider;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -79,14 +90,19 @@ internal sealed class OutboxDispatcherJob : BackgroundService
         await using var scope = _scopeFactory.CreateAsyncScope();
         AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        List<OutboxMessage> messages = await db.OutboxMessages
-            .Where(m => m.ProcessedAt == null)
-            .OrderBy(m => m.OccurredAt)
-            .Take(BatchSize)
-            .ToListAsync(stoppingToken);
+        // FIX: wrap the entire fetch-dispatch-save cycle in an explicit transaction so the
+        // row-level locks acquired by FetchBatchAsync (FOR UPDATE SKIP LOCKED / UPDLOCK) are
+        // held until SaveChangesAsync commits. Without BeginTransactionAsync, both locking
+        // hints run in an autocommit transaction that ends immediately after the SELECT,
+        // releasing all locks before DispatchAsync or SaveChangesAsync run — a second replica
+        // can claim the same batch in that window, causing duplicate event dispatch.
+        await using var tx = await db.Database.BeginTransactionAsync(stoppingToken);
+
+        List<OutboxMessage> messages = await FetchBatchAsync(db, stoppingToken);
 
         if (messages.Count == 0)
         {
+            // Nothing to process; tx is disposed without CommitAsync → autorollback (no-op).
             return;
         }
 
@@ -98,6 +114,47 @@ internal sealed class OutboxDispatcherJob : BackgroundService
         }
 
         await db.SaveChangesAsync(stoppingToken);
+        await tx.CommitAsync(stoppingToken);
+    }
+
+    private async Task<List<OutboxMessage>> FetchBatchAsync(AppDbContext db, CancellationToken stoppingToken)
+    {
+        // FIX: use explicit column names instead of SELECT * to make the coupling to
+        // OutboxMessageConfiguration visible. If OutboxMessageConfiguration changes the table
+        // name or a column name, this query must also be updated (the class-level remarks doc
+        // this contract). Column names must match OutboxMessageConfiguration exactly.
+        return _databaseProvider switch
+        {
+            // WITH (UPDLOCK, READPAST): UPDLOCK promotes to update-intent lock;
+            // READPAST skips already-locked rows so other replicas do not block waiting.
+            // TOP is not parameterizable in T-SQL without parentheses; wrapping in parentheses
+            // makes it parameterizable — FromSqlInterpolated sends BatchSize as @p0,
+            // producing SELECT TOP (@p0) which is valid T-SQL since SQL Server 2005.
+            "SqlServer" => await db.OutboxMessages
+                .FromSqlInterpolated($"""
+                    SELECT TOP ({BatchSize})
+                        [Id], [OccurredAt], [Type], [Payload], [ProcessedAt], [RetryCount], [Error]
+                    FROM [OutboxMessages] WITH (UPDLOCK, READPAST)
+                    WHERE [ProcessedAt] IS NULL
+                    ORDER BY [OccurredAt]
+                    """)
+                .ToListAsync(stoppingToken),
+
+            // FOR UPDATE SKIP LOCKED: other replicas skip already-locked rows instead of blocking.
+            // LIMIT is parameterizable in PostgreSQL; FromSqlInterpolated sends BatchSize as @p0.
+            "PostgreSQL" => await db.OutboxMessages
+                .FromSqlInterpolated($"""
+                    SELECT "Id", "OccurredAt", "Type", "Payload", "ProcessedAt", "RetryCount", "Error"
+                    FROM "OutboxMessages"
+                    WHERE "ProcessedAt" IS NULL
+                    ORDER BY "OccurredAt"
+                    LIMIT {BatchSize}
+                    FOR UPDATE SKIP LOCKED
+                    """)
+                .ToListAsync(stoppingToken),
+
+            _ => throw new InvalidOperationException($"Unsupported database provider: {_databaseProvider}")
+        };
     }
 
     private async Task DispatchAsync(
