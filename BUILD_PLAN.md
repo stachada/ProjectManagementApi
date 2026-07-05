@@ -432,7 +432,7 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
   - `UploadAsync` creates the directory on first use; writes via async `FileStream`; returns `{UrlPrefix}/{storedFileName}`
   - `DeleteAsync` logs a warning and returns successfully if the file is not found — prevents orphaned DB rows from a missing file blocking the delete operation
   - Register in `AddInfrastructureServices` (pending): `services.AddScoped<IFileStorageService, LocalFileStorageService>()`
-  - Register `app.UseStaticFiles()` in `Program.cs` (Phase 6) to serve `wwwroot/` — required for `DownloadUrl` links to resolve
+  - Register `app.UseStaticFiles()` in `Program.cs` — pulled forward from Phase 6; required for `DownloadUrl` links to resolve; added to `Program.cs` in this phase
   - **Swap note:** replacing `LocalFileStorageService` with `AzureBlobStorageService` or `S3FileStorageService` is a one-class change — the interface contract and all handler code remain unchanged
 - [x] Define `OutboxMessage` entity in `Persistence/` (`OutboxMessage.cs`):
   - `Id` (Guid, UUIDv7), `OccurredAt`, `Type` (CLR `FullName` of the event — used by dispatcher to deserialize), `Payload` (JSON via `System.Text.Json`), `ProcessedAt?`
@@ -449,16 +449,27 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
   - Retry logic: handler exceptions increment `OutboxMessage.RetryCount` and record `OutboxMessage.Error`; message is retried up to `MaxRetries = 3` then marked dead (`ProcessedAt = now`) — prevents transient failures from silently discarding events
   - `ExecuteAsync` wraps `ProcessBatchAsync` in `try/catch (Exception ex) when (ex is not OperationCanceledException)` — a transient DB error logs and continues rather than stopping the host (default `BackgroundServiceExceptionBehavior.StopHost` in .NET 6+)
   - `OutboxMessage.RetryCount` (int, default 0) and `OutboxMessage.Error` (string?, max 2000) added to entity and `OutboxMessageConfiguration`
-  - **Multi-instance note:** SELECT query has no row-level lock; in a multi-replica deployment add `FOR UPDATE SKIP LOCKED` (PostgreSQL) or `WITH (UPDLOCK, READPAST)` (SQL Server) via `FromSqlInterpolated` — deferred to `InfrastructureServiceExtensions` where the active provider is known
-  - `AddHostedService<OutboxDispatcherJob>()` registration deferred to `InfrastructureServiceExtensions` (pending)
+  - **Multi-instance safety:** `FetchBatchAsync` issues provider-specific locking SQL (`WITH (UPDLOCK, READPAST)` for SQL Server, `FOR UPDATE SKIP LOCKED` for PostgreSQL) via `FromSqlInterpolated`; the active provider is read from `IOptions<OutboxOptions>` (populated by `InfrastructureServiceExtensions`); `ProcessBatchAsync` wraps the entire fetch-dispatch-save cycle in `BeginTransactionAsync`/`CommitAsync` so the row-level locks are held until `SaveChangesAsync` commits — without the explicit transaction both hints are ineffective (autocommit releases locks immediately after SELECT)
+  - `OutboxOptions` internal class added to `Persistence/` — carries the normalized provider string set by `AddInfrastructureServices`
+  - `AddHostedService<OutboxDispatcherJob>()` registered in `AddInfrastructureServices`
 - [x] Configure global EF Core query filters for soft deletes — applied in entity configurations via `HasQueryFilter`: `Project` (`!IsDeleted`), `ProjectTask` (`!IsDeleted`), `Comment` (`!IsDeleted`); `Board` has no soft-delete domain method so no filter added
 - [ ] Add and manage migrations per provider — maintain separate migration folders for SQL Server and PostgreSQL
 - [ ] Add Dapper — installed; wired into query handlers via `IDbConnection` from `AppDbContext.Database.GetDbConnection()` (pending — query handlers currently use EF Core LINQ)
 - [ ] Configure Serilog — deferred to `Ordinis.Api` (Serilog packages belong at the composition root, not in Infrastructure)
 - [ ] Add `CorrelationIdMiddleware` — generates or propagates `X-Correlation-ID` per request; attaches to `ILogger` scope and response headers
 - [ ] Add request/response logging middleware — logs method, path, status code, duration, correlation ID at `Information` level
-- [ ] Add health check endpoint (`/health`) — checks DB connectivity
-- [ ] Add `InfrastructureServiceExtensions` — `AddInfrastructureServices(this IServiceCollection, IConfiguration)` called from `Program.cs`; registers `AppDbContext` (dual-provider selection via `DatabaseProvider` config key), `TimeProvider.System` as singleton, `IFileStorageService` (`LocalFileStorageService`), `LocalStorageOptions` (from config), health checks, `OutboxDispatcherJob` as hosted service
+- [x] Add health check endpoint (`/health`) — `AddDbContextCheck<AppDbContext>("database")` in `AddInfrastructureServices`; `app.MapHealthChecks("/health")` in `Program.cs`; requires `Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore` (10.0.9)
+- [x] Add `InfrastructureServiceExtensions` — `AddInfrastructureServices(this IServiceCollection, IConfiguration)` in `Infrastructure/Common/`; called from `Program.cs`; registers:
+  - `AppDbContext` — dual-provider (`DatabaseProvider` config key); provider validated and normalized to canonical casing eagerly at startup before `AddDbContext` (an invalid value throws immediately, not on first DB access)
+  - `IAppDbContext` forwarding delegate → same scoped `AppDbContext` instance (all 46 handlers inject `IAppDbContext`)
+  - Connection string validated with `string.IsNullOrEmpty` (not `?? throw`) — catches the empty-placeholder case from committed `appsettings.json`
+  - `TimeProvider.System` as singleton
+  - `LocalStorageOptions` bound from `"LocalStorage"` config section (via `Microsoft.Extensions.Options.ConfigurationExtensions` 10.0.9)
+  - `IFileStorageService` → `LocalFileStorageService` (scoped)
+  - `OutboxOptions` configured with normalized provider string for `OutboxDispatcherJob`
+  - Health checks (`AddDbContextCheck<AppDbContext>`) and `OutboxDispatcherJob` hosted service
+  - `appsettings.json` configured: `DatabaseProvider`, `ConnectionStrings:DefaultConnection` (empty placeholder — set via User Secrets), `LocalStorage` section
+  - `appsettings.Development.json` configured: `DatabaseProvider`, EF Core SQL command logging at `Information` level
 
 **Git tag:** `v0.5-phase5-infrastructure`
 
