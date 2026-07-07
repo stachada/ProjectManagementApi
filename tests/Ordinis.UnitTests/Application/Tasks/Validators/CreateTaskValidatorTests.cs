@@ -15,7 +15,7 @@ namespace Ordinis.UnitTests.Application.Tasks.Validators;
 public sealed class CreateTaskValidatorTests
 {
     private static CreateTask ValidCommand(Guid boardId, Guid? assigneeId = null)
-        => new (
+        => new(
             boardId,
             "Fix login bug",
             "Description",

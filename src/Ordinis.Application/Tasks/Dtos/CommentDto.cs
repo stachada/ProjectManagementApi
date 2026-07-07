@@ -29,7 +29,7 @@ public sealed class CommentDto
     /// Whether this comment has been edited at least once since it was posted.
     /// Corresponds to <see cref="Comment.IsEdited"/> on the domain entity.
     /// </summary>
-    public bool IsEdited { get; init;}
+    public bool IsEdited { get; init; }
 
     /// <summary>
     /// UTC timestamp when this comment was created.

@@ -60,5 +60,5 @@ public sealed class PagedResult<T>
     /// to be mapped to <c>PagedResult<Dto></c> without re-running the query.
     /// </summary>
     public PagedResult<TOut> Map<TOut>(Func<T, TOut> selector)
-        => new (Items.Select(selector).ToList(), TotalCount, Page, PageSize);
+        => new(Items.Select(selector).ToList(), TotalCount, Page, PageSize);
 }

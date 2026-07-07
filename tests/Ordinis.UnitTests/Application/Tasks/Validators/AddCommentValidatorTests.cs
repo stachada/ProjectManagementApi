@@ -9,7 +9,7 @@ namespace Ordinis.UnitTests.Application.Tasks.Validators;
 public sealed class AddCommentValidatorTests
 {
     private static AddComment ValidCommand(Guid taskId, Guid authorId)
-        => new (
+        => new(
             TaskId: taskId,
             AuthorId: authorId,
             Content: "This is a comment.");
@@ -46,7 +46,8 @@ public sealed class AddCommentValidatorTests
         var validator = new AddCommentValidator();
         AddComment command = ValidCommand(
             Guid.CreateVersion7(),
-            Guid.CreateVersion7()) with { Content = string.Empty };
+            Guid.CreateVersion7()) with
+        { Content = string.Empty };
 
         TestValidationResult<AddComment> result = await validator.TestValidateAsync(command);
 
@@ -59,7 +60,8 @@ public sealed class AddCommentValidatorTests
         var validator = new AddCommentValidator();
         AddComment command = ValidCommand(
             Guid.CreateVersion7(),
-            Guid.CreateVersion7()) with { Content = new string('A', 10_000) };
+            Guid.CreateVersion7()) with
+        { Content = new string('A', 10_000) };
 
         TestValidationResult<AddComment> result = await validator.TestValidateAsync(command);
 
@@ -72,7 +74,8 @@ public sealed class AddCommentValidatorTests
         var validator = new AddCommentValidator();
         AddComment command = ValidCommand(
             Guid.CreateVersion7(),
-            Guid.CreateVersion7()) with { Content = new string('A', 10_001) };
+            Guid.CreateVersion7()) with
+        { Content = new string('A', 10_001) };
 
         TestValidationResult<AddComment> result = await validator.TestValidateAsync(command);
 

@@ -10,7 +10,7 @@ namespace Ordinis.UnitTests.Application.Tasks.Validators;
 public sealed class UpdateTaskValidatorTests
 {
     private static UpdateTask ValidCommand(Guid taskId)
-        => new (
+        => new(
             TaskId: taskId,
             Title: "Fix login bug",
             Description: "Description",

@@ -10,7 +10,7 @@ namespace Ordinis.UnitTests.Application.Tasks.Validators;
 public sealed class MoveTaskValidatorTests
 {
     private static MoveTask ValidCommand(Guid taskId)
-        => new (
+        => new(
             TaskId: taskId,
             NewStatus: ProjectTaskStatus.InProgress,
             RequestedByUserId: Guid.CreateVersion7());

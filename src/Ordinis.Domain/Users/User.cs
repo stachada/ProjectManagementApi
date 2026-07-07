@@ -97,7 +97,7 @@ public class User : AggregateRoot
     /// <param name="passwordHash">Pre-hashed password from the Application layer.</param>
     /// <param name="orgRole">The user's organization-level role</param>
     /// <exception cref="ArgumentException">
-     /// Thrown if <paramref name="displayName"/> or <paramref name="email"/> is empty.
+    /// Thrown if <paramref name="displayName"/> or <paramref name="email"/> is empty.
     /// </exception>
     public static User Create(
         Guid organizationId,

@@ -9,7 +9,7 @@ namespace Ordinis.UnitTests.Application.Tasks.Validators;
 public class AddAttachmentValidatorTests
 {
     private static AddAttachment ValidCommand(Guid taskId)
-        => new (
+        => new(
             TaskId: taskId,
             FileName: "document.pdf",
             ContentType: "application/pdf",

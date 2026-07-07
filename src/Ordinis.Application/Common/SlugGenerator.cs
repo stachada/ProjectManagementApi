@@ -22,7 +22,7 @@ internal sealed class SlugGenerator : ISlugGenerator
     /// <inheritdoc/>
     public string Slugify(string input)
     {
-       ArgumentException.ThrowIfNullOrWhiteSpace(input, nameof(input));
+        ArgumentException.ThrowIfNullOrWhiteSpace(input, nameof(input));
 
         return NonAlphanumericRegex
             .Replace(input.Trim().ToLowerInvariant(), "-")
