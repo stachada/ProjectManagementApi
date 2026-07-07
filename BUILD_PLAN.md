@@ -58,7 +58,15 @@ src/
 │   ├── Organizations/      # OrganizationConfiguration.cs
 │   ├── Users/              # UserConfiguration.cs
 │   └── Persistence/        # AppDbContext.cs, OutboxMessage.cs, OutboxMessageConfiguration.cs
-│                           # OutboxDispatcherJob.cs, Migrations/
+│                           # OutboxDispatcherJob.cs
+│
+├── Ordinis.Infrastructure.Migrations.SqlServer
+│   ├── DesignTime/         # AppDbContextFactory.cs (IDesignTimeDbContextFactory<AppDbContext>)
+│   └── Migrations/         # InitialCreate.cs, AppDbContextModelSnapshot.cs
+│
+├── Ordinis.Infrastructure.Migrations.PostgreSql
+│   ├── DesignTime/         # AppDbContextFactory.cs (IDesignTimeDbContextFactory<AppDbContext>)
+│   └── Migrations/         # InitialCreate.cs, AppDbContextModelSnapshot.cs
 │
 ├── Ordinis.Api
 │   ├── Common/             # GlobalExceptionMiddleware.cs, CorrelationIdMiddleware.cs
@@ -453,7 +461,12 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
   - `OutboxOptions` internal class added to `Persistence/` — carries the normalized provider string set by `AddInfrastructureServices`
   - `AddHostedService<OutboxDispatcherJob>()` registered in `AddInfrastructureServices`
 - [x] Configure global EF Core query filters for soft deletes — applied in entity configurations via `HasQueryFilter`: `Project` (`!IsDeleted`), `ProjectTask` (`!IsDeleted`), `Comment` (`!IsDeleted`); `Board` has no soft-delete domain method so no filter added
-- [ ] Add and manage migrations per provider — maintain separate migration folders for SQL Server and PostgreSQL
+- [x] Add and manage migrations per provider — maintain separate migration folders for SQL Server and PostgreSQL
+  - Two satellite class libraries added under `src/`: `Ordinis.Infrastructure.Migrations.SqlServer` and `Ordinis.Infrastructure.Migrations.PostgreSql`, each referencing `Ordinis.Infrastructure` and only its own EF Core provider package — EF Core does not allow two `ModelSnapshot`s for the same `DbContext` in a single assembly, so each provider needs its own migrations assembly
+  - Each satellite project has an `IDesignTimeDbContextFactory<AppDbContext>` (`DesignTime/AppDbContextFactory.cs`) building the context directly with a dummy connection string — `dotnet ef migrations add` never touches `Program.cs`/`AddInfrastructureServices` or requires real User Secrets
+  - `InfrastructureServiceExtensions.AddDatabase` sets `.MigrationsAssembly(...)` on `UseSqlServer`/`UseNpgsql` to route each provider to its own migration set at runtime; `Ordinis.Api` takes a `ProjectReference` to both satellite projects (not used in code — needed so both migration DLLs land in the publish output for the by-name assembly load) and to `Microsoft.EntityFrameworkCore.Design` (design-time only, `dotnet ef` requires it on the startup project)
+  - **Bug found and fixed along the way:** all 5 aggregate configs used `.IsRowVersion()` on the `byte[] RowVersion` property. Npgsql only supports `.IsRowVersion()` on a `uint` mapped to the PostgreSQL `xmin` system column — on `byte[]` it silently never updates, breaking optimistic concurrency (no `409 Conflict`) under PostgreSQL. Switched to an app-managed concurrency token: `AggregateRoot.RowVersion` setter is now `internal` (matches `CreatedAt`/`UpdatedAt`), `AppDbContext.SaveChangesAsync` assigns a fresh `Guid.CreateVersion7().ToByteArray()` to every added/modified `AggregateRoot` via a new `SetConcurrencyTokens()` step, and all 5 configs use `.IsConcurrencyToken()` instead — identical behavior on both providers, `byte[]` contract in Domain/DTOs unchanged
+  - Generated `InitialCreate` for both providers via `dotnet ef migrations add InitialCreate --project src/Ordinis.Infrastructure.Migrations.{SqlServer,PostgreSql}`; verified `RowVersion` is now a plain persisted column (`varbinary(max)` / `bytea`) on both, not DB-generated
 - [ ] Add Dapper — installed; wired into query handlers via `IDbConnection` from `AppDbContext.Database.GetDbConnection()` (pending — query handlers currently use EF Core LINQ)
 - [ ] Configure Serilog — deferred to `Ordinis.Api` (Serilog packages belong at the composition root, not in Infrastructure)
 - [ ] Add `CorrelationIdMiddleware` — generates or propagates `X-Correlation-ID` per request; attaches to `ILogger` scope and response headers
