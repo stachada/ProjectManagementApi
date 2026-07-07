@@ -85,11 +85,13 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     /// In addition to persisting changes, this override:
     /// <list type="number">
     ///   <item>Sets <c>CreatedAt</c> / <c>UpdatedAt</c> on all tracked <see cref="AuditableEntity"/> instances.</item>
+    ///   <item>Assigns a fresh <see cref="AggregateRoot.RowVersion"/> to all tracked
+    ///         <see cref="AggregateRoot"/> instances — the app-managed concurrency token.</item>
     ///   <item>Serializes pending domain events from all tracked <see cref="AggregateRoot"/> instances
     ///         into <see cref="OutboxMessage"/> rows, then clears the in-memory event list so the
     ///         same events are never double-dispatched if the unit of work is reused.</item>
     /// </list>
-    /// Both operations run before <c>base.SaveChangesAsync</c> so that the outbox rows and
+    /// All three steps run before <c>base.SaveChangesAsync</c> so that the outbox rows and
     /// aggregate changes are committed in a single atomic transaction.
     /// </remarks>
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -97,6 +99,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
         var now = _timeProvider.GetUtcNow();
 
         SetAuditTimestamps(now);
+        SetConcurrencyTokens();
         WriteOutboxMessages();
 
         return await base.SaveChangesAsync(cancellationToken);
@@ -111,6 +114,21 @@ public sealed class AppDbContext : DbContext, IAppDbContext
 
             if (entry.State is EntityState.Added or EntityState.Modified)
                 entry.Entity.UpdatedAt = now;
+        }
+    }
+
+    /// <summary>
+    /// Assigns a fresh <c>RowVersion</c> to every inserted/updated aggregate root. This is an
+    /// app-managed concurrency token (see <see cref="AggregateRoot.RowVersion"/>) rather than a
+    /// database-generated one, so the same behavior applies identically on SQL Server and
+    /// PostgreSQL.
+    /// </summary>
+    private void SetConcurrencyTokens()
+    {
+        foreach (var entry in ChangeTracker.Entries<AggregateRoot>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified)
+                entry.Entity.RowVersion = Guid.CreateVersion7().ToByteArray();
         }
     }
 

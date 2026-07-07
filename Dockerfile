@@ -7,6 +7,8 @@ COPY Directory.Build.props ./
 COPY src/Ordinis.Domain/Ordinis.Domain.csproj               src/Ordinis.Domain/
 COPY src/Ordinis.Application/Ordinis.Application.csproj     src/Ordinis.Application/
 COPY src/Ordinis.Infrastructure/Ordinis.Infrastructure.csproj src/Ordinis.Infrastructure/
+COPY src/Ordinis.Infrastructure.Migrations.SqlServer/Ordinis.Infrastructure.Migrations.SqlServer.csproj src/Ordinis.Infrastructure.Migrations.SqlServer/
+COPY src/Ordinis.Infrastructure.Migrations.PostgreSql/Ordinis.Infrastructure.Migrations.PostgreSql.csproj src/Ordinis.Infrastructure.Migrations.PostgreSql/
 COPY src/Ordinis.Api/Ordinis.Api.csproj                     src/Ordinis.Api/
 
 # Restore only the API project — test projects are not needed in the image

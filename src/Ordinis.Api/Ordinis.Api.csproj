@@ -10,11 +10,20 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
     <PackageReference Include="Microsoft.OpenApi" Version="2.9.0" />
+    <!-- Required by `dotnet ef` when Ordinis.Api is the startup project (design-time only). -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Ordinis.Application\Ordinis.Application.csproj" />
     <ProjectReference Include="..\Ordinis.Infrastructure\Ordinis.Infrastructure.csproj" />
+    <!-- Not referenced directly in code — their DLLs must be present in the publish output so
+         MigrationsAssembly()'s by-name assembly load resolves at runtime. -->
+    <ProjectReference Include="..\Ordinis.Infrastructure.Migrations.SqlServer\Ordinis.Infrastructure.Migrations.SqlServer.csproj" />
+    <ProjectReference Include="..\Ordinis.Infrastructure.Migrations.PostgreSql\Ordinis.Infrastructure.Migrations.PostgreSql.csproj" />
   </ItemGroup>
 
 </Project>

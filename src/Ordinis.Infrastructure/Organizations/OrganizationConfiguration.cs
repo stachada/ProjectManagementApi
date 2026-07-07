@@ -33,7 +33,9 @@ internal sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organ
         builder.Property(o => o.IsActive)
             .HasDefaultValue(true);
 
+        // App-managed concurrency token (assigned by AppDbContext.SaveChangesAsync) — not
+        // database-generated, so behavior is identical on SQL Server and PostgreSQL.
         builder.Property(o => o.RowVersion)
-            .IsRowVersion();
+            .IsConcurrencyToken();
     }
 }

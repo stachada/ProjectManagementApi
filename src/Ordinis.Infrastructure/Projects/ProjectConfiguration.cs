@@ -34,8 +34,10 @@ internal sealed class ProjectConfiguration : IEntityTypeConfiguration<Project>
         builder.Property(p => p.IsArchived)
             .HasDefaultValue(false);
 
+        // App-managed concurrency token (assigned by AppDbContext.SaveChangesAsync) — not
+        // database-generated, so behavior is identical on SQL Server and PostgreSQL.
         builder.Property(p => p.RowVersion)
-            .IsRowVersion();
+            .IsConcurrencyToken();
 
         builder.HasQueryFilter(p => !p.IsDeleted);
 
