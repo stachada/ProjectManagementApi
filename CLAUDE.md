@@ -83,7 +83,12 @@ src/
 │   ├── Projects/
 │   ├── Organizations/
 │   ├── Users/
-│   └── Persistence/        # AppDbContext.cs, migrations, DI registration
+│   └── Persistence/        # AppDbContext.cs, DI registration
+│
+├── Ordinis.Infrastructure.Migrations.SqlServer    # IDesignTimeDbContextFactory + migrations, SQL Server only
+├── Ordinis.Infrastructure.Migrations.PostgreSql   # IDesignTimeDbContextFactory + migrations, PostgreSQL only
+│                                                   # (separate projects — EF Core forbids two ModelSnapshots
+│                                                   #  for one DbContext in a single assembly; see docs/MIGRATIONS.md)
 │
 ├── Ordinis.Api
 │   ├── Tasks/              # TasksController.cs

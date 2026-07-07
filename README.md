@@ -114,12 +114,20 @@ dotnet user-secrets set "Jwt:SigningKey" '<long-random-secret>' --project src/Or
 
 > Use single quotes so Bash does not expand special characters (e.g. `!`) in the values.
 
+Database schema is managed via provider-specific EF Core migrations — see
+[docs/MIGRATIONS.md](docs/MIGRATIONS.md) for how to add, review, and apply them.
+Full local dev setup (User Secrets, connection strings per scenario, JWT key generation,
+Docker commands) is in [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md).
+
 **GitHub Actions Secrets required** — add these in *Settings → Secrets and variables → Actions*:
 
 | Secret | Purpose |
 | --- | --- |
 | `CONNECTION_STRING` | Full connection string for the CI database |
 | `JWT_SIGNING_KEY` | Same key as used locally |
+
+See [docs/CI_CD.md](docs/CI_CD.md) for the full CI/CD workflow reference — what each
+GitHub Actions workflow does, the Docker build, and troubleshooting notes.
 
 **Docker / production** — secrets are passed via environment variables at
 startup (see `docker-compose.yml` and `.env.example`). No secrets live in
