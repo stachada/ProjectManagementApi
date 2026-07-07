@@ -1,0 +1,11 @@
+# Normalize all text files to LF on commit and checkout.
+# Prevents CRLF/LF drift between Windows dev machines and Linux CI runners.
+* text=auto eol=lf
+
+# Binary files — no conversion.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
