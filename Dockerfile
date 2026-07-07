@@ -2,21 +2,20 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /repo
 
-# Copy solution and project files first to leverage layer caching on restore
-COPY Ordinis.slnx ./
+# Copy project files first to leverage layer caching on restore
 COPY Directory.Build.props ./
 COPY src/Ordinis.Domain/Ordinis.Domain.csproj               src/Ordinis.Domain/
 COPY src/Ordinis.Application/Ordinis.Application.csproj     src/Ordinis.Application/
 COPY src/Ordinis.Infrastructure/Ordinis.Infrastructure.csproj src/Ordinis.Infrastructure/
 COPY src/Ordinis.Api/Ordinis.Api.csproj                     src/Ordinis.Api/
 
-RUN dotnet restore Ordinis.slnx
+# Restore only the API project — test projects are not needed in the image
+RUN dotnet restore src/Ordinis.Api/Ordinis.Api.csproj
 
 COPY src/ src/
 
 RUN dotnet publish src/Ordinis.Api/Ordinis.Api.csproj \
     --configuration Release \
-    --no-restore \
     --output /app/publish
 
 # Stage 2 — runtime
