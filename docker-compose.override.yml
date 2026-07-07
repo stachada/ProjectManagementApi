@@ -1,0 +1,12 @@
+# Local developer overrides — merged automatically by `docker-compose up`.
+# Do NOT commit real secrets here; use a .env file (gitignored) for passwords and keys.
+#
+# Usage:
+#   docker-compose --profile sqlserver up   # SQL Server (default)
+#   docker-compose --profile postgres up    # PostgreSQL
+services:
+  api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Logging__LogLevel__Default: Debug
+      Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command: Information
