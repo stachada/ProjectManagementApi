@@ -845,23 +845,23 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 
 > ✅ Can start alongside Phase 5.
 
-- [ ] `Dockerfile` — multi-stage build (sdk → publish → runtime); non-root user; `EXPOSE 8080`
-- [ ] `docker-compose.yml` — services: `api` + `db` (SQL Server or PostgreSQL selectable); volume for DB data; health check on `api`
-- [ ] `docker-compose.override.yml` — local dev overrides (e.g. mount source for hot reload)
-- [ ] GitHub Actions — `ci.yml`:
+- [x] `Dockerfile` — multi-stage build (sdk → publish → runtime); non-root user; `EXPOSE 8080`
+- [x] `docker-compose.yml` — services: `api` + `db` (SQL Server or PostgreSQL selectable); volume for DB data; health check on `api`
+- [x] `docker-compose.override.yml` — local dev overrides (e.g. mount source for hot reload)
+- [x] GitHub Actions — `ci.yml`:
   - Trigger: `push` to any branch, `pull_request` to `main`
   - Steps: checkout → setup .NET 10 → restore → build → test → lint (via `dotnet format --verify-no-changes`)
   - Test results uploaded as artifact
-- [ ] GitHub Actions — `publish.yml`:
+- [x] GitHub Actions — `publish.yml`:
   - Trigger: `push` to `main` (after squash merge)
   - Steps: build Docker image → push to GitHub Container Registry (`ghcr.io`)
   - Tagged with git SHA and `latest`
-- [ ] Environment-specific `appsettings`:
+- [x] Environment-specific `appsettings`:
   - `appsettings.json` — defaults, no secrets
   - `appsettings.Development.json` — verbose logging, CORS allow-all
   - `appsettings.Production.json` — minimal logging, strict CORS
-- [ ] GitHub Actions Secrets for CI: `CONNECTION_STRING`, `JWT_SIGNING_KEY`; injected as environment variables into the test and publish steps
-- [ ] Document secrets strategy in README: User Secrets (local) → GitHub Actions Secrets (CI) → environment variables (Docker/production)
+- [x] GitHub Actions Secrets for CI: `CONNECTION_STRING`, `JWT_SIGNING_KEY`; injected as environment variables into the test and publish steps
+- [x] Document secrets strategy in README: User Secrets (local) → GitHub Actions Secrets (CI) → environment variables (Docker/production)
 
 **Git tag:** `v0.11-phase11-cicd`
 
