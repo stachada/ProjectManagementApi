@@ -31,7 +31,7 @@ public static class TaskMapper
     /// name falls back to an empty string rather than throwing.
     /// </param>
     public static TaskDto ToDto(this ProjectTask task, IReadOnlyDictionary<Guid, string> userLookup)
-        => new ()
+        => new()
         {
             Id = task.Id,
             BoardId = task.BoardId,
@@ -74,7 +74,7 @@ public static class TaskMapper
     /// </param>
     /// <returns></returns>
     public static TaskSummaryDto ToSummaryDto(this ProjectTask task, IReadOnlyDictionary<Guid, string> userLookup)
-        => new ()
+        => new()
         {
             Id = task.Id,
             BoardId = task.BoardId,
@@ -96,7 +96,7 @@ public static class TaskMapper
 
     #region Private helpers - not part of the public mapping surface
     private static CommentDto ToCommentDto(this Comment comment, IReadOnlyDictionary<Guid, string> userLookup)
-        => new ()
+        => new()
         {
             Id = comment.Id,
             AuthorId = comment.AuthorId,
@@ -111,7 +111,7 @@ public static class TaskMapper
         };
 
     private static AttachmentDto ToAttachmentDto(this Attachment attachment)
-        => new ()
+        => new()
         {
             Id = attachment.Id,
             FileName = attachment.FileName,

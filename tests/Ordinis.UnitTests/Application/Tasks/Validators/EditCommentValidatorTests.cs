@@ -13,7 +13,7 @@ namespace Ordinis.UnitTests.Application.Tasks.Validators;
 public class EditCommentValidatorTests
 {
     private static EditComment ValidCommand(Guid taskId, Guid commentId)
-        => new (
+        => new(
             TaskId: taskId,
             CommentId: commentId,
             NewContent: "This is the new content.",
@@ -69,7 +69,8 @@ public class EditCommentValidatorTests
         var validator = new EditCommentValidator(db);
         EditComment command = ValidCommand(
             Guid.CreateVersion7(),
-            Guid.CreateVersion7()) with { NewContent = string.Empty };
+            Guid.CreateVersion7()) with
+        { NewContent = string.Empty };
 
         TestValidationResult<EditComment> result = await validator.TestValidateAsync(command);
 
@@ -83,7 +84,8 @@ public class EditCommentValidatorTests
         var validator = new EditCommentValidator(db);
         EditComment command = ValidCommand(
             Guid.CreateVersion7(),
-            Guid.CreateVersion7()) with { NewContent = new string('A', 10_000) };
+            Guid.CreateVersion7()) with
+        { NewContent = new string('A', 10_000) };
 
         TestValidationResult<EditComment> result = await validator.TestValidateAsync(command);
 
@@ -97,7 +99,8 @@ public class EditCommentValidatorTests
         var validator = new EditCommentValidator(db);
         EditComment command = ValidCommand(
             Guid.CreateVersion7(),
-            Guid.CreateVersion7()) with { NewContent = new string('A', 10_001) };
+            Guid.CreateVersion7()) with
+        { NewContent = new string('A', 10_001) };
 
         TestValidationResult<EditComment> result = await validator.TestValidateAsync(command);
 
@@ -111,7 +114,8 @@ public class EditCommentValidatorTests
         var validator = new EditCommentValidator(db);
         EditComment command = ValidCommand(
             Guid.CreateVersion7(),
-            Guid.CreateVersion7()) with { RequestedByUserId = Guid.Empty };
+            Guid.CreateVersion7()) with
+        { RequestedByUserId = Guid.Empty };
 
         TestValidationResult<EditComment> result = await validator.TestValidateAsync(command);
 

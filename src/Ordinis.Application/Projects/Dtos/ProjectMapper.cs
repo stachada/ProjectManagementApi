@@ -111,7 +111,7 @@ public static class ProjectMapper
             Role = member.Role,
             JoinedAt = member.JoinedAt
         };
-        
+
     /// <summary>
     /// Maps a <see cref="Board"/> to a <see cref="BoardSummaryDto"/>.
     /// <see cref="Board"/> carries no task navigation collection, so the

@@ -13,7 +13,7 @@ namespace Ordinis.UnitTests.Application.Tasks.Validators;
 public sealed class AssignTaskValidatorTests
 {
     private static AssignTask ValidCommand(Guid taskId, Guid assigneeId, Guid requestedByUserId)
-        => new (
+        => new(
             TaskId: taskId,
             AssigneeId: assigneeId,
             RequestedByUserId: requestedByUserId);

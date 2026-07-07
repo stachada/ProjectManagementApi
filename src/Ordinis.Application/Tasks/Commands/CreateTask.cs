@@ -46,7 +46,7 @@ public sealed record CreateTask(
 /// <param name="timeProvider"></param>
 internal sealed class CreateTaskHandler(
     IAppDbContext db,
-    TimeProvider timeProvider): ICommandHandler<CreateTask, Guid>
+    TimeProvider timeProvider) : ICommandHandler<CreateTask, Guid>
 {
     public async Task<Guid> HandleAsync(CreateTask command, CancellationToken cancellationToken)
     {

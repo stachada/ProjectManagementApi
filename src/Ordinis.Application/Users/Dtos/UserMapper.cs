@@ -22,7 +22,7 @@ public static class UserMapper
     /// scalar query rather than a navigation property.
     /// </param>
     public static UserDto ToDto(this User user, string organizationName)
-        => new ()
+        => new()
         {
             Id = user.Id,
             DisplayName = user.DisplayName,

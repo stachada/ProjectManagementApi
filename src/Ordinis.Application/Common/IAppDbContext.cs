@@ -1,8 +1,8 @@
-using Ordinis.Domain.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Ordinis.Domain.Projects;
-using Ordinis.Domain.Users;
 using Ordinis.Domain.Organizations;
+using Ordinis.Domain.Projects;
+using Ordinis.Domain.Tasks;
+using Ordinis.Domain.Users;
 
 namespace Ordinis.Application.Common;
 

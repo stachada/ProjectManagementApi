@@ -66,7 +66,7 @@ public class ProjectMember : Entity
     /// Called exclusively from <see cref="Project.AddMember"/>.
     /// </summary>
     internal static ProjectMember Create(Guid projectId, Guid userId, Role role, DateTimeOffset joinedAt)
-        => new ()
+        => new()
         {
             ProjectId = projectId,
             UserId = userId,

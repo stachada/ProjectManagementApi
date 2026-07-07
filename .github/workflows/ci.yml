@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build, Test & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore Ordinis.slnx
+
+      - name: Build
+        run: dotnet build Ordinis.slnx --no-restore --configuration Release
+
+      - name: Test
+        run: >
+          dotnet test Ordinis.slnx
+          --no-build
+          --configuration Release
+          --logger trx
+          --results-directory ./test-results
+        env:
+          DatabaseProvider: SqlServer
+          ConnectionStrings__DefaultConnection: ${{ secrets.CONNECTION_STRING }}
+          Jwt__SigningKey: ${{ secrets.JWT_SIGNING_KEY }}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ./test-results/*.trx
+
+      - name: Lint (dotnet format)
+        run: dotnet format Ordinis.slnx --verify-no-changes

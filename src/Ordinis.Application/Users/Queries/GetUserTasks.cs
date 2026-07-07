@@ -52,7 +52,7 @@ internal sealed class GetUserTasksHandler(IAppDbContext db)
 
         TaskFilter filter = query.Filter ?? new TaskFilter();
 
-        var page     = Math.Max(1, filter.Page);
+        var page = Math.Max(1, filter.Page);
         var pageSize = Math.Clamp(filter.PageSize, 1, 100);
 
         // Build the base queryable — AssigneeId always scoped to this user.
@@ -92,19 +92,19 @@ internal sealed class GetUserTasksHandler(IAppDbContext db)
         // Sorting.
         queryable = filter.SortBy?.ToLowerInvariant() switch
         {
-            "title"      => filter.SortDescending
+            "title" => filter.SortDescending
                                 ? queryable.OrderByDescending(t => t.Title)
                                 : queryable.OrderBy(t => t.Title),
-            "priority"   => filter.SortDescending
+            "priority" => filter.SortDescending
                                 ? queryable.OrderByDescending(t => t.Priority)
                                 : queryable.OrderBy(t => t.Priority),
-            "duedate"    => filter.SortDescending
+            "duedate" => filter.SortDescending
                                 ? queryable.OrderByDescending(t => t.DueDate)
                                 : queryable.OrderBy(t => t.DueDate),
-            "createdat"  => filter.SortDescending
+            "createdat" => filter.SortDescending
                                 ? queryable.OrderByDescending(t => t.CreatedAt)
                                 : queryable.OrderBy(t => t.CreatedAt),
-            _            => queryable.OrderByDescending(t => t.CreatedAt), // default
+            _ => queryable.OrderByDescending(t => t.CreatedAt), // default
         };
 
         // Paginate and materialise.

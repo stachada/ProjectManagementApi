@@ -310,7 +310,7 @@ public class ProjectTask : AggregateRoot
     }
     #endregion
 
-     #region Assignment
+    #region Assignment
     /// <summary>
     /// Assigns the task to a user, or reassigns it from the current assignee.
     /// </summary>
