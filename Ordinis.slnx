@@ -4,6 +4,8 @@
     <Project Path="src/Ordinis.Application/Ordinis.Application.csproj" />
     <Project Path="src/Ordinis.Domain/Ordinis.Domain.csproj" />
     <Project Path="src/Ordinis.Infrastructure/Ordinis.Infrastructure.csproj" />
+    <Project Path="src/Ordinis.Infrastructure.Migrations.SqlServer/Ordinis.Infrastructure.Migrations.SqlServer.csproj" />
+    <Project Path="src/Ordinis.Infrastructure.Migrations.PostgreSql/Ordinis.Infrastructure.Migrations.PostgreSql.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Ordinis.IntegrationTests/Ordinis.IntegrationTests.csproj" />

@@ -38,16 +38,19 @@ public class AggregateRoot : AuditableEntity
     public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
 
     /// <summary>
-    /// EF Core concurrency token. Automatically incremented by the database
-    /// on every UPDATE. Mapped to a <c>rowversion</c> column (SQL Server)
-    /// or <c>xmin</c> system column (PostgreSQL) in entity configuration.
+    /// EF Core concurrency token. Assigned a fresh <c>Guid.CreateVersion7()</c> byte value by
+    /// <c>AppDbContext.SaveChangesAsync</c> on every insert/update — not database-generated.
+    /// Mapped via <c>.IsConcurrencyToken()</c> (not <c>.IsRowVersion()</c>) in entity
+    /// configuration so behavior is identical across SQL Server and PostgreSQL; the native
+    /// SQL Server <c>rowversion</c> column and PostgreSQL <c>xmin</c> system column are not
+    /// interchangeable (Npgsql's <c>.IsRowVersion()</c> only supports a <c>uint</c> property).
     /// </summary>
     /// <remarks>
     /// This value is surfaced to API clients as an ETag header on GET responses
     /// and consumed on write operation via the <c>If-Match</c> header,
     /// providing end-to-end optimistic concurrency.
     /// </remarks>
-    public byte[]? RowVersion { get; private set; }
+    public byte[]? RowVersion { get; internal set; }
 
     /// <summary>
     /// Initializes a new aggregate root with a generated Id.

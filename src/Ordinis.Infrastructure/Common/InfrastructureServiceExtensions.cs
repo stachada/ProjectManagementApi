@@ -98,15 +98,21 @@ public static class InfrastructureServiceExtensions
 
         // Provider is already validated and normalized above; the lambda needs no else-throw.
         // Using a plain if/else makes it explicit that only two paths are reachable here.
+        // Migrations for each provider live in a separate satellite project
+        // (Ordinis.Infrastructure.Migrations.SqlServer / .PostgreSql). EF Core does not allow
+        // two ModelSnapshots for the same DbContext in one assembly, so MigrationsAssembly
+        // routes each provider to its own migration set.
         services.AddDbContext<AppDbContext>(options =>
         {
             if (provider == "PostgreSQL")
             {
-                options.UseNpgsql(connectionString);
+                options.UseNpgsql(connectionString,
+                    npg => npg.MigrationsAssembly("Ordinis.Infrastructure.Migrations.PostgreSql"));
             }
             else
             {
-                options.UseSqlServer(connectionString);
+                options.UseSqlServer(connectionString,
+                    sql => sql.MigrationsAssembly("Ordinis.Infrastructure.Migrations.SqlServer"));
             }
         });
 

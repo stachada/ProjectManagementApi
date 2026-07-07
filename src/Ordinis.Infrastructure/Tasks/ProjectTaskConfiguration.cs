@@ -33,8 +33,10 @@ internal sealed class ProjectTaskConfiguration : IEntityTypeConfiguration<Projec
             .HasConversion<string>()
             .HasMaxLength(20);
 
+        // App-managed concurrency token (assigned by AppDbContext.SaveChangesAsync) — not
+        // database-generated, so behavior is identical on SQL Server and PostgreSQL.
         builder.Property(t => t.RowVersion)
-            .IsRowVersion();
+            .IsConcurrencyToken();
 
         builder.HasQueryFilter(t => !t.IsDeleted);
 

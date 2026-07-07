@@ -26,8 +26,10 @@ internal sealed class BoardConfiguration : IEntityTypeConfiguration<Board>
         builder.Property(b => b.IsArchived)
             .HasDefaultValue(false);
 
+        // App-managed concurrency token (assigned by AppDbContext.SaveChangesAsync) — not
+        // database-generated, so behavior is identical on SQL Server and PostgreSQL.
         builder.Property(b => b.RowVersion)
-            .IsRowVersion();
+            .IsConcurrencyToken();
 
         builder.HasOne(b => b.Project)
             .WithMany()
