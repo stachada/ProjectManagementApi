@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Ordinis.Application.Common;
 using Ordinis.Domain.Common;
@@ -72,6 +73,9 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     /// directly to the Outbox; that responsibility belongs here.
     /// </summary>
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+
+    /// <inheritdoc/>
+    public IDbConnection GetDbConnection() => Database.GetDbConnection();
 
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
