@@ -467,10 +467,8 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
   - `InfrastructureServiceExtensions.AddDatabase` sets `.MigrationsAssembly(...)` on `UseSqlServer`/`UseNpgsql` to route each provider to its own migration set at runtime; `Ordinis.Api` takes a `ProjectReference` to both satellite projects (not used in code — needed so both migration DLLs land in the publish output for the by-name assembly load) and to `Microsoft.EntityFrameworkCore.Design` (design-time only, `dotnet ef` requires it on the startup project)
   - **Bug found and fixed along the way:** all 5 aggregate configs used `.IsRowVersion()` on the `byte[] RowVersion` property. Npgsql only supports `.IsRowVersion()` on a `uint` mapped to the PostgreSQL `xmin` system column — on `byte[]` it silently never updates, breaking optimistic concurrency (no `409 Conflict`) under PostgreSQL. Switched to an app-managed concurrency token: `AggregateRoot.RowVersion` setter is now `internal` (matches `CreatedAt`/`UpdatedAt`), `AppDbContext.SaveChangesAsync` assigns a fresh `Guid.CreateVersion7().ToByteArray()` to every added/modified `AggregateRoot` via a new `SetConcurrencyTokens()` step, and all 5 configs use `.IsConcurrencyToken()` instead — identical behavior on both providers, `byte[]` contract in Domain/DTOs unchanged
   - Generated `InitialCreate` for both providers via `dotnet ef migrations add InitialCreate --project src/Ordinis.Infrastructure.Migrations.{SqlServer,PostgreSql}`; verified `RowVersion` is now a plain persisted column (`varbinary(max)` / `bytea`) on both, not DB-generated
-- [ ] Add Dapper — installed; wired into query handlers via `IDbConnection` from `AppDbContext.Database.GetDbConnection()` (pending — query handlers currently use EF Core LINQ)
-- [ ] Configure Serilog — deferred to `Ordinis.Api` (Serilog packages belong at the composition root, not in Infrastructure)
-- [ ] Add `CorrelationIdMiddleware` — generates or propagates `X-Correlation-ID` per request; attaches to `ILogger` scope and response headers
-- [ ] Add request/response logging middleware — logs method, path, status code, duration, correlation ID at `Information` level
+- [x] Add Dapper connection access — `IAppDbContext.GetDbConnection()` added, implemented by `AppDbContext` as `Database.GetDbConnection()` (reuses EF Core's existing connection/transaction rather than opening a second one); `TestAppDbContext` (EF Core InMemory, unit tests) implements it as a `NotSupportedException` since InMemory has no ADO.NET connection
+  - **No query handler converted yet.** All 12 existing query handlers are single-table-or-simple-join LINQ (filter → count → sort → page → batched user-name lookup) with no aggregation awkward enough to justify raw SQL. First real Dapper usage is deferred to **Phase 7 — Audit log** (`GET /api/v1/projects/{id}/audit`, a multi-table join over `OutboxMessages`/`Tasks`/`Boards`) — the first query that actually needs it. Phase 9 additionally benchmarks EF Core vs. Dapper on `GetTasksFiltered` for comparison, but that's a benchmark, not a production conversion.
 - [x] Add health check endpoint (`/health`) — `AddDbContextCheck<AppDbContext>("database")` in `AddInfrastructureServices`; `app.MapHealthChecks("/health")` in `Program.cs`; requires `Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore` (10.0.9)
 - [x] Add `InfrastructureServiceExtensions` — `AddInfrastructureServices(this IServiceCollection, IConfiguration)` in `Infrastructure/Common/`; called from `Program.cs`; registers:
   - `AppDbContext` — dual-provider (`DatabaseProvider` config key); provider validated and normalized to canonical casing eagerly at startup before `AddDbContext` (an invalid value throws immediately, not on first DB access)
@@ -494,6 +492,9 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 > ✅ Phase 9 (Testing), Phase 10 (Docs), Phase 11 (CI/CD) can run alongside.
 
 ### Shared API infrastructure (do first)
+- [ ] **(moved from Phase 5)** Configure Serilog — packages/config in `Ordinis.Api` (composition root), not `Ordinis.Infrastructure`
+- [ ] **(moved from Phase 5)** Add `CorrelationIdMiddleware` — generates or propagates `X-Correlation-ID` per request; attaches to `ILogger` scope and response headers
+- [ ] **(moved from Phase 5)** Add request/response logging middleware — logs method, path, status code, duration, correlation ID at `Information` level
 - [ ] Add `GlobalExceptionMiddleware` — catches `ValidationException` → `422`, `ConcurrencyException` → `409`, `NotFoundException` → `404`, unhandled → `500`; all responses use Problem Details (RFC 9457)
 - [ ] Add `ProblemDetailsFactory` helper — builds consistent `ProblemDetails` objects across all error cases
 - [ ] Add `CorrelationId` to all Problem Details responses via middleware
@@ -610,6 +611,7 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [ ] `GET /api/v1/projects/{id}/audit` → paginated list of domain events for all tasks in the project
 - [ ] Backed by `OutboxMessages` table — query by project ID via task/board FK join; no separate audit store needed at this stage
 - [ ] `AuditEntryDto` — `{ id, eventType, occurredAt, actorId, payload }`
+- [ ] **First production Dapper usage** (see Phase 5) — this is the first query with a real multi-table join (`OutboxMessages` → `Tasks`/`Boards` → `Project`) instead of a straightforward filtered `DbSet` query, so it's the query handler that gets `IAppDbContext.GetDbConnection()` instead of LINQ; write provider-aware paging SQL (SQL Server `OFFSET/FETCH` vs. PostgreSQL `LIMIT/OFFSET`), branching on the normalized provider string the same way `OutboxDispatcherJob` already does
 
 **Git tag:** `v0.7-phase7-api-advanced`
 
