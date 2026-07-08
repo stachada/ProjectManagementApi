@@ -87,7 +87,7 @@ jobs:
         ports:
           - 1433:1433
         options: >-
-          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $SA_PASSWORD -C -Q 'SELECT 1'"
+          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P $SA_PASSWORD -C -Q 'SELECT 1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
@@ -101,6 +101,15 @@ Swap for PostgreSQL with `postgres:17`, `POSTGRES_DB`/`POSTGRES_USER`/`POSTGRES_
 `5432`, and health check `pg_isready -U ordinis -d Ordinis`; connection string becomes
 `Host=localhost;Port=5432;Database=Ordinis;Username=ordinis;Password=<POSTGRES_PASSWORD>;`.
 Requires an extra `SA_PASSWORD` / `POSTGRES_PASSWORD` repository secret alongside the two above.
+
+> **Verified locally:** the `/opt/mssql-tools/bin/sqlcmd` path above (not `/opt/mssql-tools18/`)
+> is confirmed correct for the `mcr.microsoft.com/mssql/server:2022-latest` image — the
+> `-tools18` variant doesn't exist in it. The same image is used in `docker-compose.yml`'s
+> `db-sqlserver` service, whose healthcheck had this exact wrong path until it was hit and fixed
+> while applying migrations locally: the container looked stuck `unhealthy` even though the SQL
+> Server engine itself was fully up (confirmed via `docker logs`). If a service container health
+> check here ever seems to hang, check `docker inspect --format='{{json .State.Health}}'
+> <container>` for the specific failing command before assuming the database itself is broken.
 
 A service container starts empty — schema still has to be applied before tests can hit it. See
 the next section for the options.
@@ -139,6 +148,15 @@ Swap the `--project`/`--startup-project` pair for
 `Ordinis.Api`, for the same reason called out in
 [docs/MIGRATIONS.md](MIGRATIONS.md#adding-a-migration): it references both migration satellite
 projects, so `dotnet ef` can resolve the wrong provider's design-time factory.
+
+The `--connection "${{ secrets.CONNECTION_STRING }}"` flag above is actually optional now: both
+factories resolve `ConnectionStrings:DefaultConnection` from environment variables as a fallback
+(see [docs/MIGRATIONS.md](MIGRATIONS.md) — same resolution `Ordinis.Api` uses at runtime), so
+setting `ConnectionStrings__DefaultConnection: ${{ secrets.CONNECTION_STRING }}` as a step-level
+`env:` (matching the existing convention in the `ci.yml` test step, see
+[Repository secrets](#required-repository-secrets) above) works identically without the explicit
+flag. Either is fine — `--connection` is more visible in the step definition, the env var is more
+consistent with how the rest of this file wires secrets.
 
 **Idempotent SQL script**, generated once and applied as its own step — useful if you want the
 exact SQL visible in the CI log before it runs against anything:
