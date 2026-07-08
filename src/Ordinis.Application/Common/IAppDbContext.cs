@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Ordinis.Domain.Organizations;
 using Ordinis.Domain.Projects;
@@ -71,4 +72,18 @@ public interface IAppDbContext
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>The number of state entries written to the database.</returns>
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the ADO.NET connection backing this context, for Dapper-based reporting
+    /// queries (aggregations, multi-table joins) where LINQ is awkward or inefficient.
+    /// </summary>
+    /// <remarks>
+    /// Reuses the same connection EF Core already holds open for this scope/request rather
+    /// than opening a second connection, so Dapper reads and EF Core writes participate in
+    /// the same underlying connection and any ambient transaction. Callers must not
+    /// <c>Open()</c>/<c>Close()</c>/<c>Dispose()</c> the returned connection directly — EF Core
+    /// owns its lifecycle; Dapper's <c>*Async</c> extension methods open it automatically if
+    /// it is currently closed.
+    /// </remarks>
+    IDbConnection GetDbConnection();
 }

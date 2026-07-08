@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Ordinis.Application.Common;
@@ -30,6 +31,16 @@ internal sealed class TestAppDbContext(DbContextOptions<TestAppDbContext> option
     public DbSet<Organization> Organizations => Set<Organization>();
 
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
+
+    /// <summary>
+    /// EF Core InMemory has no ADO.NET connection to hand out. No handler under unit test
+    /// exercises Dapper today (Dapper wiring lands with the audit log query in Phase 7); this
+    /// throws rather than silently returning a connection that would fail at call time.
+    /// </summary>
+    public IDbConnection GetDbConnection() =>
+        throw new NotSupportedException(
+            "TestAppDbContext (EF Core InMemory) has no ADO.NET connection for Dapper. " +
+            "Use an integration test against a real provider for handlers that query via IAppDbContext.GetDbConnection().");
 
     /// <summary>
     /// Every aggregate/entity in this domain generates its <c>Id</c> client-side
