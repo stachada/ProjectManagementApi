@@ -492,14 +492,14 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 > ✅ Phase 9 (Testing), Phase 10 (Docs), Phase 11 (CI/CD) can run alongside.
 
 ### Shared API infrastructure (do first)
-- [ ] **(moved from Phase 5)** Configure Serilog — packages/config in `Ordinis.Api` (composition root), not `Ordinis.Infrastructure`
-- [ ] **(moved from Phase 5)** Add `CorrelationIdMiddleware` — generates or propagates `X-Correlation-ID` per request; attaches to `ILogger` scope and response headers
-- [ ] **(moved from Phase 5)** Add request/response logging middleware — logs method, path, status code, duration, correlation ID at `Information` level
-- [ ] Add `GlobalExceptionMiddleware` — catches `ValidationException` → `422`, `ConcurrencyException` → `409`, `NotFoundException` → `404`, unhandled → `500`; all responses use Problem Details (RFC 9457)
-- [ ] Add `ProblemDetailsFactory` helper — builds consistent `ProblemDetails` objects across all error cases
-- [ ] Add `CorrelationId` to all Problem Details responses via middleware
-- [ ] Register middleware in `Program.cs` in correct order: correlation ID → request logging → global exception → routing → auth (Phase 8) → endpoints
-- [ ] Add `ApiServiceExtensions` — `AddApiServices(this IServiceCollection)` wires controllers, rate limiting, response caching, CORS
+- [x] **(moved from Phase 5)** Configure Serilog — packages/config in `Ordinis.Api` (composition root), not `Ordinis.Infrastructure`
+- [x] **(moved from Phase 5)** Add `CorrelationIdMiddleware` — generates or propagates `X-Correlation-ID` per request; attaches to `ILogger` scope and response headers
+- [x] **(moved from Phase 5)** Add request/response logging middleware — logs method, path, status code, duration, correlation ID at `Information` level
+- [x] Add `GlobalExceptionMiddleware` — catches `ValidationException` → `422`, `ConcurrencyException` → `409`, `NotFoundException` → `404`, unhandled → `500`; all responses use Problem Details (RFC 9457)
+- [x] Add `ProblemDetailsFactory` helper — builds consistent `ProblemDetails` objects across all error cases
+- [x] Add `CorrelationId` to all Problem Details responses via middleware
+- [x] Register middleware in `Program.cs` in correct order: correlation ID → request logging → global exception → routing → auth (Phase 8) → endpoints
+- [x] Add `ApiServiceExtensions` — `AddApiServices(this IServiceCollection)` wires controllers, rate limiting, response caching, CORS
 
 ### Controllers (one file per resource)
 - [ ] `OrganizationsController`
