@@ -187,7 +187,7 @@ decisions behind each phase.
 | 2 — Domain layer | ✅ Complete |
 | 3 — Application layer: infrastructure | ✅ Complete |
 | 4 — Application layer: features (Tasks; Projects & Boards done — Organizations, Users, shared infra remain) | 🚧 In progress |
-| 5 — Infrastructure layer | 🚧 In progress |
+| 5 — Infrastructure layer | ✅ Complete |
 | 6 — API layer: core endpoints | ⏳ Not started |
 | 7 — API layer: advanced REST features | ⏳ Not started |
 | 8 — Security | ⏳ Not started |
