@@ -34,7 +34,17 @@ public sealed class RenameBoardHandler(IAppDbContext db) : ICommandHandler<Renam
 
         board.Rename(command.NewName);
 
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(
+                nameof(Board),
+                command.BoardId,
+                ex);
+        }
     }
 }
 
