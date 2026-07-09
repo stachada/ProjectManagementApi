@@ -52,7 +52,9 @@ public sealed class CreateBoardValidator : AbstractValidator<CreateBoard>
             .WithMessage("Project not found or is archived.");
 
         RuleFor(x => x.CreatedByUserId)
-            .NotEmpty();
+            .NotEmpty()
+            .MustAsync(async (id, ct) => await db.Users.AnyAsync(u => u.Id == id, ct))
+            .WithMessage("User not found.");
 
         RuleFor(x => x.Name)
             .NotEmpty()

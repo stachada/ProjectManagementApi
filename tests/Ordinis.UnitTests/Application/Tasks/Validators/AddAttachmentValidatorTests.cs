@@ -1,5 +1,8 @@
 using FluentValidation.TestHelper;
 using Ordinis.Application.Tasks.Commands;
+using Ordinis.Domain.Users;
+using Ordinis.UnitTests.Common;
+using Ordinis.UnitTests.Common.Builders;
 
 namespace Ordinis.UnitTests.Application.Tasks.Validators;
 
@@ -8,23 +11,26 @@ namespace Ordinis.UnitTests.Application.Tasks.Validators;
 /// </summary>
 public class AddAttachmentValidatorTests
 {
-    private static AddAttachment ValidCommand(Guid taskId)
+    private static AddAttachment ValidCommand(Guid taskId, Guid? uploadedByUserId = null)
         => new(
             TaskId: taskId,
             FileName: "document.pdf",
             ContentType: "application/pdf",
             SizeInBytes: 1024,
             FileStream: new MemoryStream(new byte[1024]),
-            UploadedByUserId: Guid.CreateVersion7());
+            UploadedByUserId: uploadedByUserId ?? Guid.CreateVersion7());
 
     [Fact]
     public async Task TestValidateAsync_ValidCommand_HasNoValidationErrors()
     {
-        var validator = new AddAttachmentValidator();
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        User user = UserBuilder.Create();
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        var validator = new AddAttachmentValidator(db);
 
         TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(
-            ValidCommand(
-                Guid.CreateVersion7()));
+            ValidCommand(Guid.CreateVersion7(), user.Id));
 
         result.ShouldNotHaveAnyValidationErrors();
     }
@@ -32,11 +38,11 @@ public class AddAttachmentValidatorTests
     [Fact]
     public async Task TestValidateAsync_EmptyTaskId_HasValidationErrorForTaskId()
     {
-        var validator = new AddAttachmentValidator();
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AddAttachmentValidator(db);
 
         TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(
-            ValidCommand(
-                Guid.Empty));
+            ValidCommand(Guid.Empty));
 
         result.ShouldHaveValidationErrorFor(x => x.TaskId);
     }
@@ -44,7 +50,8 @@ public class AddAttachmentValidatorTests
     [Fact]
     public async Task TestValidateAsync_EmptyFileName_HasValidationErrorForFileName()
     {
-        var validator = new AddAttachmentValidator();
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AddAttachmentValidator(db);
         AddAttachment command = ValidCommand(Guid.CreateVersion7()) with { FileName = string.Empty };
 
         TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(command);
@@ -55,7 +62,8 @@ public class AddAttachmentValidatorTests
     [Fact]
     public async Task TestValidateAsync_FileNameTooLong_HasValidationErrorForFileName()
     {
-        var validator = new AddAttachmentValidator();
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AddAttachmentValidator(db);
         AddAttachment command = ValidCommand(Guid.CreateVersion7()) with { FileName = new string('A', 256) };
 
         TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(command);
@@ -66,7 +74,8 @@ public class AddAttachmentValidatorTests
     [Fact]
     public async Task TestValidateAsync_FileNameAtMaxLength_HasNoValidationErrorForFileName()
     {
-        var validator = new AddAttachmentValidator();
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AddAttachmentValidator(db);
         AddAttachment command = ValidCommand(Guid.CreateVersion7()) with { FileName = new string('A', 255) };
 
         TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(command);
@@ -77,7 +86,8 @@ public class AddAttachmentValidatorTests
     [Fact]
     public async Task TestValidateAsync_EmptyContentType_HasValidationErrorForContentType()
     {
-        var validator = new AddAttachmentValidator();
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AddAttachmentValidator(db);
         AddAttachment command = ValidCommand(Guid.CreateVersion7()) with { ContentType = string.Empty };
 
         TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(command);
@@ -88,7 +98,8 @@ public class AddAttachmentValidatorTests
     [Fact]
     public async Task TestValidateAsync_ContentTypeTooLong_HasValidationErrorForContentType()
     {
-        var validator = new AddAttachmentValidator();
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AddAttachmentValidator(db);
         AddAttachment command = ValidCommand(Guid.CreateVersion7()) with { ContentType = new string('A', 101) };
 
         TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(command);
@@ -99,7 +110,8 @@ public class AddAttachmentValidatorTests
     [Fact]
     public async Task TestValidateAsync_ContentTypeAtMaxLength_HasNoValidationErrorForContentType()
     {
-        var validator = new AddAttachmentValidator();
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AddAttachmentValidator(db);
         AddAttachment command = ValidCommand(Guid.CreateVersion7()) with { ContentType = new string('A', 100) };
 
         TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(command);
@@ -110,7 +122,8 @@ public class AddAttachmentValidatorTests
     [Fact]
     public async Task TestValidateAsync_ZeroSizeInBytes_HasValidationErrorForSizeInBytes()
     {
-        var validator = new AddAttachmentValidator();
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AddAttachmentValidator(db);
         AddAttachment command = ValidCommand(Guid.CreateVersion7()) with { SizeInBytes = 0 };
 
         TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(command);
@@ -122,7 +135,8 @@ public class AddAttachmentValidatorTests
     [Fact]
     public async Task TestValidateAsync_NegativeSizeInBytes_HasValidationErrorForSizeInBytes()
     {
-        var validator = new AddAttachmentValidator();
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AddAttachmentValidator(db);
         AddAttachment command = ValidCommand(Guid.CreateVersion7()) with { SizeInBytes = -1 };
 
         TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(command);
@@ -134,7 +148,8 @@ public class AddAttachmentValidatorTests
     [Fact]
     public async Task TestValidateAsync_PositiveSizeInBytes_HasNoValidationErrorForSizeInBytes()
     {
-        var validator = new AddAttachmentValidator();
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AddAttachmentValidator(db);
         AddAttachment command = ValidCommand(Guid.CreateVersion7()) with { SizeInBytes = 1 };
 
         TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(command);
@@ -145,7 +160,8 @@ public class AddAttachmentValidatorTests
     [Fact]
     public async Task TestValidateAsync_EmptyFileStream_HasValidationErrorForFileStream()
     {
-        var validator = new AddAttachmentValidator();
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AddAttachmentValidator(db);
         AddAttachment command = ValidCommand(Guid.CreateVersion7()) with { FileStream = null! };
 
         TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(command);
@@ -156,11 +172,40 @@ public class AddAttachmentValidatorTests
     [Fact]
     public async Task TestValidateAsync_EmptyUploadedByUserId_HasValidationErrorForUploadedByUserId()
     {
-        var validator = new AddAttachmentValidator();
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AddAttachmentValidator(db);
         AddAttachment command = ValidCommand(Guid.CreateVersion7()) with { UploadedByUserId = Guid.Empty };
 
         TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(command);
 
         result.ShouldHaveValidationErrorFor(x => x.UploadedByUserId);
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_UploadedByUserIdDoesNotExist_HasValidationErrorForUploadedByUserId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AddAttachmentValidator(db);
+        AddAttachment command = ValidCommand(Guid.CreateVersion7(), Guid.CreateVersion7());
+
+        TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(command);
+
+        result.ShouldHaveValidationErrorFor(x => x.UploadedByUserId)
+            .WithErrorMessage("User not found.");
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_UploadedByUserIdExists_HasNoValidationErrorForUploadedByUserId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        User user = UserBuilder.Create();
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        var validator = new AddAttachmentValidator(db);
+        AddAttachment command = ValidCommand(Guid.CreateVersion7(), user.Id);
+
+        TestValidationResult<AddAttachment> result = await validator.TestValidateAsync(command);
+
+        result.ShouldNotHaveValidationErrorFor(x => x.UploadedByUserId);
     }
 }

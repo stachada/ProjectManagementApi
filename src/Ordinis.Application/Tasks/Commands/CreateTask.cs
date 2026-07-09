@@ -115,6 +115,8 @@ internal sealed class CreateTaskValidator : AbstractValidator<CreateTask>
             .WithMessage("Assignee user does not exist.");
 
         RuleFor(x => x.RequestedByUserId)
-            .NotEmpty();
+            .NotEmpty()
+            .MustAsync(async (id, ct) => await db.Users.AnyAsync(u => u.Id == id, ct))
+            .WithMessage("User not found.");
     }
 }
