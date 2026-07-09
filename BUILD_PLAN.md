@@ -314,12 +314,14 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [x] `CreateBoard` + `CreateBoardHandler` + `CreateBoardValidator`
   - Creates the board directly via `Board.Create(projectId, name, createdByUserId)` — `Board` is an independent aggregate root
   - Returns `Guid`
-  - Validator: `Name` non-empty max 100 chars; project exists and not archived; no duplicate name in project
+  - Validator: `Name` non-empty max 100 chars; project exists and not archived; no duplicate name in project; `CreatedByUserId` exists
 - [x] `ArchiveBoard` + `ArchiveBoardHandler`
   - Loads and archives the board directly via `BoardId` only (`board.Archive()`) — no `ProjectId` needed
+- [x] `UnarchiveBoard` + `UnarchiveBoardHandler` *(added beyond original plan during the `BoardsController` review — wraps the `Board.Unarchive()` domain method, which already existed but had no Application-layer command exposing it; counterpart to `ArchiveBoard`, mirrors `UnarchiveProject`)*
 - [x] `RenameBoard` + `RenameBoardHandler` + `RenameBoardValidator`
   - Loads and renames the board directly via `BoardId` only (`board.Rename(name)`)
   - Validator: `Name` non-empty max 100 chars; no duplicate name in project
+  - **Found during the `BoardsController` review**: `CreateBoardValidator.CreatedByUserId` had no existence check (only `.NotEmpty()`) — same bug shape as `CreateProjectValidator`'s earlier fix. Since `Board.CreatedByUserId` is a required FK with `DeleteBehavior.Restrict`, a nonexistent user ID passed validation and blew up as an unhandled `500` at `SaveChangesAsync` instead of a clean `422`. Fixed with the same `MustAsync` existence check pattern. Also found: `RenameBoardHandler` never wrapped `SaveChangesAsync` in a `try/catch (DbUpdateConcurrencyException)` at all (unlike `UpdateProjectHandler`/`UpdateUserHandler`/`ChangeUserOrgRoleHandler`), so a genuine optimistic-concurrency race produced an unhandled `500` instead of `409` — fixed to match the established pattern.
 
 **Queries**
 - [x] `GetProjectById` + `GetProjectByIdHandler` — returns `ProjectDto` with boards and members; throws `NotFoundException`
@@ -495,19 +497,44 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [x] **(moved from Phase 5)** Configure Serilog — packages/config in `Ordinis.Api` (composition root), not `Ordinis.Infrastructure`
 - [x] **(moved from Phase 5)** Add `CorrelationIdMiddleware` — generates or propagates `X-Correlation-ID` per request; attaches to `ILogger` scope and response headers
 - [x] **(moved from Phase 5)** Add request/response logging middleware — logs method, path, status code, duration, correlation ID at `Information` level
-- [x] Add `GlobalExceptionMiddleware` — catches `ValidationException` → `422`, `ConcurrencyException` → `409`, `NotFoundException` → `404`, unhandled → `500`; all responses use Problem Details (RFC 9457)
+- [x] Add `GlobalExceptionMiddleware` — catches `ValidationException` → `422`, `ConcurrencyException` → `409`, `NotFoundException` → `404`, `DomainException` → `422`, unhandled → `500`; all responses use Problem Details (RFC 9457)
 - [x] Add `ProblemDetailsFactory` helper — builds consistent `ProblemDetails` objects across all error cases
 - [x] Add `CorrelationId` to all Problem Details responses via middleware
 - [x] Register middleware in `Program.cs` in correct order: correlation ID → request logging → global exception → routing → auth (Phase 8) → endpoints
 - [x] Add `ApiServiceExtensions` — `AddApiServices(this IServiceCollection)` wires controllers, rate limiting, response caching, CORS
 
+**Found during `OrganizationsController` work:** `GlobalExceptionMiddleware` did not catch
+`DomainException` despite that type's own XML doc comment promising a `422` mapping — it was
+silently falling through to the generic `500` handler. Added a `catch (DomainException ex)` clause
+(before the generic catch-all) and extended `ProblemDetailsFactory.Create` with an optional `type`
+parameter so `DomainException.ErrorCode` surfaces in the Problem Details `type` field as
+`urn:ordinis:error:{ErrorCode}` (e.g. `urn:ordinis:error:organization.already-suspended`).
+
+**Second bug found during manual verification of the above:** `GlobalExceptionMiddleware.WriteAsync`
+took a `ProblemDetails`-typed parameter and called `context.Response.WriteAsJsonAsync(problemDetails)`
+— the generic overload infers `TValue` from the *compile-time* parameter type, so when a
+`ValidationProblemDetails` (a subclass) was passed in, its `Errors` dictionary was silently sliced
+off during serialization; every `422` validation response was missing its field-level error details
+entirely. Fixed by serializing via the runtime type instead:
+`WriteAsJsonAsync(problemDetails, problemDetails.GetType())`. Verified via `curl` that
+`POST /organizations` with an empty `name` now returns `"errors":{"Name":[...]}` in the body.
+
 ### Controllers (one file per resource)
-- [ ] `OrganizationsController`
+- [x] `OrganizationsController`
   - `GET    /api/v1/organizations/{id}` → `GetOrganizationById`
   - `GET    /api/v1/organizations/{id}/projects` → `GetOrganizationProjects` (paged)
   - `POST   /api/v1/organizations` → `CreateOrganization` → `201 Created` with `Location` header
-  - `PUT    /api/v1/organizations/{id}` → `UpdateOrganization` → `204 No Content`
-- [ ] `ProjectsController`
+  - `PUT    /api/v1/organizations/{id}` → `RenameOrganization` + `UpdateOrganizationDescription` → `204 No Content`
+    *(replaces the originally planned single `UpdateOrganization` command — the Application layer
+    already split it into these two granular commands during Phase 3; the controller composes both
+    dispatcher calls from one request body)*
+  - `POST   /api/v1/organizations/{id}/suspend` → `SuspendOrganization` → `204 No Content`
+    *(added beyond the original plan — exposes the already-implemented `SuspendOrganization`
+    command; `422` with error code `organization.already-suspended` if already suspended)*
+  - `POST   /api/v1/organizations/{id}/reactivate` → `ReactivateOrganization` → `204 No Content`
+    *(added beyond the original plan, counterpart to suspend; `422` with error code
+    `organization.already-active` if already active)*
+- [x] `ProjectsController`
   - `GET    /api/v1/projects` → `GetProjectsFiltered` (paged, filterable, sortable)
   - `GET    /api/v1/projects/{id}` → `GetProjectById`
   - `GET    /api/v1/projects/{id}/tasks` → `GetProjectTasks` (paged)
@@ -517,14 +544,50 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
   - `PUT    /api/v1/projects/{id}` → `UpdateProject` → `204 No Content`
   - `DELETE /api/v1/projects/{id}` → `DeleteProject` → `204 No Content`
   - `POST   /api/v1/projects/{id}/members` → `AddProjectMember` → `201 Created`
+    *(handler is `ICommand` with no return value — controller re-queries `GetProjectMembers`
+    after dispatch and picks the matching entry for the response body/`Location`)*
   - `DELETE /api/v1/projects/{id}/members/{userId}` → `RemoveProjectMember` → `204 No Content`
-- [ ] `BoardsController`
+  - `POST   /api/v1/projects/{id}/archive` → `ArchiveProject` → `204 No Content`
+    *(added beyond the original plan — exposes the already-implemented `ArchiveProject` command,
+    mirroring `OrganizationsController`'s Suspend/Reactivate precedent)*
+  - `POST   /api/v1/projects/{id}/unarchive` → `UnarchiveProject` → `204 No Content`
+    *(added beyond the original plan, counterpart to archive)*
+  - `PUT    /api/v1/projects/{id}/members/{userId}/role` → `ChangeMemberRole` → `204 No Content`
+    *(added beyond the original plan — exposes the already-implemented `ChangeMemberRole` command)*
+  - Request DTOs live in `Ordinis.Api/Projects/Requests/` (`CreateProjectRequest`,
+    `UpdateProjectRequest`, `AddProjectMemberRequest`, `ChangeMemberRoleRequest`), mirroring
+    `Organizations/Requests/`
+  - Verified end-to-end against a real local SQL Server database (create → get → rename →
+    add/change-role/remove member → archive/unarchive → delete → `404` on subsequent get →
+    `422` on validation failure)
+- [x] `BoardsController`
   - `GET    /api/v1/boards/{id}` → `GetBoardById`
   - `GET    /api/v1/boards/{id}/tasks` → `GetBoardTasks` (paged)
   - `POST   /api/v1/projects/{id}/boards` → `CreateBoard` → `201 Created`
+    *(only action on this controller whose route doesn't share the controller's own
+    `api/v1/boards` prefix — uses ASP.NET Core's absolute-route override (`[HttpPost("/api/v1/projects/{projectId:guid}/boards")]`,
+    leading `/`) so the create-via-parent URI still lives on `BoardsController`; the response's
+    `Location` header still points at the board's own canonical `GetById` route, not the nested
+    creation path)*
   - `PUT    /api/v1/boards/{id}/name` → `RenameBoard` → `204 No Content`
   - `POST   /api/v1/boards/{id}/archive` → `ArchiveBoard` → `204 No Content`
-- [ ] `TasksController`
+    *(`422` with error code `board.already-archived` if already archived)*
+  - `POST   /api/v1/boards/{id}/unarchive` → `UnarchiveBoard` → `204 No Content`
+    *(added beyond the original plan, counterpart to archive — see Phase 4 Step 2 note; `422`
+    with error code `board.not-archived` if not archived)*
+  - Request DTOs live in `Ordinis.Api/Projects/Requests/` (`CreateBoardRequest`, `RenameBoardRequest`)
+  - **Found during review** (controller was drafted ahead of a formal pass): `GetById`/`GetTasks`
+    routes were missing the `:guid` route constraint used everywhere else in the codebase;
+    `RenameBoard`'s XML doc claimed a `400` response for invalid input, but this project always
+    returns `422` for validation failures (no `[ProducesResponseType(400)]` was ever declared
+    either — the doc comment just didn't match reality); `ArchiveBoard` was missing its `422`
+    response type/doc for the already-archived domain guard. All fixed; see the Application-layer
+    bug fixes noted in Phase 4 Step 2 above (`CreateBoardValidator`, `RenameBoardHandler`).
+  - Verified end-to-end against a real local SQL Server database (create via the nested project
+    route with a correct `Location` header → get → rename → create with a nonexistent
+    `CreatedByUserId` now returns `422` instead of `500` → archive → `422` on double-archive →
+    rename-while-archived `422` → unarchive → `422` on double-unarchive)
+- [x] `TasksController`
   - `GET    /api/v1/tasks` → `GetTasksFiltered` (paged, filterable by assignee/status/priority/board, sortable)
   - `GET    /api/v1/tasks/{id}` → `GetTaskById`
   - `GET    /api/v1/tasks/{id}/comments` → comments from `TaskDto` (no separate query needed)
@@ -532,16 +595,73 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
   - `POST   /api/v1/tasks` → `CreateTask` → `201 Created`
   - `PUT    /api/v1/tasks/{id}` → `UpdateTask` → `204 No Content`
   - `DELETE /api/v1/tasks/{id}` → `DeleteTask` → `204 No Content`
+    *(`requestedByUserId` passed as a query parameter, not a request body — consistent with
+    HTTP DELETE conventions and matching this controller's own established pattern; the
+    now-unused `DeleteTaskRequest` record was removed as dead code)*
   - `POST   /api/v1/tasks/{id}/comments` → `AddComment` → `201 Created`
   - `PUT    /api/v1/tasks/{id}/comments/{commentId}` → `EditComment` → `204 No Content`
   - `DELETE /api/v1/tasks/{id}/comments/{commentId}` → `RemoveComment` → `204 No Content`
+    *(`422` with error code `task.comment-not-found` if the comment doesn't exist — the handler
+    lets `ProjectTask.RemoveComment()`'s `DomainException` surface directly)*
   - `POST   /api/v1/tasks/{id}/attachments` → `AddAttachment` → `201 Created`
+    *(`multipart/form-data`, not JSON — `[FromForm] IFormFile file` + `[FromForm] Guid
+    uploadedByUserId` bound directly as action parameters rather than wrapped in a request
+    record, since `IFormFile` binds unreliably inside a bound complex type)*
   - `DELETE /api/v1/tasks/{id}/attachments/{attachmentId}` → `RemoveAttachment` → `204 No Content`
-- [ ] `UsersController`
+    *(`404`, not `422`, if the attachment doesn't exist — unlike `RemoveComment`, this handler
+    pre-checks attachment existence itself and throws `NotFoundException` before ever reaching
+    `ProjectTask.RemoveAttachment()`'s `DomainException` path; verified live rather than assumed
+    from the domain method's XML doc, which describes the unreachable path)*
+  - Request DTOs live in `Ordinis.Api/Tasks/Requests/` (`CreateTaskRequest`, `UpdateTaskRequest`,
+    `AddCommentRequest`, `EditCommentRequest`) — all four now carry XML doc comments; previously
+    only `CreateUserRequest`-style requests elsewhere had them, this controller's had none
+  - **Found during review** (controller was drafted ahead of a formal pass, same as
+    `UsersController`/`BoardsController`): `CreateTaskValidator.RequestedByUserId` and
+    `AddAttachmentValidator.UploadedByUserId` both had no existence check (only `.NotEmpty()`) —
+    the same bug shape found and fixed three times already this phase (`CreateProjectValidator`,
+    `CreateBoardValidator`). `ProjectTask.ReporterId` and `Attachment.UploadedByUserId` are both
+    required FKs with `DeleteBehavior.Restrict`, so a nonexistent ID passed validation and blew up
+    as an unhandled `500` at `SaveChangesAsync` instead of a clean `422`. Fixed both with the same
+    `MustAsync` existence check pattern; `AddAttachmentValidator` needed a new `IAppDbContext db`
+    constructor parameter to support it.
+  - Verified end-to-end against a real local SQL Server database, including a real
+    `multipart/form-data` file upload/download round-trip through `LocalFileStorageService`
+    (create task → nonexistent `RequestedByUserId` now `422` not `500` → comment add/edit/remove
+    → attachment upload → nonexistent `UploadedByUserId` now `422` not `500` → download the
+    uploaded file → remove attachment → confirm file deleted from disk → delete task → `404`)
+- [x] `UsersController`
   - `GET    /api/v1/users/{id}` → `GetUserById`
   - `GET    /api/v1/users/{id}/tasks` → `GetUserTasks` (paged)
   - `POST   /api/v1/users` → `CreateUser` → `201 Created`
   - `PUT    /api/v1/users/{id}` → `UpdateUser` → `204 No Content`
+  - `PUT    /api/v1/users/{id}/org-role` → `ChangeUserOrgRole` → `204 No Content`
+    *(added beyond the original plan — exposes the already-implemented `ChangeUserOrgRole`
+    command; `PUT` rather than `PATCH` — `/org-role` is treated as its own addressable single-value
+    sub-resource being fully replaced, matching `ProjectsController`'s identical-shape precedent
+    `PUT .../members/{userId}/role`)*
+  - `POST   /api/v1/users/{id}/deactivate` → `DeactivateUser` → `204 No Content`
+    *(added beyond the original plan, mirroring `OrganizationsController`'s Suspend/Reactivate
+    precedent; `422` with error code `user.already-inactive` if already inactive)*
+  - `POST   /api/v1/users/{id}/reactivate` → `ReactivateUser` → `204 No Content`
+    *(added beyond the original plan, counterpart to deactivate; `422` with error code
+    `user.already-active` if already active)*
+  - Request DTOs live in `Ordinis.Api/Users/Requests/` (`CreateUserRequest`, `UpdateUserRequest`,
+    `ChangeUserOrgRoleRequest`, `DeactivateUserRequest`, `ReactivateUserRequest`)
+  - **Found during review** (controller was drafted ahead of a formal pass): `CreateUser` returned
+    the bare `Guid` id as the `201` body instead of re-querying `GetUserById` and returning the
+    full `UserDto` — the declared `[ProducesResponseType(typeof(UserDto), 201)]` didn't match what
+    was actually serialized. Fixed to match `OrganizationsController`/`ProjectsController`'s
+    create-then-requery pattern. Also fixed: four of five request DTOs were missing their
+    `namespace` declaration entirely (silently compiled into the global namespace); `UpdateUser`/
+    `ChangeOrgRole` were missing `409` (both handlers catch `DbUpdateConcurrencyException`);
+    `ChangeOrgRole`/`Deactivate`/`Reactivate` were missing `422`; `GetTasks` had no
+    `[ProducesResponseType]` at all; `DeactivateUser`/`ReactivateUser` had no validator (only
+    `.NotEmpty()` on `RequestedByUserId`, added to match `UpdateUser`/`ChangeUserOrgRole`) — new
+    validator tests added in `tests/Ordinis.UnitTests/Application/Users/Validators/`
+    (`DeactivateUserValidatorTests`, `ReactivateUserValidatorTests`).
+  - Verified end-to-end against a real local SQL Server database (create → get → deactivate →
+    `422` on double-deactivate → reactivate → change role → rename → list tasks → `404` on a
+    missing user)
 
 ### Minimal API endpoints
 - [ ] `SearchEndpoints` (`/api/v1/search?q=&type=tasks|projects`) — delegates to `GetTasksFiltered` / `GetProjectsFiltered` with text search param
@@ -658,13 +778,13 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [x] `DomainFactory` — static helper methods that create and seed realistic domain objects via their real aggregate factories (`Organization.Create(...)`, `Project.Create(...)`, `Board.Create(...)`, `User.Create(...)`, `ProjectTask.Create(...)`); used by both validator and handler tests to avoid repeating seeding boilerplate (done — kept the existing per-entity `Common/Builders/*Builder` classes, already established for `Task`/`Board`/`Comment`/`Project`/`User`, rather than introducing a single combined class; added the missing `OrganizationBuilder` to complete the set)
 
 **Task validators** (each tested in isolation via `FluentValidation.TestHelper`; `MustAsync` checks seeded via `TestDbContextFactory`)
-- [x] `CreateTaskValidator` — `BoardId` required and exists (not archived); `Title` non-empty max 200 chars; `Priority` valid enum value (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/CreateTaskValidatorTests.cs`, using `FluentValidation.TestHelper`'s `TestValidateAsync` since the `BoardId`/`AssigneeId` rules are async `MustAsync` checks against the database; also covers the `AssigneeId` and `RequestedByUserId` rules)
+- [x] `CreateTaskValidator` — `BoardId` required and exists (not archived); `Title` non-empty max 200 chars; `Priority` valid enum value (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/CreateTaskValidatorTests.cs`, using `FluentValidation.TestHelper`'s `TestValidateAsync` since the `BoardId`/`AssigneeId` rules are async `MustAsync` checks against the database; also covers the `AssigneeId` and `RequestedByUserId` rules. **Bug found later, during the `TasksController` review:** `RequestedByUserId` had no existence check at all (only `.NotEmpty()`) — same shape as `CreateProjectValidator`/`CreateBoardValidator`'s earlier fixes; `ProjectTask.ReporterId` is a required FK with `DeleteBehavior.Restrict`, so a nonexistent user ID blew up as an unhandled `500`. Fixed with the same `MustAsync` existence check; added `TestValidateAsync_RequestedByUserIdDoesNotExist_HasValidationErrorForRequestedByUserId` and `...Exists_HasNoValidationErrorForRequestedByUserId`)
 - [x] `UpdateTaskValidator` — `Title` non-empty max 200 chars; `Priority` valid enum value (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/UpdateTaskValidatorTests.cs`; also covers `TaskId`/`RequestedByUserId` and a valid-command no-errors baseline)
 - [x] `MoveTaskValidator` — `NewStatus` is a valid `ProjectTaskStatus` enum value (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/MoveTaskValidatorTests.cs`; also covers `TaskId`)
 - [x] `AssignTaskValidator` — `AssigneeId` required; user exists and is a project member (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/AssignTaskValidatorTests.cs`; the validator itself only checks user existence — project-membership is deliberately deferred to the authorization layer per its own remarks, so the tests don't cover that; also covers `TaskId`/`RequestedByUserId`)
 - [x] `AddCommentValidator` — `Content` non-empty, max 10 000 chars (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/AddCommentValidatorTests.cs`; also covers `TaskId` and the 10,000-char boundary; no `AuthorId` rule exists in the validator, so none is tested)
 - [x] `EditCommentValidator` — `Content` non-empty, max 10 000 chars; requesting user is the comment author (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/EditCommentValidatorTests.cs`; also covers `TaskId`/`CommentId`/`RequestedByUserId` and the 10,000-char boundary)
-- [x] `AddAttachmentValidator` — `FileName` non-empty; `SizeInBytes` > 0; `ContentType` non-empty (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/AddAttachmentValidatorTests.cs`; also covers `TaskId`/`FileStream`/`UploadedByUserId` and the `FileName`/`ContentType` length boundaries)
+- [x] `AddAttachmentValidator` — `FileName` non-empty; `SizeInBytes` > 0; `ContentType` non-empty (done — `tests/Ordinis.UnitTests/Application/Tasks/Validators/AddAttachmentValidatorTests.cs`; also covers `TaskId`/`FileStream`/`UploadedByUserId` and the `FileName`/`ContentType` length boundaries. **Bug found later, during the `TasksController` review:** `UploadedByUserId` had no existence check (only `.NotEmpty()`), same shape as the other `CreatedByUserId`/`RequestedByUserId` bugs this phase; `Attachment.UploadedByUserId` is a required FK with `DeleteBehavior.Restrict`. Fixed by adding an `IAppDbContext db` constructor parameter (the validator previously took none) plus the same `MustAsync` existence check; added `TestValidateAsync_UploadedByUserIdDoesNotExist_HasValidationErrorForUploadedByUserId` and `...Exists_HasNoValidationErrorForUploadedByUserId`)
 
 **Git tag (after Part 1):** `v0.9-part1-task-validators`
 
@@ -674,10 +794,10 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 > Reuses all infrastructure from Part 1. Mechanical — follows the same shape.
 
 **Project & Board validators**
-- [x] `CreateProjectValidator` — `OrganizationId` required and exists; `Name` non-empty max 100 chars; generated slug unique within the organization (done — `tests/Ordinis.UnitTests/Application/Projects/Validators/CreateProjectValidatorTests.cs`; also covers `CreatedByUserId` and `Description` max length 1000; fixed a bug found while testing — the `Name` rule lacked `Cascade(CascadeMode.Stop)`, so an empty `Name` let the slug-uniqueness `MustAsync` run anyway and throw inside `SlugGenerator.Slugify` instead of failing validation cleanly)
+- [x] `CreateProjectValidator` — `OrganizationId` required and exists; `Name` non-empty max 100 chars; generated slug unique within the organization (done — `tests/Ordinis.UnitTests/Application/Projects/Validators/CreateProjectValidatorTests.cs`; also covers `CreatedByUserId` and `Description` max length 1000; fixed a bug found while testing — the `Name` rule lacked `Cascade(CascadeMode.Stop)`, so an empty `Name` let the slug-uniqueness `MustAsync` run anyway and throw inside `SlugGenerator.Slugify` instead of failing validation cleanly. **Second bug found later, during manual API testing:** `CreatedByUserId` had no existence check at all (only `.NotEmpty()`) — since `Project.CreatedByUserId` is a required FK with `DeleteBehavior.Restrict`, a nonexistent user ID passed validation and then blew up as a raw `DbUpdateException` at `SaveChangesAsync`, surfacing as an unhandled `500` instead of a clean `422`. Fixed by adding the same `MustAsync` existence check `AddProjectMemberValidator` already does for its own `UserId`; added `TestValidateAsync_CreatedByUserIdDoesNotExist_HasValidationErrorForCreatedByUserId` and `...Exists_HasNoValidationErrorForCreatedByUserId`)
 - [x] `AddProjectMemberValidator` — `UserId` exists; `Role` valid enum value; user not already a member (done — `tests/Ordinis.UnitTests/Application/Projects/Validators/AddProjectMemberValidatorTests.cs`; also covers `ProjectId`; fixed a gap found while testing — the validator had no rule for `Role` at all, so an out-of-range value passed silently; added `RuleFor(x => x.Role).IsInEnum()`, matching `ChangeMemberRoleValidator`)
 - [x] `ChangeMemberRoleValidator` — `Role` valid enum value (done — `tests/Ordinis.UnitTests/Application/Projects/Validators/ChangeMemberRoleValidatorTests.cs`; also covers `ProjectId`/`UserId`; purely synchronous, no DB state needed; the unused `IAppDbContext db` constructor parameter flagged earlier has since been removed)
-- [x] `CreateBoardValidator` — `Name` non-empty max 100 chars; project exists and is not archived; no duplicate board name within the project (done — `tests/Ordinis.UnitTests/Application/Projects/Validators/CreateBoardValidatorTests.cs`; also covers `ProjectId`/`CreatedByUserId` and case-insensitive duplicate-name scoping per project; no bugs found)
+- [x] `CreateBoardValidator` — `Name` non-empty max 100 chars; project exists and is not archived; no duplicate board name within the project (done — `tests/Ordinis.UnitTests/Application/Projects/Validators/CreateBoardValidatorTests.cs`; also covers `ProjectId`/`CreatedByUserId` and case-insensitive duplicate-name scoping per project. **Bug found later, during the `BoardsController` review:** `CreatedByUserId` had no existence check at all (only `.NotEmpty()`) — same shape as the `CreateProjectValidator` bug above; `Board.CreatedByUserId` is a required FK with `DeleteBehavior.Restrict`, so a nonexistent user ID passed validation and blew up as an unhandled `500` at `SaveChangesAsync`. Fixed with the same `MustAsync` existence check; added `TestValidateAsync_CreatedByUserIdDoesNotExist_HasValidationErrorForCreatedByUserId` and `...Exists_HasNoValidationErrorForCreatedByUserId`)
 - [x] `RenameBoardValidator` — `Name` non-empty max 100 chars; no duplicate board name within the project (done — `tests/Ordinis.UnitTests/Application/Projects/Validators/RenameBoardValidatorTests.cs`; also covers `BoardId`, renaming to its own current name, and case-insensitive duplicate scoping per project; fixed a latent bug found while testing — the board-lookup `Select(b => b.ProjectId)` projected a non-nullable `Guid`, so `SingleOrDefaultAsync` returned `Guid.Empty` instead of `null` when the board didn't exist, leaving the intended `if (projectId is null)` branch dead; cast to `(Guid?)` in the `Select` so it behaves as written)
 
 **Organization validators**
@@ -689,6 +809,8 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [x] `CreateUserValidator` — `Email` valid format and unique within the organization; `DisplayName` non-empty max 100 chars; `OrganizationId` exists; `Password` min 8 chars (done — `tests/Ordinis.UnitTests/Application/Users/Validators/CreateUserValidatorTests.cs`; also covers `OrganizationId` suspended-org rejection, case-insensitive email uniqueness scoped per organization, and `OrgRole` enum validity; no bugs found)
 - [x] `UpdateUserValidator` — `DisplayName` non-empty max 100 chars (done — `tests/Ordinis.UnitTests/Application/Users/Validators/UpdateUserValidatorTests.cs`; also covers `UserId`/`RequestedByUserId`; purely synchronous, no DB state needed; no bugs found)
 - [x] `ChangeUserOrgRoleValidator` — `Role` valid enum value (done — `tests/Ordinis.UnitTests/Application/Users/Validators/ChangeUserOrgRoleValidatorTests.cs`; also covers `UserId`/`RequestedByUserId`; purely synchronous, no DB state needed; no bugs found)
+- [x] `DeactivateUserValidator` — `UserId`/`RequestedByUserId` not empty (done — `tests/Ordinis.UnitTests/Application/Users/Validators/DeactivateUserValidatorTests.cs`; purely synchronous, no DB state needed; **added during the `UsersController` review** — the validator itself didn't exist yet, only the handler; `DeactivateUserHandlerTests` already covered the domain-guard/not-found paths)
+- [x] `ReactivateUserValidator` — `UserId`/`RequestedByUserId` not empty (done — `tests/Ordinis.UnitTests/Application/Users/Validators/ReactivateUserValidatorTests.cs`; same shape and same review-driven addition as `DeactivateUserValidator`)
 
 **Git tag (after Part 2):** `v0.9-part2-remaining-validators`
 
@@ -756,7 +878,8 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 **Board command handlers**
 - [x] `CreateBoardHandler` — board created directly as independent aggregate root; new board ID returned (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/CreateBoardHandlerTests.cs`; no bugs found; covers valid create with field assertions including whitespace trimming, empty name → `ArgumentException`, empty `ProjectId` → `ArgumentException`)
 - [x] `ArchiveBoardHandler` — board archived; `IsArchived = true` (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/ArchiveBoardHandlerTests.cs`; no bugs found; covers valid archive, not-found → `NotFoundException`, already-archived → `DomainException`)
-- [x] `RenameBoardHandler` — board name updated (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/RenameBoardHandlerTests.cs`; no bugs found; covers valid rename with whitespace-trim assertion, not-found → `NotFoundException`, empty name → `ArgumentException`, archived board → `DomainException`)
+- [x] `UnarchiveBoardHandler` — board unarchived; `IsArchived = false` (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/UnarchiveBoardHandlerTests.cs`; added during the `BoardsController` review alongside the handler itself, mirroring `UnarchiveProjectHandlerTests`; covers valid unarchive, not-found → `NotFoundException`, not-archived → `DomainException`)
+- [x] `RenameBoardHandler` — board name updated (done — `tests/Ordinis.UnitTests/Application/Projects/Commands/RenameBoardHandlerTests.cs`; covers valid rename with whitespace-trim assertion, not-found → `NotFoundException`, empty name → `ArgumentException`, archived board → `DomainException`. **Bug found during the `BoardsController` review:** the handler never caught `DbUpdateConcurrencyException` at all, so a genuine race produced an unhandled `500` instead of `409` — fixed to match `UpdateProjectHandler`'s pattern; added `HandleAsync_RowVersionChangedSinceLoad_ThrowsConcurrencyException`, same stale-`OriginalValue` technique as `UpdateProjectHandlerTests`)
 
 **Project query handlers**
 - [x] `GetProjectByIdHandler` — returns correct `ProjectDto` with embedded boards and members; per-board task counts resolved correctly via grouped query; throws `NotFoundException` when not found (done — `tests/Ordinis.UnitTests/Application/Projects/Queries/GetProjectByIdHandlerTests.cs`; no bugs found; covers full happy path with field/count/display-name assertions, not-found → `NotFoundException`, per-board task count isolation via GroupBy, missing user row → `"Unknown"` display name fallback)
@@ -844,6 +967,9 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [ ] Add Scalar UI — `app.MapScalarApiReference()` at `/scalar`; configure title, theme
 - [ ] Document authentication in OpenAPI — add `SecurityScheme` for Bearer JWT; annotate secured endpoints
 - [ ] Add `requests.http` file — one example request per endpoint covering happy path; compatible with VS Code REST Client and JetBrains HTTP Client
+  *(started early: the scaffold-generated `src/Ordinis.Api/Ordinis.Api.http` is being updated
+  incrementally as each controller is built in Phase 6, rather than written from scratch here —
+  reuse/finish that file in Phase 10 instead of creating a new `requests.http`)*
 - [ ] Update README:
   - Architecture diagram (Mermaid)
   - Full local setup steps (clone → user secrets → run)
