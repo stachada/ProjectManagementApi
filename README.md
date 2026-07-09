@@ -155,6 +155,10 @@ dotnet build Ordinis.slnx
 dotnet run --project src/Ordinis.Api
 ```
 
+Once running, [`src/Ordinis.Api/Ordinis.Api.http`](src/Ordinis.Api/Ordinis.Api.http) has example
+requests for every endpoint (compatible with VS Code's REST Client extension and
+Rider/Visual Studio's built-in HTTP client) — it's updated as each new controller is added.
+
 ### Run tests
 
 There are two test projects:
@@ -186,9 +190,9 @@ decisions behind each phase.
 | 1 — Repository & solution setup | ✅ Complete |
 | 2 — Domain layer | ✅ Complete |
 | 3 — Application layer: infrastructure | ✅ Complete |
-| 4 — Application layer: features (Tasks; Projects & Boards done — Organizations, Users, shared infra remain) | 🚧 In progress |
+| 4 — Application layer: features | ✅ Complete |
 | 5 — Infrastructure layer | ✅ Complete |
-| 6 — API layer: core endpoints | ⏳ Not started |
+| 6 — API layer: core endpoints (shared infra + `OrganizationsController` done — Projects, Boards, Tasks, Users controllers and `SearchEndpoints` remain) | 🚧 In progress |
 | 7 — API layer: advanced REST features | ⏳ Not started |
 | 8 — Security | ⏳ Not started |
 | 9 — Testing & benchmarking | 🚧 In progress |
