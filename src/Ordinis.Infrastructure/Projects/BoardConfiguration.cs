@@ -31,6 +31,8 @@ internal sealed class BoardConfiguration : IEntityTypeConfiguration<Board>
         builder.Property(b => b.RowVersion)
             .IsConcurrencyToken();
 
+        builder.HasQueryFilter(b => !b.IsDeleted);
+
         builder.HasOne(b => b.Project)
             .WithMany()
             .HasForeignKey(b => b.ProjectId)

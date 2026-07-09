@@ -34,6 +34,10 @@ internal sealed class ProjectMemberConfiguration : IEntityTypeConfiguration<Proj
         builder.Property(m => m.JoinedAt)
             .IsRequired();
 
+        // ProjectMember has no soft-delete column of its own; chain the filter through the
+        // required Project navigation so it always agrees with ProjectConfiguration's filter.
+        builder.HasQueryFilter(m => !m.Project!.IsDeleted);
+
         // FK to Project is already configured via ProjectConfiguration.HasMany,
         // but restated here explicitly for readability.
         builder.HasOne(m => m.Project)
