@@ -1,3 +1,4 @@
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Ordinis.Application.Common;
 using Ordinis.Domain.Users;
@@ -40,5 +41,21 @@ internal sealed class DeactivateUserHandler(IAppDbContext db)
         user.Deactivate();
 
         await db.SaveChangesAsync(ct);
+    }
+}
+
+// Validator
+/// <summary>
+/// Validates <see cref="DeactivateUser"/> commands before the handler runs.
+/// </summary>
+internal sealed class DeactivateUserValidator : AbstractValidator<DeactivateUser>
+{
+    public DeactivateUserValidator()
+    {
+        RuleFor(x => x.UserId)
+            .NotEmpty();
+
+        RuleFor(x => x.RequestedByUserId)
+            .NotEmpty();
     }
 }

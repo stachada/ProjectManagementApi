@@ -1,3 +1,4 @@
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Ordinis.Application.Common;
 using Ordinis.Domain.Users;
@@ -32,5 +33,21 @@ internal sealed class ReactivateUserHandler(IAppDbContext db)
         user.Reactivate();
 
         await db.SaveChangesAsync(ct);
+    }
+}
+
+// Validator
+/// <summary>
+/// Validates <see cref="ReactivateUser"/> commands before the handler runs.
+/// </summary>
+internal sealed class ReactivateUserValidator : AbstractValidator<ReactivateUser>
+{
+    public ReactivateUserValidator()
+    {
+        RuleFor(x => x.UserId)
+            .NotEmpty();
+
+        RuleFor(x => x.RequestedByUserId)
+            .NotEmpty();
     }
 }

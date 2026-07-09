@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Ordinis.Application.Common;
+using Ordinis.Domain.Common;
 
 namespace Ordinis.Api.Common;
 
@@ -7,7 +8,8 @@ namespace Ordinis.Api.Common;
 /// Catches exceptions thrown by command/query handlers (via the dispatcher) or by controller
 /// actions and translates them into RFC 9457 Problem Details responses:
 /// <see cref="ValidationException"/> → <c>422</c>, <see cref="NotFoundException"/> → <c>404</c>,
-/// <see cref="ConcurrencyException"/> → <c>409</c>, anything else → <c>500</c>.
+/// <see cref="ConcurrencyException"/> → <c>409</c>, <see cref="DomainException"/> → <c>422</c>,
+/// anything else → <c>500</c>.
 /// </summary>
 /// <remarks>
 /// Initializes a new instance of the <see cref="GlobalExceptionMiddleware"/> class.
@@ -46,6 +48,17 @@ public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Glob
             await WriteAsync(context, ProblemDetailsFactory.Create(
                 context, StatusCodes.Status409Conflict, "Concurrency conflict", ex.Message));
         }
+        catch (DomainException ex)
+        {
+            _logger.LogWarning(ex, "Domain rule violated for {Method} {Path}: {ErrorCode}",
+                context.Request.Method, context.Request.Path, ex.ErrorCode);
+            await WriteAsync(context, ProblemDetailsFactory.Create(
+                context,
+                StatusCodes.Status422UnprocessableEntity,
+                "Business rule violated",
+                ex.Message,
+                type: $"urn:ordinis:error:{ex.ErrorCode}"));
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception for {Method} {Path}", context.Request.Method, context.Request.Path);
@@ -61,6 +74,10 @@ public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Glob
     {
         context.Response.ContentType = "application/problem+json";
         context.Response.StatusCode = problemDetails.Status ?? StatusCodes.Status500InternalServerError;
-        await context.Response.WriteAsJsonAsync(problemDetails);
+
+        // Serialize by the runtime type, not the ProblemDetails-typed parameter — WriteAsJsonAsync's
+        // generic overload would otherwise infer TValue as ProblemDetails and silently slice off
+        // derived-only members, e.g. ValidationProblemDetails.Errors.
+        await context.Response.WriteAsJsonAsync(problemDetails, problemDetails.GetType());
     }
 }

@@ -33,6 +33,7 @@ public static class ProjectServiceExtensions
         // Board commands
         services.AddScoped<ICommandHandler<CreateBoard, Guid>, CreateBoardHandler>();
         services.AddScoped<ICommandHandler<ArchiveBoard>, ArchiveBoardHandler>();
+        services.AddScoped<ICommandHandler<UnarchiveBoard>, UnarchiveBoardHandler>();
         services.AddScoped<ICommandHandler<RenameBoard>, RenameBoardHandler>();
 
         // Project queries

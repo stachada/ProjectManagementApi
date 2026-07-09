@@ -1,6 +1,484 @@
 @Ordinis.Api_HostAddress = http://localhost:5084
+@contentType = application/json
 
-GET {{Ordinis.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+### Health check
+GET {{Ordinis.Api_HostAddress}}/health
+
+###
+# Create an organization. Copy the "id" from the response into @organizationId below
+# to run the rest of the requests against it.
+POST {{Ordinis.Api_HostAddress}}/api/v1/organizations
+Content-Type: {{contentType}}
+
+{
+  "name": "Rocket Science Inc.",
+  "description": "Test org"
+}
+
+###
+@organizationId = 019f4287-ada0-78e2-9a2e-0b8ee6c432c0
+
+### Get an organization by ID
+GET {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}
+
+### Get an organization by ID - not found (random GUID)
+GET {{Ordinis.Api_HostAddress}}/api/v1/organizations/11111111-1111-1111-1111-111111111111
+
+### List an organization's projects (paged)
+GET {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}/projects?page=1&pageSize=20&sortBy=createdAt&sortDescending=false
+
+### Rename + update description
+PUT {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}
+Content-Type: {{contentType}}
+
+{
+  "name": "Acme Corporation",
+  "description": "Updated description"
+}
+
+### Suspend
+POST {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}/suspend
+
+### Suspend again - expect 422 organization.already-suspended
+POST {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}/suspend
+
+### Reactivate
+POST {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}/reactivate
+
+### Reactivate again - expect 422 organization.already-active
+POST {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}/reactivate
+
+### Create with empty name - expect 422 validation errors
+POST {{Ordinis.Api_HostAddress}}/api/v1/organizations
+Content-Type: {{contentType}}
+
+{
+  "name": ""
+}
+
+###
+# UsersController requests below reuse @organizationId from above.
+# Create two users - the first becomes @createdByUserId (used to create the
+# project below), the second becomes @memberUserId (added as a project member).
+POST {{Ordinis.Api_HostAddress}}/api/v1/users
+Content-Type: {{contentType}}
+
+{
+  "organizationId": "{{organizationId}}",
+  "displayName": "Alice Admin",
+  "email": "alice.admin@example.com",
+  "password": "SuperSecret123",
+  "orgRole": 2
+}
+
+###
+@createdByUserId = 00000000-0000-0000-0000-000000000000
+
+### Create a second user. Copy the "id" from the response into @memberUserId below.
+POST {{Ordinis.Api_HostAddress}}/api/v1/users
+Content-Type: {{contentType}}
+
+{
+  "organizationId": "{{organizationId}}",
+  "displayName": "Bob Member",
+  "email": "bob.member@example.com",
+  "password": "SuperSecret123",
+  "orgRole": 1
+}
+
+###
+@memberUserId = 00000000-0000-0000-0000-000000000000
+
+### Get a user by ID
+GET {{Ordinis.Api_HostAddress}}/api/v1/users/{{createdByUserId}}
+
+### Get a user by ID - not found (random GUID)
+GET {{Ordinis.Api_HostAddress}}/api/v1/users/11111111-1111-1111-1111-111111111111
+
+### List a user's assigned tasks (paged)
+GET {{Ordinis.Api_HostAddress}}/api/v1/users/{{createdByUserId}}/tasks?page=1&pageSize=20
+
+### Update display name
+PUT {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}
+Content-Type: {{contentType}}
+
+{
+  "displayName": "Bob M. Member",
+  "requestedByUserId": "{{memberUserId}}"
+}
+
+### Change organization-level role (Role: 0 = Viewer, 1 = Member, 2 = Admin)
+PUT {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}/org-role
+Content-Type: {{contentType}}
+
+{
+  "newOrgRole": 2,
+  "requestedByUserId": "{{createdByUserId}}"
+}
+
+### Deactivate
+POST {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}/deactivate
+Content-Type: {{contentType}}
+
+{
+  "requestedByUserId": "{{createdByUserId}}"
+}
+
+### Deactivate again - expect 422 user.already-inactive
+POST {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}/deactivate
+Content-Type: {{contentType}}
+
+{
+  "requestedByUserId": "{{createdByUserId}}"
+}
+
+### Reactivate
+POST {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}/reactivate
+Content-Type: {{contentType}}
+
+{
+  "requestedByUserId": "{{createdByUserId}}"
+}
+
+### Reactivate again - expect 422 user.already-active
+POST {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}/reactivate
+Content-Type: {{contentType}}
+
+{
+  "requestedByUserId": "{{createdByUserId}}"
+}
+
+### Create with empty display name - expect 422 validation errors
+POST {{Ordinis.Api_HostAddress}}/api/v1/users
+Content-Type: {{contentType}}
+
+{
+  "organizationId": "{{organizationId}}",
+  "displayName": "",
+  "email": "invalid-example@example.com",
+  "password": "SuperSecret123"
+}
+
+### Create with duplicate email in the same organization - expect 422 validation errors
+POST {{Ordinis.Api_HostAddress}}/api/v1/users
+Content-Type: {{contentType}}
+
+{
+  "organizationId": "{{organizationId}}",
+  "displayName": "Duplicate Alice",
+  "email": "alice.admin@example.com",
+  "password": "SuperSecret123"
+}
+
+###
+# ProjectsController requests below reuse @organizationId, @createdByUserId,
+# and @memberUserId from above.
+
+### Create a project. Copy the "id" from the response into @projectId below
+# to run the rest of the requests against it.
+POST {{Ordinis.Api_HostAddress}}/api/v1/projects
+Content-Type: {{contentType}}
+
+{
+  "organizationId": "{{organizationId}}",
+  "createdByUserId": "{{createdByUserId}}",
+  "name": "Apollo Launch",
+  "description": "Test project"
+}
+
+###
+@projectId = 00000000-0000-0000-0000-000000000000
+
+### Get a project by ID
+GET {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}
+
+### Get a project by ID - not found (random GUID)
+GET {{Ordinis.Api_HostAddress}}/api/v1/projects/11111111-1111-1111-1111-111111111111
+
+### List projects (paged, filterable, sortable)
+GET {{Ordinis.Api_HostAddress}}/api/v1/projects?organizationId={{organizationId}}&page=1&pageSize=20&sortBy=createdAt&sortDescending=false
+
+### List a project's tasks (paged)
+GET {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/tasks?page=1&pageSize=20
+
+### List a project's members
+GET {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/members
+
+### List a project's boards
+GET {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/boards
+
+### Update name + description
+PUT {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}
+Content-Type: {{contentType}}
+
+{
+  "newName": "Apollo Launch - Phase 2",
+  "newDescription": "Updated description"
+}
+
+### Add a member (Role: 0 = Viewer, 1 = Member, 2 = Admin)
+POST {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/members
+Content-Type: {{contentType}}
+
+{
+  "userId": "{{memberUserId}}",
+  "role": 1
+}
+
+### Add the same member again - expect 422 (already a member)
+POST {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/members
+Content-Type: {{contentType}}
+
+{
+  "userId": "{{memberUserId}}",
+  "role": 1
+}
+
+### Change a member's role
+PUT {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/members/{{memberUserId}}/role
+Content-Type: {{contentType}}
+
+{
+  "newRole": 2
+}
+
+### Remove a member
+DELETE {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/members/{{memberUserId}}
+
+### Archive
+POST {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/archive
+
+### Unarchive
+POST {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/unarchive
+
+### Create with empty name - expect 422 validation errors
+POST {{Ordinis.Api_HostAddress}}/api/v1/projects
+Content-Type: {{contentType}}
+
+{
+  "organizationId": "{{organizationId}}",
+  "createdByUserId": "{{createdByUserId}}",
+  "name": ""
+}
+
+###
+# BoardsController requests below reuse @projectId and @createdByUserId from
+# above. The project must still exist, so these run before the project is
+# deleted at the very end of this file.
+
+### Create a board under the project. Copy the "id" from the response into
+# @boardId below to run the rest of the requests against it.
+POST {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/boards
+Content-Type: {{contentType}}
+
+{
+  "createdByUserId": "{{createdByUserId}}",
+  "name": "Sprint Board"
+}
+
+###
+@boardId = 00000000-0000-0000-0000-000000000000
+
+### Get a board by ID
+GET {{Ordinis.Api_HostAddress}}/api/v1/boards/{{boardId}}
+
+### Get a board by ID - not found (random GUID)
+GET {{Ordinis.Api_HostAddress}}/api/v1/boards/11111111-1111-1111-1111-111111111111
+
+### List a board's tasks (paged)
+GET {{Ordinis.Api_HostAddress}}/api/v1/boards/{{boardId}}/tasks?page=1&pageSize=20
+
+### Rename
+PUT {{Ordinis.Api_HostAddress}}/api/v1/boards/{{boardId}}/name
+Content-Type: {{contentType}}
+
+{
+  "newName": "Sprint Board - Renamed"
+}
+
+### Create with a nonexistent CreatedByUserId - expect 422 validation errors
+POST {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/boards
+Content-Type: {{contentType}}
+
+{
+  "createdByUserId": "11111111-1111-1111-1111-111111111111",
+  "name": "Ghost Board"
+}
+
+### Archive
+POST {{Ordinis.Api_HostAddress}}/api/v1/boards/{{boardId}}/archive
+
+### Archive again - expect 422 board.already-archived
+POST {{Ordinis.Api_HostAddress}}/api/v1/boards/{{boardId}}/archive
+
+### Rename while archived - expect 422 board.archived
+PUT {{Ordinis.Api_HostAddress}}/api/v1/boards/{{boardId}}/name
+Content-Type: {{contentType}}
+
+{
+  "newName": "Should Fail"
+}
+
+### Unarchive
+POST {{Ordinis.Api_HostAddress}}/api/v1/boards/{{boardId}}/unarchive
+
+### Unarchive again - expect 422 board.not-archived
+POST {{Ordinis.Api_HostAddress}}/api/v1/boards/{{boardId}}/unarchive
+
+###
+# TasksController requests below reuse @boardId, @createdByUserId, and
+# @memberUserId from above. The board must be active (CreateTask rejects
+# archived boards), so these run after Unarchive above.
+
+### Create a task on the board. Copy the "id" from the response into @taskId
+# below to run the rest of the requests against it.
+POST {{Ordinis.Api_HostAddress}}/api/v1/tasks
+Content-Type: {{contentType}}
+
+{
+  "boardId": "{{boardId}}",
+  "title": "Fix login bug",
+  "description": "Users can't log in with SSO",
+  "priority": 1,
+  "assigneeId": "{{memberUserId}}",
+  "dueDate": null,
+  "requestedByUserId": "{{createdByUserId}}"
+}
+
+###
+@taskId = 00000000-0000-0000-0000-000000000000
+
+### Create with a nonexistent RequestedByUserId - expect 422 validation errors
+POST {{Ordinis.Api_HostAddress}}/api/v1/tasks
+Content-Type: {{contentType}}
+
+{
+  "boardId": "{{boardId}}",
+  "title": "Ghost Task",
+  "description": null,
+  "priority": 1,
+  "assigneeId": null,
+  "dueDate": null,
+  "requestedByUserId": "11111111-1111-1111-1111-111111111111"
+}
+
+### Get a task by ID
+GET {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}
+
+### Get a task by ID - not found (random GUID)
+GET {{Ordinis.Api_HostAddress}}/api/v1/tasks/11111111-1111-1111-1111-111111111111
+
+### List tasks (paged, filterable, sortable)
+GET {{Ordinis.Api_HostAddress}}/api/v1/tasks?boardId={{boardId}}&page=1&pageSize=20&sortBy=createdAt&sortDescending=false
+
+### Update title, description, priority, due date
+PUT {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}
+Content-Type: {{contentType}}
+
+{
+  "title": "Fix login bug - SSO",
+  "description": "Narrowed down to the SAML callback",
+  "priority": 2,
+  "dueDate": null,
+  "requestedByUserId": "{{createdByUserId}}"
+}
+
+### Add a comment. Copy the "id" from the response into @commentId below.
+POST {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/comments
+Content-Type: {{contentType}}
+
+{
+  "authorId": "{{createdByUserId}}",
+  "content": "Investigating now"
+}
+
+###
+@commentId = 00000000-0000-0000-0000-000000000000
+
+### List comments
+GET {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/comments
+
+### Edit the comment (only the original author may do this)
+PUT {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/comments/{{commentId}}
+Content-Type: {{contentType}}
+
+{
+  "newContent": "Investigating now - found it, SAML callback URL was wrong",
+  "requestedByUserId": "{{createdByUserId}}"
+}
+
+### Edit by a non-author - expect 422 (not the comment's author)
+PUT {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/comments/{{commentId}}
+Content-Type: {{contentType}}
+
+{
+  "newContent": "Sneaky edit",
+  "requestedByUserId": "{{memberUserId}}"
+}
+
+### Remove the comment
+DELETE {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/comments/{{commentId}}?requestedByUserId={{createdByUserId}}
+
+### Remove again - expect 422 task.comment-not-found
+DELETE {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/comments/{{commentId}}?requestedByUserId={{createdByUserId}}
+
+### Add an attachment (multipart/form-data - not JSON). Copy the "id" from the
+# response into @attachmentId below.
+POST {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/attachments
+Content-Type: multipart/form-data; boundary=----OrdinisBoundary
+
+------OrdinisBoundary
+Content-Disposition: form-data; name="file"; filename="notes.txt"
+Content-Type: text/plain
+
+Investigation notes for the SSO login bug.
+------OrdinisBoundary
+Content-Disposition: form-data; name="uploadedByUserId"
+
+{{createdByUserId}}
+------OrdinisBoundary--
+
+###
+@attachmentId = 00000000-0000-0000-0000-000000000000
+
+### Add an attachment with a nonexistent UploadedByUserId - expect 422 validation errors
+POST {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/attachments
+Content-Type: multipart/form-data; boundary=----OrdinisBoundary
+
+------OrdinisBoundary
+Content-Disposition: form-data; name="file"; filename="notes.txt"
+Content-Type: text/plain
+
+Investigation notes for the SSO login bug.
+------OrdinisBoundary
+Content-Disposition: form-data; name="uploadedByUserId"
+
+11111111-1111-1111-1111-111111111111
+------OrdinisBoundary--
+
+### List attachments
+GET {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/attachments
+
+### Remove the attachment
+DELETE {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/attachments/{{attachmentId}}?removedByUserId={{createdByUserId}}
+
+### Remove again - expect 404 (already removed; RemoveAttachment pre-checks
+# existence itself, unlike RemoveComment, so this is 404 not 422)
+DELETE {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/attachments/{{attachmentId}}?removedByUserId={{createdByUserId}}
+
+### Delete the task (soft delete)
+DELETE {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}?requestedByUserId={{createdByUserId}}
+
+### Get after delete - expect 404
+GET {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}
+
+###
+# Tear down the project last - BoardsController requests above depend on it existing.
+
+### Delete (soft delete)
+DELETE {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}
+
+### Get after delete - expect 404
+GET {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}
 
 ###
