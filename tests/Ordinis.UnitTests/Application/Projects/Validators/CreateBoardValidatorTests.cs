@@ -1,6 +1,7 @@
 using FluentValidation.TestHelper;
 using Ordinis.Application.Projects.Commands;
 using Ordinis.Domain.Projects;
+using Ordinis.Domain.Users;
 using Ordinis.UnitTests.Common;
 using Ordinis.UnitTests.Common.Builders;
 
@@ -21,11 +22,14 @@ public sealed class CreateBoardValidatorTests
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
         Project project = ProjectBuilder.Create();
+        User user = UserBuilder.Create(organizationId: project.OrganizationId);
         db.Projects.Add(project);
+        db.Users.Add(user);
         await db.SaveChangesAsync();
         var validator = new CreateBoardValidator(db);
+        CreateBoard command = ValidCommand(project.Id) with { CreatedByUserId = user.Id };
 
-        TestValidationResult<CreateBoard> result = await validator.TestValidateAsync(ValidCommand(project.Id));
+        TestValidationResult<CreateBoard> result = await validator.TestValidateAsync(command);
 
         result.ShouldNotHaveAnyValidationErrors();
     }
@@ -96,6 +100,39 @@ public sealed class CreateBoardValidatorTests
         TestValidationResult<CreateBoard> result = await validator.TestValidateAsync(command);
 
         result.ShouldHaveValidationErrorFor(x => x.CreatedByUserId);
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_CreatedByUserIdDoesNotExist_HasValidationErrorForCreatedByUserId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Project project = ProjectBuilder.Create();
+        db.Projects.Add(project);
+        await db.SaveChangesAsync();
+        var validator = new CreateBoardValidator(db);
+        CreateBoard command = ValidCommand(project.Id) with { CreatedByUserId = Guid.CreateVersion7() };
+
+        TestValidationResult<CreateBoard> result = await validator.TestValidateAsync(command);
+
+        result.ShouldHaveValidationErrorFor(x => x.CreatedByUserId)
+            .WithErrorMessage("User not found.");
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_CreatedByUserIdExists_HasNoValidationErrorForCreatedByUserId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Project project = ProjectBuilder.Create();
+        User user = UserBuilder.Create(organizationId: project.OrganizationId);
+        db.Projects.Add(project);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        var validator = new CreateBoardValidator(db);
+        CreateBoard command = ValidCommand(project.Id) with { CreatedByUserId = user.Id };
+
+        TestValidationResult<CreateBoard> result = await validator.TestValidateAsync(command);
+
+        result.ShouldNotHaveValidationErrorFor(x => x.CreatedByUserId);
     }
 
     [Theory]

@@ -201,4 +201,37 @@ public sealed class CreateTaskValidatorTests
 
         result.ShouldHaveValidationErrorFor(x => x.RequestedByUserId);
     }
+
+    [Fact]
+    public async Task TestValidateAsync_RequestedByUserIdDoesNotExist_HasValidationErrorForRequestedByUserId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Board board = BoardBuilder.Create();
+        db.Boards.Add(board);
+        await db.SaveChangesAsync();
+        var validator = new CreateTaskValidator(db);
+        CreateTask command = ValidCommand(board.Id) with { RequestedByUserId = Guid.CreateVersion7() };
+
+        TestValidationResult<CreateTask> result = await validator.TestValidateAsync(command);
+
+        result.ShouldHaveValidationErrorFor(x => x.RequestedByUserId)
+            .WithErrorMessage("User not found.");
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_RequestedByUserIdExists_HasNoValidationErrorForRequestedByUserId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Board board = BoardBuilder.Create();
+        User user = UserBuilder.Create();
+        db.Boards.Add(board);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        var validator = new CreateTaskValidator(db);
+        CreateTask command = ValidCommand(board.Id) with { RequestedByUserId = user.Id };
+
+        TestValidationResult<CreateTask> result = await validator.TestValidateAsync(command);
+
+        result.ShouldNotHaveValidationErrorFor(x => x.RequestedByUserId);
+    }
 }

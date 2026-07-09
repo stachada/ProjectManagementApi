@@ -3,6 +3,7 @@ using Ordinis.Application.Common;
 using Ordinis.Application.Projects.Commands;
 using Ordinis.Domain.Organizations;
 using Ordinis.Domain.Projects;
+using Ordinis.Domain.Users;
 using Ordinis.UnitTests.Common;
 using Ordinis.UnitTests.Common.Builders;
 
@@ -27,11 +28,14 @@ public sealed class CreateProjectValidatorTests
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
         Organization organization = OrganizationBuilder.Create();
+        User user = UserBuilder.Create(organizationId: organization.Id);
         db.Organizations.Add(organization);
+        db.Users.Add(user);
         await db.SaveChangesAsync();
         var validator = new CreateProjectValidator(db, SlugGenerator);
+        CreateProject command = ValidCommand(organization.Id) with { CreatedByUserId = user.Id };
 
-        TestValidationResult<CreateProject> result = await validator.TestValidateAsync(ValidCommand(organization.Id));
+        TestValidationResult<CreateProject> result = await validator.TestValidateAsync(command);
 
         result.ShouldNotHaveAnyValidationErrors();
     }
@@ -86,6 +90,39 @@ public sealed class CreateProjectValidatorTests
         TestValidationResult<CreateProject> result = await validator.TestValidateAsync(command);
 
         result.ShouldHaveValidationErrorFor(x => x.CreatedByUserId);
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_CreatedByUserIdDoesNotExist_HasValidationErrorForCreatedByUserId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Organization organization = OrganizationBuilder.Create();
+        db.Organizations.Add(organization);
+        await db.SaveChangesAsync();
+        var validator = new CreateProjectValidator(db, SlugGenerator);
+        CreateProject command = ValidCommand(organization.Id) with { CreatedByUserId = Guid.CreateVersion7() };
+
+        TestValidationResult<CreateProject> result = await validator.TestValidateAsync(command);
+
+        result.ShouldHaveValidationErrorFor(x => x.CreatedByUserId)
+            .WithErrorMessage("User not found.");
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_CreatedByUserIdExists_HasNoValidationErrorForCreatedByUserId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Organization organization = OrganizationBuilder.Create();
+        User user = UserBuilder.Create(organizationId: organization.Id);
+        db.Organizations.Add(organization);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        var validator = new CreateProjectValidator(db, SlugGenerator);
+        CreateProject command = ValidCommand(organization.Id) with { CreatedByUserId = user.Id };
+
+        TestValidationResult<CreateProject> result = await validator.TestValidateAsync(command);
+
+        result.ShouldNotHaveValidationErrorFor(x => x.CreatedByUserId);
     }
 
     [Theory]

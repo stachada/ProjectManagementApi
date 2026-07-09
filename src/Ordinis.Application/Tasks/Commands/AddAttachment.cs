@@ -71,7 +71,7 @@ internal sealed class AddAttachmentHandler(
 /// </summary>
 internal sealed class AddAttachmentValidator : AbstractValidator<AddAttachment>
 {
-    public AddAttachmentValidator()
+    public AddAttachmentValidator(IAppDbContext db)
     {
         RuleFor(x => x.TaskId).NotEmpty();
 
@@ -91,6 +91,8 @@ internal sealed class AddAttachmentValidator : AbstractValidator<AddAttachment>
             .NotNull();
 
         RuleFor(x => x.UploadedByUserId)
-            .NotEmpty();
+            .NotEmpty()
+            .MustAsync(async (id, ct) => await db.Users.AnyAsync(u => u.Id == id, ct))
+            .WithMessage("User not found.");
     }
 }
