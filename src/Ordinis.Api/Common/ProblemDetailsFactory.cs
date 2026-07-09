@@ -15,18 +15,25 @@ public static class ProblemDetailsFactory
     /// <param name="statusCode">The HTTP status code to report.</param>
     /// <param name="title">Short, human-readable summary of the problem.</param>
     /// <param name="detail">Human-readable explanation specific to this occurrence.</param>
+    /// <param name="type">
+    /// Optional machine-readable problem type URI. When omitted, defaults to a generic
+    /// <c>https://httpstatuses.io/{statusCode}</c> URL. Pass a specific value (e.g. derived from
+    /// <see cref="Ordinis.Domain.Common.DomainException.ErrorCode"/>) to let API clients distinguish
+    /// error causes that share the same HTTP status code.
+    /// </param>
     public static ProblemDetails Create(
         HttpContext context,
         int statusCode,
         string title,
-        string? detail = null)
+        string? detail = null,
+        string? type = null)
     {
         var problemDetails = new ProblemDetails
         {
             Status = statusCode,
             Title = title,
             Detail = detail,
-            Type = $"https://httpstatuses.io/{statusCode}",
+            Type = type ?? $"https://httpstatuses.io/{statusCode}",
             Instance = context.Request.Path,
         };
 
