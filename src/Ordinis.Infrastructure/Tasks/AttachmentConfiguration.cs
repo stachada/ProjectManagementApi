@@ -40,6 +40,10 @@ internal sealed class AttachmentConfiguration : IEntityTypeConfiguration<Attachm
         builder.Property(a => a.UploadedAt)
             .IsRequired();
 
+        // Attachment has no soft-delete column of its own; chain the filter through the
+        // required Task navigation so it always agrees with ProjectTaskConfiguration's filter.
+        builder.HasQueryFilter(a => !a.Task!.IsDeleted);
+
         // Task FK is configured from ProjectTaskConfiguration.HasMany(Attachments).
         // Only the UploadedByUser FK needs explicit configuration here.
         builder.HasOne(a => a.UploadedByUser)
