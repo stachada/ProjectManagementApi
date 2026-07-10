@@ -1,4 +1,5 @@
 using Ordinis.Api.Common;
+using Ordinis.Api.MinimalApis;
 using Ordinis.Application.Common;
 using Ordinis.Infrastructure.Common;
 using Serilog;
@@ -41,5 +42,8 @@ app.UseResponseCaching();
 
 app.MapHealthChecks("/health");
 app.MapControllers();
+
+app.MapSearchEndpoints();
+app.MapAuthEndpoints();
 
 app.Run();

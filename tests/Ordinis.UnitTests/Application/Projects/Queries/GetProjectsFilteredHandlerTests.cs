@@ -101,6 +101,80 @@ public class GetProjectsFilteredHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_SearchMatchesName_ReturnsOnlyMatchingProjects()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        db.Projects.AddRange(
+            ProjectBuilder.Create(name: "Payment Gateway"),
+            ProjectBuilder.Create(name: "Onboarding Flow"));
+        await db.SaveChangesAsync();
+
+        PagedResult<ProjectSummaryDto> result = await new GetProjectsFilteredHandler(db)
+            .HandleAsync(new GetProjectsFiltered(new ProjectFilter { Search = "gateway" }));
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("Payment Gateway", result.Items.Single().Name);
+    }
+
+    [Fact]
+    public async Task HandleAsync_SearchMatchesDescription_ReturnsOnlyMatchingProjects()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        db.Projects.AddRange(
+            ProjectBuilder.Create(name: "Project A", description: "Handles payment gateway timeouts"),
+            ProjectBuilder.Create(name: "Project B", description: "Refresh onboarding screenshots"));
+        await db.SaveChangesAsync();
+
+        PagedResult<ProjectSummaryDto> result = await new GetProjectsFilteredHandler(db)
+            .HandleAsync(new GetProjectsFiltered(new ProjectFilter { Search = "payment gateway" }));
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("Project A", result.Items.Single().Name);
+    }
+
+    [Fact]
+    public async Task HandleAsync_SearchIsCaseInsensitive_ReturnsMatchingProjects()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        db.Projects.Add(ProjectBuilder.Create(name: "Payment Gateway"));
+        await db.SaveChangesAsync();
+
+        PagedResult<ProjectSummaryDto> result = await new GetProjectsFilteredHandler(db)
+            .HandleAsync(new GetProjectsFiltered(new ProjectFilter { Search = "GATEWAY" }));
+
+        Assert.Equal(1, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task HandleAsync_SearchNoMatch_ReturnsEmptyResult()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        db.Projects.Add(ProjectBuilder.Create(name: "Payment Gateway"));
+        await db.SaveChangesAsync();
+
+        PagedResult<ProjectSummaryDto> result = await new GetProjectsFilteredHandler(db)
+            .HandleAsync(new GetProjectsFiltered(new ProjectFilter { Search = "nonexistent" }));
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task HandleAsync_SearchWhitespaceOnly_ReturnsAllProjects()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        db.Projects.AddRange(
+            ProjectBuilder.Create(name: "Payment Gateway"),
+            ProjectBuilder.Create(name: "Onboarding Flow"));
+        await db.SaveChangesAsync();
+
+        PagedResult<ProjectSummaryDto> result = await new GetProjectsFilteredHandler(db)
+            .HandleAsync(new GetProjectsFiltered(new ProjectFilter { Search = "   " }));
+
+        Assert.Equal(2, result.TotalCount);
+    }
+
+    [Fact]
     public async Task HandleAsync_BoardAndMemberCountsProjectedCorrectly()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
