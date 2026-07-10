@@ -17,6 +17,7 @@ namespace Ordinis.Application.Tasks.Queries;
 /// <param name="DueBefore">Filter to tasks with a due date on or before this timestamp.</param>
 /// <param name="DueAfter">Filter to tasks with a due date on or after this timestamp.</param>
 public sealed record TaskFilter(
+    string? Search = null,
     Guid? BoardId = null,
     Guid? AssigneeId = null,
     ProjectTaskStatus? Status = null,
@@ -87,6 +88,14 @@ internal sealed class GetTasksFilteredHandler(IAppDbContext db) : IQueryHandler<
 
         // Each filter is applied only when the corresponding parameter is provided.
         // This produces a single SQL query with only the WHERE clauses that are needed.
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            string search = filter.Search.Trim().ToLower();
+            queryable = queryable.Where(
+                t => t.Title.ToLower().Contains(search)
+                || (t.Description != null && t.Description.ToLower().Contains(search)));
+        }
+
         if (filter.BoardId.HasValue)
         {
             queryable = queryable.Where(t => t.BoardId == filter.BoardId.Value);

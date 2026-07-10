@@ -11,6 +11,11 @@ namespace Ordinis.Application.Projects.Queries;
 public sealed record ProjectFilter
 {
     /// <summary>
+    /// Restrict to projects whose name or description contains this string, case-insensitive.
+    /// </summary>
+    public string? Search { get; init; }
+
+    /// <summary>
     /// Restrict to projects belonging to this organization.
     /// </summary>
     public Guid? OrganizationId { get; init; }
@@ -72,6 +77,13 @@ public sealed class GetProjectsFilteredHandler(IAppDbContext db) : IQueryHandler
         var page = Math.Max(filter.Page, 1);
 
         IQueryable<Project> q = db.Projects;
+
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            string search = filter.Search.Trim().ToLower();
+            q = q.Where(p => p.Name.ToLower().Contains(search)
+                || (p.Description != null && p.Description.ToLower().Contains(search)));
+        }
 
         if (filter.OrganizationId.HasValue)
         {

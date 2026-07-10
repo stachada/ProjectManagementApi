@@ -223,6 +223,92 @@ public class GetTasksFilteredHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_SearchMatchesTitle_ReturnsOnlyMatchingTasks()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        db.Tasks.AddRange(
+            TaskBuilder.Create(title: "Fix login bug", now: Now),
+            TaskBuilder.Create(title: "Update documentation", now: Now));
+        await db.SaveChangesAsync();
+
+        var handler = new GetTasksFilteredHandler(db);
+        PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
+            new GetTasksFiltered(new TaskFilter(Search: "login")),
+            CancellationToken.None);
+
+        TaskSummaryDto only = Assert.Single(result.Items);
+        Assert.Equal("Fix login bug", only.Title);
+        Assert.Equal(1, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task HandleAsync_SearchMatchesDescription_ReturnsOnlyMatchingTasks()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        db.Tasks.AddRange(
+            TaskBuilder.Create(title: "Task A", description: "Investigate the payment gateway timeout", now: Now),
+            TaskBuilder.Create(title: "Task B", description: "Refresh the onboarding screenshots", now: Now));
+        await db.SaveChangesAsync();
+
+        var handler = new GetTasksFilteredHandler(db);
+        PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
+            new GetTasksFiltered(new TaskFilter(Search: "payment gateway")),
+            CancellationToken.None);
+
+        TaskSummaryDto only = Assert.Single(result.Items);
+        Assert.Equal("Task A", only.Title);
+        Assert.Equal(1, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task HandleAsync_SearchIsCaseInsensitive_ReturnsMatchingTasks()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        db.Tasks.Add(TaskBuilder.Create(title: "Fix login bug", now: Now));
+        await db.SaveChangesAsync();
+
+        var handler = new GetTasksFilteredHandler(db);
+        PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
+            new GetTasksFiltered(new TaskFilter(Search: "BUG")),
+            CancellationToken.None);
+
+        Assert.Equal(1, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task HandleAsync_SearchNoMatch_ReturnsEmptyResult()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        db.Tasks.Add(TaskBuilder.Create(title: "Fix login bug", now: Now));
+        await db.SaveChangesAsync();
+
+        var handler = new GetTasksFilteredHandler(db);
+        PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
+            new GetTasksFiltered(new TaskFilter(Search: "nonexistent")),
+            CancellationToken.None);
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task HandleAsync_SearchWhitespaceOnly_ReturnsAllTasks()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        db.Tasks.AddRange(
+            TaskBuilder.Create(title: "Fix login bug", now: Now),
+            TaskBuilder.Create(title: "Update documentation", now: Now));
+        await db.SaveChangesAsync();
+
+        var handler = new GetTasksFilteredHandler(db);
+        PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
+            new GetTasksFiltered(new TaskFilter(Search: "   ")),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.TotalCount);
+    }
+
+    [Fact]
     public async Task HandleAsync_AssignedTask_ResolvesAssigneeDisplayNameInSummary()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
