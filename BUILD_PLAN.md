@@ -664,8 +664,35 @@ entirely. Fixed by serializing via the runtime type instead:
     missing user)
 
 ### Minimal API endpoints
-- [ ] `SearchEndpoints` (`/api/v1/search?q=&type=tasks|projects`) — delegates to `GetTasksFiltered` / `GetProjectsFiltered` with text search param
-- [ ] Auth endpoints scaffolded as placeholder (`/auth/login`, `/auth/refresh`) — fully implemented in Phase 8
+- [x] `SearchEndpoints` (`/api/v1/search?q=&type=tasks|projects`) — delegates to `GetTasksFiltered` / `GetProjectsFiltered` with text search param
+  - `src/Ordinis.Api/MinimalApis/SearchEndpoints.cs` — `MapSearchEndpoints` extension method,
+    mapped in `Program.cs` alongside `MapControllers()`; resolves `IDispatcher` the same way
+    controllers do (per `IDispatcher`'s own doc comment: "Controllers and Minimal API endpoints
+    depend on this interface, not on individual handlers directly")
+  - `TaskFilter`/`ProjectFilter` (`GetTasksFiltered.cs`/`GetProjectsFiltered.cs`) gained a new
+    `Search` member, matched case-insensitively against `Title`/`Description` (tasks) or
+    `Name`/`Description` (projects); `q` is required and `type` must be `tasks` or `projects`
+    (matched case-insensitively) or the endpoint returns `400`
+  - Missing `q`/invalid `type` responses and the `200` body shape (bare array + `X-Total-Count`
+    header, matching every other paged list endpoint) all go through the same
+    `ProblemDetailsFactory`/response conventions used by the controllers
+  - **Found during code review:** the initial `Search` implementation used
+    `string.Contains(search, StringComparison.OrdinalIgnoreCase)` — an overload EF Core's SQL
+    Server/Npgsql providers cannot translate to SQL, which would have thrown at request time
+    against a real database while passing silently in unit tests (which run on the EF Core
+    InMemory provider). Fixed to the same `.ToLower().Contains(...)` idiom already used in
+    `CreateBoard.cs`/`RenameBoard.cs`. Also fixed: case-sensitive `type` comparison, a
+    `.Produces<PagedResult<T>>` OpenAPI annotation that didn't match the actual bare-array
+    response body, and error responses that bypassed `ProblemDetailsFactory` (silently omitting
+    the `correlationId` extension every other error response carries)
+  - Unit tests added for the `Search` filter (match on each searchable field, case-insensitivity,
+    no-match, whitespace-only) in `GetTasksFilteredHandlerTests.cs`/`GetProjectsFilteredHandlerTests.cs`
+  - No integration test for the endpoint itself — `Ordinis.IntegrationTests` has no test files or
+    `WebApplicationFactory` scaffolding yet; standing that up is out of scope here
+- [x] Auth endpoints scaffolded as placeholder (`/auth/login`, `/auth/refresh`) — fully implemented in Phase 8
+  - `src/Ordinis.Api/MinimalApis/AuthEndpoints.cs` — both routes return `501 Not Implemented` via
+    `ProblemDetailsFactory`; no request/response DTOs or credential logic yet, deliberately, since
+    JWT + refresh token issuance is Phase 8's job
 
 ### Cross-cutting concerns on all endpoints
 - [ ] All list endpoints: filtering, sorting, pagination via query string; return `X-Total-Count` header
