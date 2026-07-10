@@ -29,7 +29,8 @@ src/
 
 tests/
 ├── Ordinis.UnitTests
-└── Ordinis.IntegrationTests
+├── Ordinis.IntegrationTests
+└── Ordinis.Benchmarks      # EF Core vs Dapper, mapping, middleware overhead (planned, Phase 9)
 ```
 
 **Core entities:** `Organization`, `Project`, `Board`, `ProjectTask`, `Comment`, `Attachment`, `User`, `ProjectMember`
@@ -192,7 +193,7 @@ decisions behind each phase.
 | 3 — Application layer: infrastructure | ✅ Complete |
 | 4 — Application layer: features | ✅ Complete |
 | 5 — Infrastructure layer | ✅ Complete |
-| 6 — API layer: core endpoints (shared infra + `OrganizationsController` done — Projects, Boards, Tasks, Users controllers and `SearchEndpoints` remain) | 🚧 In progress |
+| 6 — API layer: core endpoints (all 5 controllers, `SearchEndpoints`, and placeholder auth endpoints done — only the cross-cutting-concerns checklist remains) | 🚧 In progress |
 | 7 — API layer: advanced REST features | ⏳ Not started |
 | 8 — Security | ⏳ Not started |
 | 9 — Testing & benchmarking | 🚧 In progress |
