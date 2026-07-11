@@ -33,6 +33,24 @@ app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
+// Gives a Problem Details body to error status codes that reach the client without an
+// exception ever being thrown - an unmatched route (404) or a disallowed HTTP method (405) -
+// so every error response, not just handler-thrown ones, is shaped consistently.
+app.UseStatusCodePages(async statusCodeContext =>
+{
+    HttpContext context = statusCodeContext.HttpContext;
+    string title = context.Response.StatusCode switch
+    {
+        StatusCodes.Status404NotFound => "Resource not found",
+        StatusCodes.Status405MethodNotAllowed => "Method not allowed",
+        _ => "Request failed",
+    };
+
+    context.Response.ContentType = "application/problem+json";
+    await context.Response.WriteAsJsonAsync(
+        ProblemDetailsFactory.Create(context, context.Response.StatusCode, title));
+});
+
 app.UseHttpsRedirection();
 app.UseStaticFiles(); // serves wwwroot/attachents for LocalFileStorageService download URLs
 

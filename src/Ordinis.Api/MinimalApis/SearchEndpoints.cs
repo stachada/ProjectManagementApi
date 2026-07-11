@@ -1,4 +1,5 @@
 using Ordinis.Api.Common;
+using Ordinis.Api.Common.DataShaping;
 using Ordinis.Application.Common;
 using Ordinis.Application.Projects.Dtos;
 using Ordinis.Application.Projects.Queries;
@@ -28,6 +29,7 @@ public static class SearchEndpoints
                 HttpContext context,
                 int page = 1,
                 int pageSize = 20,
+                string? fields = null,
                 CancellationToken ct = default) =>
             {
                 if (string.IsNullOrWhiteSpace(q))
@@ -45,7 +47,7 @@ public static class SearchEndpoints
                     PagedResult<TaskSummaryDto> result = await dispatcher.QueryAsync<GetTasksFiltered, PagedResult<TaskSummaryDto>>(getTasksFiltered, ct);
 
                     context.Response.Headers.Append("X-Total-Count", result.TotalCount.ToString());
-                    return Results.Ok(result.Items);
+                    return Results.Ok(DataShaper.ShapeCollection(result.Items, fields));
                 }
 
                 if (string.Equals(type, "projects", StringComparison.OrdinalIgnoreCase))
@@ -60,7 +62,7 @@ public static class SearchEndpoints
                     PagedResult<ProjectSummaryDto> result = await dispatcher.QueryAsync<GetProjectsFiltered, PagedResult<ProjectSummaryDto>>(getProjectsFiltered, ct);
 
                     context.Response.Headers.Append("X-Total-Count", result.TotalCount.ToString());
-                    return Results.Ok(result.Items);
+                    return Results.Ok(DataShaper.ShapeCollection(result.Items, fields));
                 }
 
                 return Results.Problem(ProblemDetailsFactory.Create(

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Ordinis.Api.Common.DataShaping;
 using Ordinis.Api.Users.Requests;
 using Ordinis.Application.Common;
 using Ordinis.Application.Tasks.Dtos;
@@ -51,6 +52,10 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
     /// <param name="sortDescending">Sort in descending order. Defaults to <see langword="false"/>.</param>
     /// <param name="page">1-based page number. Defaults to 1.</param>
     /// <param name="pageSize">Items per page (server clamps to 1-100). Defaults to 20.</param>
+    /// <param name="fields">
+    /// Optional comma-separated list of field names to include in each returned object (sparse
+    /// fieldset). <c>Id</c> is always included. Omit to return every field.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="200">
     /// Returns the page of tasks. Sets the <c>X-Total-Count</c> response header to the total
@@ -60,7 +65,7 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
     [HttpGet("{id:guid}/tasks")]
     [ProducesResponseType(typeof(IReadOnlyList<TaskSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<IReadOnlyList<TaskSummaryDto>>> GetTasks(
+    public async Task<IActionResult> GetTasks(
         Guid id,
         [FromQuery] Guid? boardId = null,
         [FromQuery] ProjectTaskStatus? status = null,
@@ -71,6 +76,7 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
         [FromQuery] bool sortDescending = false,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
+        [FromQuery] string? fields = null,
         CancellationToken cancellationToken = default)
     {
         var filter = new TaskFilter(
@@ -91,7 +97,7 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
 
         Response.Headers.Append("X-Total-Count", result.TotalCount.ToString());
 
-        return Ok(result.Items);
+        return Ok(DataShaper.ShapeCollection(result.Items, fields));
     }
 
     /// <summary>
