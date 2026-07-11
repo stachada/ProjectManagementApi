@@ -82,23 +82,27 @@ sequenceDiagram
     participant Test as OrdinisApiFactory
     participant Main as Program.Main
     participant Builder as WebApplicationBuilder
-    participant Host as HostFactoryResolver<br/>(WebApplicationFactory)
+    participant Host as HostFactoryResolver
     participant DI as IServiceProvider
 
-    Test->>Test: InitializeAsync() sets env vars
-    Test->>Main: Services / CreateClient() touched → invoke Main(args)
+    Test->>Test: InitializeAsync sets env vars
+    Test->>Main: Services or CreateClient touched, invoke Main
     Main->>Builder: CreateBuilder(args)
     Note over Builder: reads env vars into Configuration
     Main->>Builder: AddInfrastructureServices(Configuration)
-    Note over Builder: reads DatabaseProvider /<br/>ConnectionString SYNCHRONOUSLY here —<br/>too late for any later override
+    Note over Builder: reads DatabaseProvider and ConnectionString synchronously here
+    Note over Builder: too late for any later override
     Main->>Builder: AddApiServices()
-    Note over Builder: registers Configure&lt;RateLimiterOptions&gt;<br/>(deferred — not read yet)
+    Note over Builder: registers a Configure RateLimiterOptions delegate
+    Note over Builder: deferred, not read yet
     Main->>Builder: Build()
-    Builder-->>Host: fires "HostBuilding" event
-    Host->>Builder: replay ConfigureTestServices(...)
-    Note over Builder: appends a 2nd Configure&lt;RateLimiterOptions&gt;<br/>— still in time, nothing has resolved it yet
+    Builder-->>Host: fires HostBuilding event
+    Host->>Builder: replay ConfigureTestServices
+    Note over Builder: appends a second Configure RateLimiterOptions delegate
+    Note over Builder: still in time, nothing has resolved it yet
     Builder->>DI: construct IServiceProvider
-    Note over DI: both Configure&lt;RateLimiterOptions&gt; delegates<br/>applied in order — ours (later) wins
+    Note over DI: both delegates apply in registration order
+    Note over DI: ours, added last, wins
 ```
 
 Concretely, the first time `Services` or `CreateClient()` is touched on this factory:
@@ -148,29 +152,31 @@ each individual test:
 ```mermaid
 sequenceDiagram
     participant xUnit
-    participant Factory as OrdinisApiFactory<br/>(collection-scoped)
-    participant Base as IntegrationTestBase<br/>(test-scoped)
-    participant Test as [Fact] method
+    participant Factory as OrdinisApiFactory - collection scoped
+    participant Base as IntegrationTestBase - test scoped
+    participant Test as Fact method
 
     Note over xUnit,Factory: once per collection
-    xUnit->>Factory: new OrdinisApiFactory()
-    xUnit->>Factory: InitializeAsync()
-    Note over Factory: start container, set env vars,<br/>run migrations
+    xUnit->>Factory: new OrdinisApiFactory
+    xUnit->>Factory: InitializeAsync
+    Note over Factory: start container, set env vars
+    Note over Factory: run migrations
 
-    loop for each test class/method in the collection
+    loop for each test class or method in the collection
         Note over xUnit,Test: once per test
-        xUnit->>Base: new IntegrationTestBase(factory)
-        xUnit->>Base: InitializeAsync() (no-op)
-        xUnit->>Test: run [Fact]
-        Test->>Factory: HTTP calls via Client, seed via CreateScope()
-        xUnit->>Base: DisposeAsync()
-        Base->>Factory: ResetDatabaseAsync()
+        xUnit->>Base: new IntegrationTestBase
+        xUnit->>Base: InitializeAsync, a no-op
+        xUnit->>Test: run test
+        Test->>Factory: HTTP calls via Client, seed via CreateScope
+        xUnit->>Base: DisposeAsync
+        Base->>Factory: ResetDatabaseAsync
         Note over Factory: Respawn wipes table data
     end
 
     Note over xUnit,Factory: once per collection
-    xUnit->>Factory: IAsyncLifetime.DisposeAsync()
-    Note over Factory: dispose container +<br/>underlying WebApplicationFactory
+    xUnit->>Factory: DisposeAsync
+    Note over Factory: dispose container
+    Note over Factory: dispose underlying WebApplicationFactory
 ```
 
 1. Before running the first test in the `"Ordinis API"` collection, xUnit constructs one
