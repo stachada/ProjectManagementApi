@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace Ordinis.Api.Common;
@@ -16,7 +17,31 @@ public static class ApiServiceExtensions
     /// <returns>The same <paramref name="services"/> for chaining.</returns>
     public static IServiceCollection AddApiServices(this IServiceCollection services)
     {
-        services.AddControllers();
+        services.AddControllers()
+            .ConfigureApiBehaviorOptions(options =>
+            {
+                // Default behavior returns ASP.NET Core's own ValidationProblemDetails shape,
+                // bypassing ProblemDetailsFactory entirely (no correlationId, a generic RFC 9110
+                // "type" URI instead of this API's https://httpstatuses.io/{status} convention).
+                // Route it through the same factory every other error response uses.
+                options.InvalidModelStateResponseFactory = context =>
+                {
+                    var errors = context.ModelState
+                        .Where(entry => entry.Value is { Errors.Count: > 0 })
+                        .ToDictionary(
+                            entry => entry.Key,
+                            entry => entry.Value!.Errors.Select(e => e.ErrorMessage).ToArray());
+
+                    ValidationProblemDetails problemDetails =
+                        ProblemDetailsFactory.CreateModelBindingValidation(context.HttpContext, errors);
+
+                    return new ObjectResult(problemDetails)
+                    {
+                        StatusCode = problemDetails.Status,
+                        ContentTypes = { "application/problem+json" },
+                    };
+                };
+            });
 
         services.AddResponseCaching();
 

@@ -198,6 +198,9 @@ GET {{Ordinis.Api_HostAddress}}/api/v1/projects/11111111-1111-1111-1111-11111111
 ### List projects (paged, filterable, sortable)
 GET {{Ordinis.Api_HostAddress}}/api/v1/projects?organizationId={{organizationId}}&page=1&pageSize=20&sortBy=createdAt&sortDescending=false
 
+### List projects - sparse fieldset (id always included even though not requested)
+GET {{Ordinis.Api_HostAddress}}/api/v1/projects?organizationId={{organizationId}}&fields=name,slug
+
 ### List a project's tasks (paged)
 GET {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/tasks?page=1&pageSize=20
 
@@ -371,6 +374,12 @@ GET {{Ordinis.Api_HostAddress}}/api/v1/tasks/11111111-1111-1111-1111-11111111111
 ### List tasks (paged, filterable, sortable)
 GET {{Ordinis.Api_HostAddress}}/api/v1/tasks?boardId={{boardId}}&page=1&pageSize=20&sortBy=createdAt&sortDescending=false
 
+### List tasks - sparse fieldset
+GET {{Ordinis.Api_HostAddress}}/api/v1/tasks?boardId={{boardId}}&fields=title,status
+
+### List tasks - unknown field name is ignored, id is still returned
+GET {{Ordinis.Api_HostAddress}}/api/v1/tasks?boardId={{boardId}}&fields=bogus
+
 ### Update title, description, priority, due date
 PUT {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}
 Content-Type: {{contentType}}
@@ -466,6 +475,26 @@ DELETE {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/attachments/{{attachm
 # existence itself, unlike RemoveComment, so this is 404 not 422)
 DELETE {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/attachments/{{attachmentId}}?removedByUserId={{createdByUserId}}
 
+###
+# SearchEndpoints requests below reuse the task titled "Fix login bug - SSO"
+# and the project renamed "Apollo Launch - Phase 2" from above, so these run
+# before either is deleted.
+
+### Search tasks by title substring
+GET {{Ordinis.Api_HostAddress}}/api/v1/search?q=SSO&type=tasks
+
+### Search tasks - sparse fieldset
+GET {{Ordinis.Api_HostAddress}}/api/v1/search?q=SSO&type=tasks&fields=title
+
+### Search projects by name substring
+GET {{Ordinis.Api_HostAddress}}/api/v1/search?q=Apollo&type=projects
+
+### Search with missing 'q' - expect 400
+GET {{Ordinis.Api_HostAddress}}/api/v1/search?type=tasks
+
+### Search with invalid 'type' - expect 400
+GET {{Ordinis.Api_HostAddress}}/api/v1/search?q=SSO&type=boards
+
 ### Delete the task (soft delete)
 DELETE {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}?requestedByUserId={{createdByUserId}}
 
@@ -477,6 +506,43 @@ GET {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}
 
 ### Delete (soft delete)
 DELETE {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}
+
+###
+# Cross-cutting error handling (Problem Details). These don't depend on any resource
+# created above - every response here should carry a "correlationId" extension and a
+# "type": "https://httpstatuses.io/{status}" (or urn:ordinis:error:... for DomainException).
+
+### Malformed JSON body - expect 400, routed through ProblemDetailsFactory (not ASP.NET Core's default shape)
+POST {{Ordinis.Api_HostAddress}}/api/v1/organizations
+Content-Type: {{contentType}}
+
+{not valid json
+
+### Malformed enum value in body - expect 400
+POST {{Ordinis.Api_HostAddress}}/api/v1/users
+Content-Type: {{contentType}}
+
+{
+  "organizationId": "{{organizationId}}",
+  "displayName": "Bad Enum User",
+  "email": "bad-enum@example.com",
+  "password": "SuperSecret123",
+  "orgRole": "NotARole"
+}
+
+### Non-guid value in a :guid route segment - expect 404
+GET {{Ordinis.Api_HostAddress}}/api/v1/tasks/not-a-guid
+
+### Unmatched route - expect 404 with a Problem Details body (via UseStatusCodePages)
+GET {{Ordinis.Api_HostAddress}}/api/v1/nonexistent
+
+### Disallowed HTTP method on a real route - expect 405 with a Problem Details body
+PATCH {{Ordinis.Api_HostAddress}}/api/v1/tasks
+
+### Minimal API query parameter that fails to bind - expect 400, not 500
+# (BadHttpRequestException is caught in its own clause in GlobalExceptionMiddleware,
+# before the generic catch-all)
+GET {{Ordinis.Api_HostAddress}}/api/v1/search?q=x&type=tasks&page=abc
 
 ### Get after delete - expect 404
 GET {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}

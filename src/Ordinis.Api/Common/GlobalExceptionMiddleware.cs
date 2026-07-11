@@ -9,7 +9,9 @@ namespace Ordinis.Api.Common;
 /// actions and translates them into RFC 9457 Problem Details responses:
 /// <see cref="ValidationException"/> → <c>422</c>, <see cref="NotFoundException"/> → <c>404</c>,
 /// <see cref="ConcurrencyException"/> → <c>409</c>, <see cref="DomainException"/> → <c>422</c>,
-/// anything else → <c>500</c>.
+/// <see cref="BadHttpRequestException"/> (Minimal API route/query parameter binding failure,
+/// e.g. <c>?page=abc</c>) → its own <see cref="BadHttpRequestException.StatusCode"/> (typically
+/// <c>400</c>), anything else → <c>500</c>.
 /// </summary>
 /// <remarks>
 /// Initializes a new instance of the <see cref="GlobalExceptionMiddleware"/> class.
@@ -58,6 +60,12 @@ public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Glob
                 "Business rule violated",
                 ex.Message,
                 type: $"urn:ordinis:error:{ex.ErrorCode}"));
+        }
+        catch (BadHttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Bad request for {Method} {Path}", context.Request.Method, context.Request.Path);
+            await WriteAsync(context, ProblemDetailsFactory.Create(
+                context, ex.StatusCode, "Bad request", ex.Message));
         }
         catch (Exception ex)
         {

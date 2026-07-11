@@ -50,12 +50,35 @@ public static class ProblemDetailsFactory
     public static ValidationProblemDetails CreateValidation(
         HttpContext context,
         IReadOnlyDictionary<string, string[]> errors)
+        => CreateValidation(context, errors, StatusCodes.Status422UnprocessableEntity, "One or more validation errors occurred.");
+
+    /// <summary>
+    /// Creates a <see cref="ValidationProblemDetails"/> instance (<c>400 Bad Request</c>) from
+    /// ASP.NET Core's automatic model-binding/model-state validation — malformed JSON, a route or
+    /// query value that can't convert to its target type, a missing required field, etc. Kept
+    /// distinct from <see cref="CreateValidation(HttpContext, IReadOnlyDictionary{string, string[]})"/>
+    /// (FluentValidation's <c>422</c>): a request ASP.NET Core can't even bind is malformed
+    /// (<c>400</c>), whereas a request that binds but violates a business rule is unprocessable
+    /// (<c>422</c>).
+    /// </summary>
+    /// <param name="context">The current request's <see cref="HttpContext"/>.</param>
+    /// <param name="errors">Validation errors keyed by field name.</param>
+    public static ValidationProblemDetails CreateModelBindingValidation(
+        HttpContext context,
+        IReadOnlyDictionary<string, string[]> errors)
+        => CreateValidation(context, errors, StatusCodes.Status400BadRequest, "One or more request fields were invalid.");
+
+    private static ValidationProblemDetails CreateValidation(
+        HttpContext context,
+        IReadOnlyDictionary<string, string[]> errors,
+        int statusCode,
+        string title)
     {
         var problemDetails = new ValidationProblemDetails(errors.ToDictionary(e => e.Key, e => e.Value))
         {
-            Status = StatusCodes.Status422UnprocessableEntity,
-            Title = "One or more validation errors occurred.",
-            Type = $"https://httpstatuses.io/{StatusCodes.Status422UnprocessableEntity}",
+            Status = statusCode,
+            Title = title,
+            Type = $"https://httpstatuses.io/{statusCode}",
             Instance = context.Request.Path,
         };
 

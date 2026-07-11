@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Ordinis.Api.Common.DataShaping;
 using Ordinis.Api.Tasks.Requests;
 using Ordinis.Application.Common;
 using Ordinis.Application.Tasks.Commands;
@@ -30,6 +31,10 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <param name="sortDescending">Sort in descending order. Defaults to <see langword="false"/>.</param>
     /// <param name="page">1-based page number. Defaults to 1.</param>
     /// <param name="pageSize">Items per page (server clamps to 1-100). Defaults to 20.</param>
+    /// <param name="fields">
+    /// Optional comma-separated list of field names to include in each returned object (sparse
+    /// fieldset). <c>Id</c> is always included. Omit to return every field.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="200">
     /// Returns the page of tasks. Sets the <c>X-Total-Count</c> response header to the total
@@ -37,7 +42,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// </response>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<TaskSummaryDto>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<TaskSummaryDto>>> GetTasks(
+    public async Task<IActionResult> GetTasks(
         [FromQuery] Guid? boardId = null,
         [FromQuery] Guid? assigneeId = null,
         [FromQuery] ProjectTaskStatus? status = null,
@@ -48,6 +53,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
         [FromQuery] bool sortDescending = false,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
+        [FromQuery] string? fields = null,
         CancellationToken cancellationToken = default)
     {
         var filter = new TaskFilter(
@@ -67,7 +73,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
 
         Response.Headers.Append("X-Total-Count", result.TotalCount.ToString());
 
-        return Ok(result.Items);
+        return Ok(DataShaper.ShapeCollection(result.Items, fields));
     }
 
     /// <summary>
