@@ -695,12 +695,95 @@ entirely. Fixed by serializing via the runtime type instead:
     JWT + refresh token issuance is Phase 8's job
 
 ### Cross-cutting concerns on all endpoints
-- [ ] All list endpoints: filtering, sorting, pagination via query string; return `X-Total-Count` header
-- [ ] All list endpoints: sparse fields support via `?fields=` query string; mapper respects field list
-- [ ] All endpoints return Problem Details on error (enforced by `GlobalExceptionMiddleware`)
-- [ ] All `POST` endpoints: `201 Created` with `Location: /api/v1/{resource}/{id}` header
-- [ ] All `PUT` / `DELETE` endpoints: `204 No Content` on success
-- [ ] XML doc comments on all controller actions — used by OpenAPI in Phase 10
+- [x] All list endpoints: filtering, sorting, pagination via query string; return `X-Total-Count` header
+  - Verified across all controllers: `OrganizationsController.GetProjects`, `ProjectsController.GetProjects`/`GetTasks`,
+    `BoardsController.GetTasks`, `TasksController.GetTasks`, `UsersController.GetTasks`, and `SearchEndpoints` all
+    accept filter/sort/page/pageSize query params and set `X-Total-Count` to the unpaged total.
+  - `GET /projects/{id}/members`, `GET /projects/{id}/boards`, `GET /tasks/{id}/comments`, `GET /tasks/{id}/attachments`
+    are deliberately unpaged — bounded, embedded child collections (owned entities capped by
+    `ProjectDto.MaxEmbeddedCollectionSize`-style limits), not independently queryable resources
+- [x] All list endpoints: sparse fields support via `?fields=` query string; mapper respects field list
+  - `Ordinis.Api/Common/DataShaping/DataShaper.cs` — reflection-based shaping, applied at the API
+    layer (not in the Application-layer mappers, which stay untouched manual DTO mappers). Comma-
+    separated, case-insensitive field names; unknown names ignored; `Id` always included so shaped
+    resources stay addressable. Wired into every unbounded list endpoint (same set as the
+    pagination item above) plus `SearchEndpoints`.
+  - **Two bugs found during manual verification:** (1) `ShapeData<T>(IEnumerable<T>, ...)` and
+    `ShapeData<T>(T, ...)` were ambiguous overloads — calling `ShapeData(result.Items, fields)` with
+    `result.Items: IReadOnlyList<TaskSummaryDto>` bound to the *single-item* overload (identity
+    conversion beats the interface conversion needed for the collection overload), reflecting the
+    list itself and throwing `TargetParameterCountException` on its `this[int]` indexer. Renamed to
+    `ShapeCollection<T>`/`ShapeItem<T>` to remove the ambiguity. (2) Shaped responses serialized
+    `ExpandoObject` keys in PascalCase (`PropertyInfo.Name`), while every other endpoint's DTOs
+    serialize camelCase via MVC's default `System.Text.Json` casing — shaped and unshaped responses
+    were inconsistently cased. Fixed by running each key through
+    `JsonNamingPolicy.CamelCase.ConvertName`.
+  - Verified end-to-end against a real local SQL Server database: full response with no `fields`,
+    `fields=title,status` returning only those two plus `id`, an unknown field name being silently
+    dropped while `id` still appears, and camelCase keys matching normal DTO responses.
+- [x] All endpoints return Problem Details on error (enforced by `GlobalExceptionMiddleware`)
+  - **Gap found:** `GlobalExceptionMiddleware` only translates exceptions thrown *during* the
+    pipeline. `[ApiController]`'s automatic model-state validation (malformed JSON, a route/query
+    value that can't convert to its target type, a missing required field) short-circuits *before*
+    the action runs and never throws — it returned ASP.NET Core's own default
+    `ValidationProblemDetails`, bypassing `ProblemDetailsFactory` entirely (no `correlationId`, a
+    generic RFC 9110 `type` URI instead of this API's `https://httpstatuses.io/{status}`
+    convention). Fixed via `ConfigureApiBehaviorOptions().InvalidModelStateResponseFactory` in
+    `ApiServiceExtensions`, routed through a new `ProblemDetailsFactory.CreateModelBindingValidation`
+    (`400`, kept distinct from FluentValidation's `422`: unbindable request vs. bindable-but-invalid
+    request).
+  - **Bug found:** a Minimal API query parameter that fails to bind (e.g. `GET /search?page=abc`)
+    throws `BadHttpRequestException`, which `GlobalExceptionMiddleware`'s catch-all was turning into
+    a `500` instead of the correct `400`. Fixed by adding a dedicated
+    `catch (BadHttpRequestException ex)` (before the catch-all) that maps to `ex.StatusCode`.
+  - **Gap found:** an unmatched route (`404`) or a disallowed HTTP method (`405`) reaches the client
+    with an empty body — no exception is ever thrown, so `GlobalExceptionMiddleware` never runs.
+    Added `app.UseStatusCodePages(...)` in `Program.cs` (after `GlobalExceptionMiddleware`, before
+    routing) to give these a Problem Details body via the same `ProblemDetailsFactory.Create`; it
+    only fires when the response body is still empty, so it never touches the exception-driven `404`
+    that `NotFoundException` already produces with its own body.
+  - Verified end-to-end against a real local SQL Server database: malformed enum value, malformed
+    JSON body, non-guid route segment, unmatched route, disallowed method, and unparseable Minimal
+    API query parameter all now return a consistent Problem Details body with `correlationId` and
+    the standard `type` URI; confirmed no regression on the FluentValidation `422` path, the
+    `DomainException` → `urn:ordinis:error:{code}` path, and the happy path.
+- [x] All `POST` endpoints: `201 Created` with `Location: /api/v1/{resource}/{id}` header
+  - Audited every `[HttpPost]` action across all five controllers plus `AuthEndpoints`. They split
+    into two groups by design, both already correct:
+    - **Resource-creation POSTs** (`CreateOrganization`, `CreateUser`, `CreateProject`,
+      `CreateBoard`, `CreateTask`, `AddComment`, `AddAttachment`, `AddProjectMember`) all return
+      `CreatedAtAction(...)` → `201` with a `Location` header. Top-level resources point at their
+      own canonical `GetById` (including `BoardsController.Create`, whose *creation* route is nested
+      under `/api/v1/projects/{projectId}/boards` but whose `Location` still resolves to
+      `/api/v1/boards/{id}`, per the design already noted earlier in this phase). Sub-resources with
+      no dedicated single-item `GET` (comments, attachments, project members) point at their
+      parent's list endpoint instead (`GetComments`, `GetAttachments`, `GetMembers`) — an established
+      precedent from when those controllers were first built, not a new decision.
+    - **Action/state-transition POSTs** (`Suspend`/`Reactivate`, `Archive`/`Unarchive`,
+      `Deactivate`/`Reactivate`) correctly return `204 No Content` instead — they don't create a new
+      resource, so a `Location` header wouldn't have anywhere meaningful to point. The checklist
+      wording is a simplification; per-endpoint status codes already follow REST convention.
+    - `/auth/login` and `/auth/refresh` are `POST` but return `501 Not Implemented` placeholders —
+      out of scope until Phase 8.
+  - Verified end-to-end against a real local SQL Server database: `Location` header value and `201`
+    status for organization/user/project/board/task/comment/attachment/member creation.
+- [x] All `PUT` / `DELETE` endpoints: `204 No Content` on success
+  - Audited all 13 `[HttpPut]`/`[HttpDelete]` actions across all five controllers — every one maps
+    1:1 to a `return NoContent();`, confirmed by counting: 21 total `NoContent()` returns in the API
+    project = 13 `PUT`/`DELETE` actions + 8 action-style `POST`s (suspend/reactivate/archive/
+    unarchive/deactivate, already covered by the `201 Created` item above), with none left over.
+  - Verified end-to-end against a real local SQL Server database: `204` confirmed live for organization
+    rename, user rename, board rename, task update, task delete, and project delete.
+- [x] XML doc comments on all controller actions — used by OpenAPI in Phase 10
+  - Audited every public action across all five controllers (`<summary>`, a `<param>` for every
+    parameter including `CancellationToken`, and a `<response code="...">` for every status code
+    declared via `[ProducesResponseType]`) plus `SearchEndpoints`/`AuthEndpoints`'s
+    `MapXEndpoints` methods — all already complete, no gaps.
+  - **Gap found:** three request DTOs had no doc comments at all — `CreateBoardRequest`,
+    `RenameBoardRequest`, `CreateUserRequest` — inconsistent with every sibling DTO in the same
+    folders (`AddProjectMemberRequest`, `UpdateProjectRequest`, `UpdateUserRequest`, etc.), which all
+    carry a `<summary>` naming the HTTP route plus a `<param>` per positional record member. Brought
+    all three up to the same pattern.
 
 **Git tag:** `v0.6-phase6-api-core`
 
