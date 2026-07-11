@@ -29,11 +29,18 @@ env:
 (ASP.NET Core's configuration binder reads `__` as the `:` section separator, so
 `ConnectionStrings__DefaultConnection` → `ConnectionStrings:DefaultConnection`.)
 
-> **Neither secret is exercised today.** `tests/Ordinis.IntegrationTests` currently has no test
-> files, so `dotnet test` never touches a real database or the JWT signing key — CI passes
-> without a live DB. The env vars are wired up ahead of time for when integration tests land
-> (Phase 9 in `BUILD_PLAN.md`). See [Adding a real database to CI](#adding-a-real-database-to-ci)
-> below for what that will need.
+> **`CONNECTION_STRING` is still unexercised — permanently, not just "until Phase 9."**
+> `tests/Ordinis.IntegrationTests` now has real tests (see
+> [docs/INTEGRATION_TESTS.md](INTEGRATION_TESTS.md)), but they don't use this secret at all:
+> `OrdinisApiFactory` starts its own disposable SQL Server container via `Testcontainers.MsSql`
+> and overrides `ConnectionStrings__DefaultConnection` with that container's connection string at
+> runtime, before the API host is built — the `env:` block above is set on the whole `dotnet test`
+> step, but gets silently superseded for every integration test. This works with **no extra CI
+> wiring** because `ubuntu-latest` runners ship with Docker pre-installed and the daemon already
+> running, so Testcontainers can start containers directly against the runner's own Docker socket
+> — no `services:` sidecar block needed (see [Adding a real database to
+> CI](#adding-a-real-database-to-ci) below for why that alternative wasn't used). `JWT_SIGNING_KEY`
+> remains genuinely unexercised — JWT auth (Phase 8) isn't implemented yet.
 
 ### `publish.yml` — push to `main`
 
@@ -59,19 +66,26 @@ Settings → Secrets and variables → Actions → New repository secret:
 
 | Secret | Used by | Value |
 |---|---|---|
-| `CONNECTION_STRING` | `ci.yml` | A DB connection string (currently unused until Phase 9 adds integration tests — see below) |
-| `JWT_SIGNING_KEY` | `ci.yml` | Same value you use locally — see [docs/LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md#jwt-signing-key) |
+| `CONNECTION_STRING` | `ci.yml` | A DB connection string — set but unused by `dotnet test`; `Ordinis.IntegrationTests` supplies its own via Testcontainers instead (see above). Only relevant if a future step needs a real, persistent DB (e.g. a migration-CLI step for a staging deploy — see [Adding a real database to CI](#adding-a-real-database-to-ci)) |
+| `JWT_SIGNING_KEY` | `ci.yml` | Same value you use locally — see [docs/LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md#jwt-signing-key) — still unexercised until Phase 8 (JWT auth) lands |
 
 Secret values are masked in logs (`***`) and can't be read back once saved, only overwritten.
 
 ## Adding a real database to CI
 
-Not implemented yet — this is the recipe for when `Ordinis.IntegrationTests` gets real tests.
-GitHub Actions can run a database as a **service container** — a sidecar scoped to the job, torn
-down automatically afterward, no external server needed. Add a `services:` block to the
-`build-and-test` job in `ci.yml`, then point `CONNECTION_STRING` at `localhost` on the mapped port
-(service containers are reachable at `localhost`, not by service name — that DNS name only exists
-inside Docker Compose's own network, not on the runner host).
+**Not the approach used by `Ordinis.IntegrationTests`** — see
+[docs/INTEGRATION_TESTS.md](INTEGRATION_TESTS.md) for what actually shipped: `OrdinisApiFactory`
+starts its own SQL Server container via Testcontainers, self-contained inside the test fixture,
+needing zero CI-specific wiring (it works identically locally and in CI because both environments
+just need a reachable Docker daemon, which `ubuntu-latest` already provides).
+
+The alternative below — a GitHub Actions **service container**, a sidecar scoped to the job and
+torn down automatically afterward — is kept here for a different scenario: a *non-test* CI/CD step
+that needs a real, persistent, externally-reachable database, such as running the actual migration
+CLI against a staging environment as part of a deploy pipeline. Add a `services:` block to the
+relevant job, then point `CONNECTION_STRING` at `localhost` on the mapped port (service containers
+are reachable at `localhost`, not by service name — that DNS name only exists inside Docker
+Compose's own network, not on the runner host).
 
 ```yaml
 jobs:
@@ -126,11 +140,15 @@ Three ways to do it, roughly in order of how much they resemble a real deploy:
 | **Idempotent SQL script** | `dotnet ef migrations script --idempotent` generates SQL as a build artifact; a separate step/tool (`sqlcmd`/`psql`) executes it | Matches how you'd actually roll this out to staging/prod — the exact SQL is visible and diffable in CI logs before it runs | One extra step; needs the right CLI (`sqlcmd` or `psql`) on the runner |
 | **Test-fixture-driven migrate** | The integration test project's `WebApplicationFactory` (or a `CollectionFixture`) calls `context.Database.Migrate()` once per test run, scoped to that process only | No CI wiring at all — self-contained in test code; works the same locally and in CI | Only acceptable inside test fixtures, never in `Ordinis.Api/Program.cs` — mixing it into the real app would reintroduce the auto-migrate-on-startup problem this project explicitly avoided |
 
-**Recommended for this project once Phase 9 integration tests land:** the test-fixture approach
-for the integration test project itself (simplest, and identical behavior locally vs. CI), plus
-the idempotent-script approach as a separate, explicit step if a staging/production deploy
-pipeline is added later — the two aren't mutually exclusive since they solve different problems
-(exercising tests vs. rolling out a real deploy).
+**Implemented:** the test-fixture approach, exactly as described above — `OrdinisApiFactory.InitializeAsync()`
+calls `AppDbContext.Database.MigrateAsync()` once against its Testcontainers-provisioned SQL
+Server, before any test runs (see [docs/INTEGRATION_TESTS.md](INTEGRATION_TESTS.md)). Combined
+with Testcontainers instead of a GitHub Actions service container, this needed **zero** `ci.yml`
+changes — `dotnet test Ordinis.slnx` already runs `Ordinis.IntegrationTests`, and the container +
+migration step happens entirely inside that test process. The idempotent-script approach below
+remains relevant for a different, still-unbuilt use case: rolling migrations out to a real
+staging/production database as part of a deploy pipeline — that's a separate problem from
+exercising tests, so the two approaches aren't in conflict.
 
 **`dotnet ef database update` as a CI step**, run once per provider job/matrix leg:
 
