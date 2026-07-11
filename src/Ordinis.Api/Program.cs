@@ -65,3 +65,9 @@ app.MapSearchEndpoints();
 app.MapAuthEndpoints();
 
 app.Run();
+
+/// <summary>
+/// Exposes the top-level-statement entry point so <c>WebApplicationFactory&lt;Program&gt;</c>
+/// can bootstrap this API in-process for integration tests.
+/// </summary>
+public partial class Program;
