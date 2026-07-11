@@ -71,17 +71,30 @@ internal sealed class OutboxDispatcherJob : BackgroundService
     {
         using var timer = new PeriodicTimer(PollingInterval);
 
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        try
         {
-            try
+            while (await timer.WaitForNextTickAsync(stoppingToken))
             {
-                await ProcessBatchAsync(stoppingToken);
+                try
+                {
+                    await ProcessBatchAsync(stoppingToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Log and continue — a transient DB error must not stop the host.
+                    _logger.LogError(ex, "OutboxDispatcherJob: batch processing failed; will retry on next tick.");
+                }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // Log and continue — a transient DB error must not stop the host.
-                _logger.LogError(ex, "OutboxDispatcherJob: batch processing failed; will retry on next tick.");
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // FIX: WaitForNextTickAsync throws OperationCanceledException when stoppingToken is
+            // cancelled (it does not just return false), and that call sits outside the inner
+            // try/catch above. Left uncaught, this escaped ExecuteAsync on every graceful host
+            // shutdown — BackgroundService's own exception monitor then logged it as "faulted"
+            // and re-invoked StopApplication() (harmless, since the host was already stopping,
+            // but a misleading error-level log on every normal shutdown). Expected during
+            // shutdown; nothing to do.
         }
     }
 
