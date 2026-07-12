@@ -360,6 +360,20 @@ Each session: read `BUILD_PLAN.md` first, confirm prerequisites, surface design 
 - [x] `UpdateOrganizationDescription` + `UpdateOrganizationDescriptionHandler` + `UpdateOrganizationDescriptionValidator` *(added beyond original plan)*
   - Updates `Description` (nullable, clears when `null`)
   - Catches concurrency exception → `ConcurrencyException`
+- [x] `UpdateOrganization` + `UpdateOrganizationHandler` + `UpdateOrganizationValidator` *(added
+  later — consolidates `RenameOrganization` + `UpdateOrganizationDescription` into one command for
+  `OrganizationsController.Update`)*
+  - **Bug found during Phase 9 test-writing review:** `OrganizationsController.Update` sent
+    `RenameOrganization` and `UpdateOrganizationDescription` as two independent `SendAsync` calls,
+    each with its own `SaveChangesAsync`. A valid name plus an over-length description committed
+    the rename before the description update failed validation — a real, deterministic partial
+    write on a single HTTP request, not a race. Fixed by adding `UpdateOrganization`, which loads
+    the organization once, applies both `Rename()` and `UpdateDescription()`, and saves once —
+    atomic by construction, mirroring the earlier `ProjectTask.Update()` consolidation fix for the
+    identical class of bug (see Step 1 above).
+  - `RenameOrganization`/`UpdateOrganizationDescription` are kept as-is (not deleted) — nothing
+    else in `src` calls them individually, but their existing unit tests remain valid coverage of
+    the underlying domain methods.
 - [x] `SuspendOrganization` + `SuspendOrganizationHandler` *(added beyond original plan — wraps the `Organization.Suspend()` domain method that already existed from Phase 2, same pattern as `ArchiveProject`/`UnarchiveProject` in Step 2)*
 - [x] `ReactivateOrganization` + `ReactivateOrganizationHandler` *(added beyond original plan — counterpart to `SuspendOrganization`)*
 
@@ -524,10 +538,12 @@ entirely. Fixed by serializing via the runtime type instead:
   - `GET    /api/v1/organizations/{id}` → `GetOrganizationById`
   - `GET    /api/v1/organizations/{id}/projects` → `GetOrganizationProjects` (paged)
   - `POST   /api/v1/organizations` → `CreateOrganization` → `201 Created` with `Location` header
-  - `PUT    /api/v1/organizations/{id}` → `RenameOrganization` + `UpdateOrganizationDescription` → `204 No Content`
-    *(replaces the originally planned single `UpdateOrganization` command — the Application layer
-    already split it into these two granular commands during Phase 3; the controller composes both
-    dispatcher calls from one request body)*
+  - `PUT    /api/v1/organizations/{id}` → `UpdateOrganization` → `204 No Content`
+    *(originally composed two separate `RenameOrganization` + `UpdateOrganizationDescription`
+    dispatcher calls from one request body — found during Phase 9 test-writing review to be
+    non-atomic (a valid name + an over-length description committed the rename before the
+    description update's 422), so the Application layer added a single `UpdateOrganization`
+    command and the controller now sends just that one)*
   - `POST   /api/v1/organizations/{id}/suspend` → `SuspendOrganization` → `204 No Content`
     *(added beyond the original plan — exposes the already-implemented `SuspendOrganization`
     command; `422` with error code `organization.already-suspended` if already suspended)*
@@ -593,6 +609,10 @@ entirely. Fixed by serializing via the runtime type instead:
   - `GET    /api/v1/tasks/{id}/comments` → comments from `TaskDto` (no separate query needed)
   - `GET    /api/v1/tasks/{id}/attachments` → attachments from `TaskDto`
   - `POST   /api/v1/tasks` → `CreateTask` → `201 Created`
+    *(no `404` path despite an earlier doc claiming one — `CreateTaskValidator`'s `BoardId` rule
+    does its own existence check via `MustAsync`, so a missing board fails validation (`422`)
+    before the handler ever runs and could throw `NotFoundException`; found and fixed during
+    Phase 9 test-writing review)*
   - `PUT    /api/v1/tasks/{id}` → `UpdateTask` → `204 No Content`
   - `DELETE /api/v1/tasks/{id}` → `DeleteTask` → `204 No Content`
     *(`requestedByUserId` passed as a query parameter, not a request body — consistent with
@@ -600,6 +620,9 @@ entirely. Fixed by serializing via the runtime type instead:
     now-unused `DeleteTaskRequest` record was removed as dead code)*
   - `POST   /api/v1/tasks/{id}/comments` → `AddComment` → `201 Created`
   - `PUT    /api/v1/tasks/{id}/comments/{commentId}` → `EditComment` → `204 No Content`
+    *(no `404` path despite an earlier doc claiming one — `EditCommentValidator`'s combined
+    task/comment/author-ownership `MustAsync` check intercepts any missing task or comment with
+    `422` before the handler runs; found and fixed during Phase 9 test-writing review)*
   - `DELETE /api/v1/tasks/{id}/comments/{commentId}` → `RemoveComment` → `204 No Content`
     *(`422` with error code `task.comment-not-found` if the comment doesn't exist — the handler
     lets `ProjectTask.RemoveComment()`'s `DomainException` surface directly)*
@@ -702,6 +725,15 @@ entirely. Fixed by serializing via the runtime type instead:
   - `GET /projects/{id}/members`, `GET /projects/{id}/boards`, `GET /tasks/{id}/comments`, `GET /tasks/{id}/attachments`
     are deliberately unpaged — bounded, embedded child collections (owned entities capped by
     `ProjectDto.MaxEmbeddedCollectionSize`-style limits), not independently queryable resources
+  - **Found during Phase 9 test-writing review:** SQL gives no guaranteed row order for ties on
+    the primary sort key, so every paginated/capped/embedded list query risked nondeterministic
+    results whenever two rows tied (e.g. identical `Name`, or `CreatedAt` colliding — seeding
+    multiple rows in one `SaveChangesAsync` call stamps them all with the exact same `CreatedAt`).
+    Fixed by adding `EntityQueryableExtensions.ThenByStableId<T>()`
+    (`Ordinis.Application.Common`, `where T : Entity`) and applying it at every
+    `OrderBy`/`OrderByDescending` call site that lacked a tiebreaker — 6 paginated query handlers,
+    1 capped embedded-list query, 1 unbounded list query, and 2 DTO-embedding mappers. Documented
+    as a hard convention in `CLAUDE.md`.
 - [x] All list endpoints: sparse fields support via `?fields=` query string; mapper respects field list
   - `Ordinis.Api/Common/DataShaping/DataShaper.cs` — reflection-based shaping, applied at the API
     layer (not in the Application-layer mappers, which stay untouched manual DTO mappers). Comma-
