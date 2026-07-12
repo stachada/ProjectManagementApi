@@ -63,13 +63,13 @@ public sealed class GetOrganizationProjectsHandler(IAppDbContext db) : IQueryHan
             q = q.Where(p => p.Members.Any(m => m.UserId == filter.MemberId.Value));
         }
 
-        // Sorting
+        // Sorting. See EntityQueryableExtensions.ThenByStableId for why every branch ends with it.
         q = (filter.SortBy.ToLowerInvariant(), filter.SortDescending) switch
         {
-            ("name", false) => q.OrderBy(p => p.Name),
-            ("name", true) => q.OrderByDescending(p => p.Name),
-            (_, false) => q.OrderBy(p => p.CreatedAt),
-            (_, true) => q.OrderByDescending(p => p.CreatedAt)
+            ("name", false) => q.OrderBy(p => p.Name).ThenByStableId(),
+            ("name", true) => q.OrderByDescending(p => p.Name).ThenByStableId(),
+            (_, false) => q.OrderBy(p => p.CreatedAt).ThenByStableId(),
+            (_, true) => q.OrderByDescending(p => p.CreatedAt).ThenByStableId()
         };
 
         var totalCount = await q.CountAsync(cancellationToken);

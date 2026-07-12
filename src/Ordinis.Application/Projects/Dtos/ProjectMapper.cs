@@ -1,3 +1,4 @@
+using Ordinis.Application.Common;
 using Ordinis.Application.Tasks.Dtos;
 using Ordinis.Domain.Projects;
 
@@ -65,14 +66,20 @@ public static class ProjectMapper
         // Materialise once so we can count the full set before capping.
         var allMembers = project.Members.ToList();
 
+        // See EntityQueryableExtensions.ThenByStableId for why the tiebreaker is needed - it
+        // matters here in particular because the EF Core query that produces `boards`
+        // (GetProjectById) has no ORDER BY of its own, so LINQ's stable-sort guarantee alone
+        // isn't enough; the input order isn't guaranteed either.
         var boardDtos = boards
             .OrderBy(b => b.CreatedAt)
+            .ThenByStableId()
             .Take(ProjectDto.MaxEmbeddedCollectionSize)
             .Select(b => b.ToSummaryDto(boardTaskCounts.GetValueOrDefault(b.Id)))
             .ToList();
 
         var members = allMembers
             .OrderBy(m => m.JoinedAt)
+            .ThenBy(m => m.UserId)
             .Take(ProjectDto.MaxEmbeddedCollectionSize)
             .Select(m => m.ToMemberDto(userLookup))
             .ToList();

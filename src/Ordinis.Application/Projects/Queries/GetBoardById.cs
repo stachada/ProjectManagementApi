@@ -36,10 +36,12 @@ public sealed class GetBoardByIdHandler(IAppDbContext db)
         var taskCount = await db.Tasks
             .CountAsync(t => t.BoardId == query.BoardId, cancellationToken);
 
-        // Load the capped task list ordered by CreatedAt descending.
+        // Load the capped task list ordered by CreatedAt descending. See
+        // EntityQueryableExtensions.ThenByStableId for why the tiebreaker is needed.
         List<ProjectTask> tasks = await db.Tasks
             .Where(t => t.BoardId == query.BoardId)
             .OrderByDescending(t => t.CreatedAt)
+            .ThenByStableId()
             .Take(BoardDto.MaxEmbeddedTasks)
             .ToListAsync(cancellationToken);
 

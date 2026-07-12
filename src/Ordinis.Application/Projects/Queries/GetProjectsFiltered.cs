@@ -100,12 +100,14 @@ public sealed class GetProjectsFilteredHandler(IAppDbContext db) : IQueryHandler
             q = q.Where(p => !p.IsArchived);
         }
 
+        // Sorting. See EntityQueryableExtensions.ThenByStableId for why every branch ends with
+        // it - GetOrganizationProjects shares this exact sort shape and must stay consistent.
         q = (filter.SortBy.ToLowerInvariant(), filter.SortDescending) switch
         {
-            ("name", false) => q.OrderBy(p => p.Name),
-            ("name", true) => q.OrderByDescending(p => p.Name),
-            (_, false) => q.OrderBy(p => p.CreatedAt),
-            (_, true) => q.OrderByDescending(p => p.CreatedAt)
+            ("name", false) => q.OrderBy(p => p.Name).ThenByStableId(),
+            ("name", true) => q.OrderByDescending(p => p.Name).ThenByStableId(),
+            (_, false) => q.OrderBy(p => p.CreatedAt).ThenByStableId(),
+            (_, true) => q.OrderByDescending(p => p.CreatedAt).ThenByStableId()
         };
 
         var totalCount = await q.CountAsync(cancellationToken);

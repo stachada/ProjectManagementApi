@@ -89,22 +89,22 @@ internal sealed class GetUserTasksHandler(IAppDbContext db)
         // Total count on the filtered (pre-pagination) queryable.
         var totalCount = await queryable.CountAsync(ct);
 
-        // Sorting.
+        // Sorting. See EntityQueryableExtensions.ThenByStableId for why every branch ends with it.
         queryable = filter.SortBy?.ToLowerInvariant() switch
         {
             "title" => filter.SortDescending
-                                ? queryable.OrderByDescending(t => t.Title)
-                                : queryable.OrderBy(t => t.Title),
+                                ? queryable.OrderByDescending(t => t.Title).ThenByStableId()
+                                : queryable.OrderBy(t => t.Title).ThenByStableId(),
             "priority" => filter.SortDescending
-                                ? queryable.OrderByDescending(t => t.Priority)
-                                : queryable.OrderBy(t => t.Priority),
+                                ? queryable.OrderByDescending(t => t.Priority).ThenByStableId()
+                                : queryable.OrderBy(t => t.Priority).ThenByStableId(),
             "duedate" => filter.SortDescending
-                                ? queryable.OrderByDescending(t => t.DueDate)
-                                : queryable.OrderBy(t => t.DueDate),
+                                ? queryable.OrderByDescending(t => t.DueDate).ThenByStableId()
+                                : queryable.OrderBy(t => t.DueDate).ThenByStableId(),
             "createdat" => filter.SortDescending
-                                ? queryable.OrderByDescending(t => t.CreatedAt)
-                                : queryable.OrderBy(t => t.CreatedAt),
-            _ => queryable.OrderByDescending(t => t.CreatedAt), // default
+                                ? queryable.OrderByDescending(t => t.CreatedAt).ThenByStableId()
+                                : queryable.OrderBy(t => t.CreatedAt).ThenByStableId(),
+            _ => queryable.OrderByDescending(t => t.CreatedAt).ThenByStableId(), // default
         };
 
         // Paginate and materialise.

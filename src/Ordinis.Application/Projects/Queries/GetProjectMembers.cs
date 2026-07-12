@@ -38,6 +38,7 @@ public sealed class GetProjectMembersHandler(IAppDbContext db)
         List<ProjectMember> members = await db.ProjectMembers
             .Where(m => m.ProjectId == query.ProjectId)
             .OrderBy(m => m.JoinedAt)
+            .ThenBy(m => m.UserId)
             .ToListAsync(cancellationToken);
 
         var userIds = members.Select(m => m.UserId).ToHashSet();

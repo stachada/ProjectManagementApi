@@ -151,7 +151,7 @@ public class Project : AggregateRoot
             IsArchived = false
         };
 
-        // The creator is automatically and Admin for the project they create.
+        // The creator is added automatically and given the Admin role for the project they create.
         project._members.Add(ProjectMember.Create(project.Id, createdByUserId, Role.Admin, now));
 
         return project;

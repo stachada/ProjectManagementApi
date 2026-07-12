@@ -1,3 +1,4 @@
+using Ordinis.Application.Common;
 using Ordinis.Domain.Tasks;
 
 namespace Ordinis.Application.Tasks.Dtos;
@@ -56,10 +57,12 @@ public static class TaskMapper
             Comments = task.Comments
                 .Where(c => !c.IsDeleted)
                 .OrderBy(c => c.CreatedAt)
+                .ThenByStableId()
                 .Select(c => c.ToCommentDto(userLookup))
                 .ToList(),
             Attachments = task.Attachments
                 .OrderBy(a => a.UploadedAt)
+                .ThenByStableId()
                 .Select(a => a.ToAttachmentDto())
                 .ToList(),
         };
