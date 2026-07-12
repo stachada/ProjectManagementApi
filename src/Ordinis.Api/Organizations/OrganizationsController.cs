@@ -133,8 +133,7 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
         [FromBody] UpdateOrganizationRequest request,
         CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new RenameOrganization(id, request.Name), cancellationToken);
-        await _dispatcher.SendAsync(new UpdateOrganizationDescription(id, request.Description), cancellationToken);
+        await _dispatcher.SendAsync(new UpdateOrganization(id, request.Name, request.Description), cancellationToken);
 
         return NoContent();
     }

@@ -19,6 +19,7 @@ internal static class OrganizationServiceExtensions
         services.AddScoped<ICommandHandler<CreateOrganization, Guid>, CreateOrganizationHandler>();
         services.AddScoped<ICommandHandler<RenameOrganization>, RenameOrganizationHandler>();
         services.AddScoped<ICommandHandler<UpdateOrganizationDescription>, UpdateOrganizationDescriptionHandler>();
+        services.AddScoped<ICommandHandler<UpdateOrganization>, UpdateOrganizationHandler>();
         services.AddScoped<ICommandHandler<SuspendOrganization>, SuspendOrganizationHandler>();
         services.AddScoped<ICommandHandler<ReactivateOrganization>, ReactivateOrganizationHandler>();
         // Queries
