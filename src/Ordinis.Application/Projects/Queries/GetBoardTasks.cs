@@ -73,16 +73,17 @@ public sealed class GetBoardTasksHandler(IAppDbContext db)
             q = q.Where(t => t.DueDate >= filter.DueAfter);
         }
 
+        // Sorting. See EntityQueryableExtensions.ThenByStableId for why every branch ends with it.
         q = (filter.SortBy.ToLowerInvariant(), filter.SortDescending) switch
         {
-            ("title", false) => q.OrderBy(t => t.Title),
-            ("title", true) => q.OrderByDescending(t => t.Title),
-            ("priority", false) => q.OrderBy(t => t.Priority),
-            ("priority", true) => q.OrderByDescending(t => t.Priority),
-            ("dueDate", false) => q.OrderBy(t => t.DueDate),
-            ("dueDate", true) => q.OrderByDescending(t => t.DueDate),
-            (_, false) => q.OrderBy(t => t.CreatedAt),
-            (_, true) => q.OrderByDescending(t => t.CreatedAt)
+            ("title", false) => q.OrderBy(t => t.Title).ThenByStableId(),
+            ("title", true) => q.OrderByDescending(t => t.Title).ThenByStableId(),
+            ("priority", false) => q.OrderBy(t => t.Priority).ThenByStableId(),
+            ("priority", true) => q.OrderByDescending(t => t.Priority).ThenByStableId(),
+            ("dueDate", false) => q.OrderBy(t => t.DueDate).ThenByStableId(),
+            ("dueDate", true) => q.OrderByDescending(t => t.DueDate).ThenByStableId(),
+            (_, false) => q.OrderBy(t => t.CreatedAt).ThenByStableId(),
+            (_, true) => q.OrderByDescending(t => t.CreatedAt).ThenByStableId()
         };
 
         var totalCount = await q.CountAsync(cancellationToken);

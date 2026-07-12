@@ -145,6 +145,7 @@ Do not suggest Minimal APIs for resource endpoints. Do not suggest Controllers f
 - XML doc comments on all public API surface: controllers, DTOs, public interfaces
 - No Data Annotations on domain entities — use EF Core Fluent API exclusively
 - `DbUpdateConcurrencyException` must be caught in command handlers and translated to `409 Conflict` with a Problem Details body
+- Any `OrderBy`/`OrderByDescending` on a paginated, capped, or otherwise client-visible list query must end with `.ThenByStableId()` (`Ordinis.Application.Common.EntityQueryableExtensions`) — SQL gives no guaranteed order for ties on the primary sort key, so without this, which rows land on which page (or inside vs. just outside an embed cap) can vary between otherwise-identical requests
 
 ---
 

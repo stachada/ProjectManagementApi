@@ -132,21 +132,22 @@ internal sealed class GetTasksFilteredHandler(IAppDbContext db) : IQueryHandler<
 
         // Switch on the sort field name; fall back to createdAt for unknown values.
         // Using a switch expression keeps all sort options visible in one place.
+        // See EntityQueryableExtensions.ThenByStableId for why every branch ends with it.
         queryable = (filter.SortBy.ToLowerInvariant(), filter.SortDescending) switch
         {
-            ("title", false) => queryable.OrderBy(t => t.Title),
-            ("title", true) => queryable.OrderByDescending(t => t.Title),
-            ("status", false) => queryable.OrderBy(t => t.Status),
-            ("status", true) => queryable.OrderByDescending(t => t.Status),
-            ("priority", false) => queryable.OrderBy(t => t.Priority),
-            ("priority", true) => queryable.OrderByDescending(t => t.Priority),
-            ("dueDate", false) => queryable.OrderBy(t => t.DueDate),
-            ("dueDate", true) => queryable.OrderByDescending(t => t.DueDate),
-            ("updatedat", false) => queryable.OrderBy(t => t.UpdatedAt),
-            ("updatedat", true) => queryable.OrderByDescending(t => t.UpdatedAt),
+            ("title", false) => queryable.OrderBy(t => t.Title).ThenByStableId(),
+            ("title", true) => queryable.OrderByDescending(t => t.Title).ThenByStableId(),
+            ("status", false) => queryable.OrderBy(t => t.Status).ThenByStableId(),
+            ("status", true) => queryable.OrderByDescending(t => t.Status).ThenByStableId(),
+            ("priority", false) => queryable.OrderBy(t => t.Priority).ThenByStableId(),
+            ("priority", true) => queryable.OrderByDescending(t => t.Priority).ThenByStableId(),
+            ("dueDate", false) => queryable.OrderBy(t => t.DueDate).ThenByStableId(),
+            ("dueDate", true) => queryable.OrderByDescending(t => t.DueDate).ThenByStableId(),
+            ("updatedat", false) => queryable.OrderBy(t => t.UpdatedAt).ThenByStableId(),
+            ("updatedat", true) => queryable.OrderByDescending(t => t.UpdatedAt).ThenByStableId(),
             // Default createdAt ascending / descending
-            (_, false) => queryable.OrderBy(t => t.CreatedAt),
-            (_, true) => queryable.OrderByDescending(t => t.CreatedAt)
+            (_, false) => queryable.OrderBy(t => t.CreatedAt).ThenByStableId(),
+            (_, true) => queryable.OrderByDescending(t => t.CreatedAt).ThenByStableId()
         };
 
         // Pagination
