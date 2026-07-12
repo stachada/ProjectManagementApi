@@ -142,11 +142,9 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <param name="request">The board, title, and other task details.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="201">The task was created. The <c>Location</c> header points at <see cref="GetById"/>.</response>
-    /// <response code="404">No board exists with the given ID.</response>
-    /// <response code="422">The request failed validation (e.g. board archived, assignee not found).</response>
+    /// <response code="422">The request failed validation (e.g. board does not exist or is archived, assignee not found).</response>
     [HttpPost]
     [ProducesResponseType(typeof(TaskDto), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<TaskDto>> Create(
         [FromBody] CreateTaskRequest request,
@@ -264,11 +262,9 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <param name="request">The replacement content and the requesting user.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The comment was updated.</response>
-    /// <response code="404">No task or comment exists for the given IDs.</response>
-    /// <response code="422">The request failed validation (e.g. requester is not the comment's author).</response>
+    /// <response code="422">The request failed validation (e.g. task or comment does not exist, or requester is not the comment's author).</response>
     [HttpPut("{id:guid}/comments/{commentId:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> EditComment(
         Guid id,
