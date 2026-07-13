@@ -104,11 +104,9 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
     /// <param name="request">The creator and the new board's name.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="201">The board was created. The <c>Location</c> header points at <see cref="GetById"/>.</response>
-    /// <response code="404">No project exists with the given ID.</response>
-    /// <response code="422">The request failed validation (e.g. project archived, duplicate board name).</response>
+    /// <response code="422">The request failed validation (e.g. project does not exist or is archived, duplicate board name).</response>
     [HttpPost("/api/v1/projects/{projectId:guid}/boards")]
     [ProducesResponseType(typeof(BoardDto), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<BoardDto>> Create(
         Guid projectId,
