@@ -585,6 +585,11 @@ entirely. Fixed by serializing via the runtime type instead:
     leading `/`) so the create-via-parent URI still lives on `BoardsController`; the response's
     `Location` header still points at the board's own canonical `GetById` route, not the nested
     creation path)*
+    *(no `404` path despite an earlier doc claiming one — `CreateBoardValidator`'s `ProjectId`
+    rule does its own existence-and-not-archived check via `MustAsync`, so a missing or archived
+    project fails validation (`422`) before the handler ever runs and could throw
+    `NotFoundException`; found and fixed during Phase 9 test-writing review, same class of bug as
+    `CreateTaskValidator`'s `BoardId` rule)*
   - `PUT    /api/v1/boards/{id}/name` → `RenameBoard` → `204 No Content`
   - `POST   /api/v1/boards/{id}/archive` → `ArchiveBoard` → `204 No Content`
     *(`422` with error code `board.already-archived` if already archived)*
