@@ -1097,11 +1097,49 @@ entirely. Fixed by serializing via the runtime type instead:
 | `Testcontainers.MsSql` | 4.13.0 | Starts/stops a disposable `mcr.microsoft.com/mssql/server:2022-latest` Docker container per test run — a real SQL Server instance rather than SQLite/InMemory, so `RowVersion` concurrency tokens and provider-specific SQL behave exactly as in production. |
 | `Respawn` | 7.0.0 | Resets table data (not schema) between tests by deleting rows in FK-safe dependency order — far cheaper than re-running migrations or recreating the database per test. |
 
-- [ ] API-level tests per controller (happy path + common error cases):
-  - Tasks: create, get, update, delete, move, assign, add comment, add attachment
-  - Projects: create, get, update, delete, add member, create board
-  - Organizations: create, get, update
-  - Users: create, get, update
+- [x] API-level tests per controller (happy path + common error cases) (done — 133 tests across
+  `tests/Ordinis.IntegrationTests/{Tasks,Organizations,Projects,Users}/*ControllerTests.cs` and
+  `SmokeTests.cs`, all passing against a real SQL Server Testcontainer via `OrdinisApiFactory`.
+  `move`/`assign` are **not** covered for Tasks — confirmed during review that no REST endpoints
+  exist for them yet (`TasksController.Update`'s own doc comment says status/assignment changes
+  are "Phase 7" dedicated endpoints, still unbuilt); `Boards` also got full coverage
+  (`BoardsControllerTests.cs`, 20 tests) even though not originally listed as its own sub-bullet
+  here, since `BoardsController` is a distinct controller from `ProjectsController`.
+  - Tasks (26 tests): create, get, list/filter, update, delete, add/edit/remove comment,
+    add/remove attachment
+  - Organizations (18 tests): create, get, list projects, update, suspend, reactivate
+  - Projects (43 tests): create, get, list, update, delete, archive/unarchive, add/remove member,
+    change member role, get members, get boards, get tasks
+  - Boards (20 tests): create, get, list tasks, rename, archive/unarchive
+  - Users (24 tests): create, get, list tasks, update, change org role, deactivate, reactivate
+  - **Bugs found and fixed via this test-writing work — 5 total instances of the same class**:
+    `OrganizationsController.Update` composed two independent commands
+    (`RenameOrganization`+`UpdateOrganizationDescription`) with separate `SaveChangesAsync` calls,
+    so a valid name + an over-length description committed the rename before the description
+    update's `422` — non-atomic partial write. Fixed by consolidating into a single
+    `UpdateOrganization` command (one load, one save; see Phase 4 Step 3 note). Separately,
+    4 controller actions documented a `404` their validators made unreachable (an existence-check
+    `MustAsync` on a related ID always fails first with `422`, so the handler's `NotFoundException`
+    path never runs): `TasksController.Create` (`BoardId`), `TasksController.EditComment`
+    (combined task/comment/author check), `BoardsController.Create` (`ProjectId`), and
+    `ProjectsController.AddMember` (`ProjectId`) — all four corrected to document only `422`.
+  - **Known gaps, deliberately deferred, not silently dropped**: no `409 Conflict` test exists for
+    any `Update`-style action (`TasksController.Update`, `OrganizationsController.Update`,
+    `ProjectsController.Update`, `BoardsController.RenameBoard`, `UsersController.UpdateUser`,
+    `UsersController.ChangeOrgRole`) despite all of them documenting it and catching
+    `DbUpdateConcurrencyException` — see the "Concurrency conflict tests" item below, which covers
+    this generally rather than per-action. `ProjectsController.GetProjects`'s
+    `organizationId`/`memberId`/`includeArchived`/`sortBy`/pagination filters are also untested
+    beyond the trivial list-all/empty cases.
+  - Shared test infrastructure grew alongside the controllers: `IntegrationTestBase.SeedAsync<T>()`
+    (opens a scope, resolves `AppDbContext`, runs a seed callback, disposes) and
+    `CreateOrganization()`/`SeedOrganizationWithUserAsync()` (build an unsaved `Organization` with
+    a globally-unique slug, or seed a full Organization+User pair) eliminate the
+    open-scope-resolve-AppDbContext boilerplate and the Organization+User seed block that would
+    otherwise be repeated in every controller's test file — extracted once 3 files had
+    near-identical copies (`TasksControllerTests`, `BoardsControllerTests`,
+    `ProjectsControllerTests`), matching this project's established "extract on the third
+    duplicate" convention.
 - [ ] Concurrency conflict tests — load same entity in two contexts, update both, assert second `PUT` returns `409 Conflict`
 - [ ] Validation error tests — submit invalid payloads, assert `422 Unprocessable Entity` with correct error fields
 - [ ] Auth tests — unauthenticated requests to protected endpoints return `401`; wrong role returns `403`
