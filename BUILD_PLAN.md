@@ -562,6 +562,11 @@ entirely. Fixed by serializing via the runtime type instead:
   - `POST   /api/v1/projects/{id}/members` → `AddProjectMember` → `201 Created`
     *(handler is `ICommand` with no return value — controller re-queries `GetProjectMembers`
     after dispatch and picks the matching entry for the response body/`Location`)*
+    *(no `404` path despite an earlier doc claiming one — `AddProjectMemberValidator`'s
+    `ProjectId` rule does its own existence check via `MustAsync`, so a missing project fails
+    validation (`422`) before the handler ever runs and could throw `NotFoundException`; found
+    and fixed during Phase 9 test-writing review, same class of bug as `CreateBoardValidator`'s
+    `ProjectId` rule and `CreateTaskValidator`'s `BoardId` rule)*
   - `DELETE /api/v1/projects/{id}/members/{userId}` → `RemoveProjectMember` → `204 No Content`
   - `POST   /api/v1/projects/{id}/archive` → `ArchiveProject` → `204 No Content`
     *(added beyond the original plan — exposes the already-implemented `ArchiveProject` command,
