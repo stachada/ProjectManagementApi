@@ -285,3 +285,47 @@ The seeding scope must be disposed (`SaveChangesAsync` called, then the `using` 
 **before** the HTTP call — `AppDbContext` is scoped per DI scope, so the controller's own request
 pipeline resolves a *separate* `AppDbContext` instance to serve the HTTP call. Only rows already
 committed via `SaveChangesAsync` are visible to it.
+
+## Where uploaded attachment files land during tests
+
+`POST /api/v1/tasks/{id}/attachments` (tested in `TasksControllerTests.AddAttachment_*`) writes a
+real file to disk via `LocalFileStorageService`, not just a database row. During a test run those
+files land at:
+
+```text
+tests/Ordinis.IntegrationTests/bin/Debug/net10.0/wwwroot/attachments/
+```
+
+not under `src/Ordinis.Api/`, which is easy to assume incorrectly since that's where the app's own
+`wwwroot/attachments` folder lives in production.
+
+**Why:** `LocalFileStorageService.UploadAsync` (`src/Ordinis.Infrastructure/FileStorage/LocalFileStorageService.cs`)
+combines `_options.BasePath` directly into a file path with no content-root resolution:
+
+```csharp
+var directory = _options.BasePath;          // "wwwroot/attachments" - relative, from appsettings.json
+var fullPath = Path.Combine(directory, storedFileName);
+```
+
+A relative path like that resolves against `Environment.CurrentDirectory` — the process's current
+working directory — not `IWebHostEnvironment.ContentRootPath`. `WebApplicationFactory<Program>`
+boots the API host in-process *inside the test process*; it doesn't change that process's working
+directory to match `Ordinis.Api`'s own folder. So `Environment.CurrentDirectory` during a test run
+is wherever `dotnet test` itself runs from — the **test assembly's** build output directory — and
+`wwwroot/attachments` gets created underneath that instead.
+
+**Cleanup is best-effort, not guaranteed.** `ResetDatabaseAsync` (Respawn) only resets the
+*database* between tests — it has no idea these files exist and never touches the file system.
+`AddAttachment_ValidFile_Returns201WithDownloadUrl` calls a cleanup `DELETE` at the end of the test
+itself to remove the file it created, but that's inside the test body, not a fixture-level
+guarantee: a test that fails an assertion *before* reaching that `DELETE` call, or is interrupted,
+leaves its file behind. In practice this means the `wwwroot/attachments` folder under the test
+project's `bin/` output can accumulate stray files across local runs — harmless (regenerated on
+`dotnet clean`/rebuild, and `bin/` isn't committed), but worth knowing about if you're wondering
+why files show up there that no test currently references.
+
+`RemoveAttachment_*` tests avoid this entirely by seeding attachments directly via
+`ProjectTask.AddAttachment(...)` through `CreateScope()` with a fake `storageUrl` that points at no
+real file (see `SeedAttachmentAsync` in `TasksControllerTests.cs`) — `LocalFileStorageService.DeleteAsync`
+logs a warning and no-ops when the file it's asked to delete doesn't exist, rather than throwing,
+so this works without ever writing a real file to disk for those tests.
