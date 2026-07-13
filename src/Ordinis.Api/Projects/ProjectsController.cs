@@ -301,11 +301,9 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <param name="request">The user to add and the role to assign.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="201">The member was added. The <c>Location</c> header points at <see cref="GetMembers"/>.</response>
-    /// <response code="404">No project exists with the given ID.</response>
-    /// <response code="422">The request failed validation (e.g. user not found, already a member).</response>
+    /// <response code="422">The request failed validation (e.g. project does not exist, user not found, already a member).</response>
     [HttpPost("{id:guid}/members")]
     [ProducesResponseType(typeof(ProjectMemberDto), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<ProjectMemberDto>> AddMember(
         Guid id,
