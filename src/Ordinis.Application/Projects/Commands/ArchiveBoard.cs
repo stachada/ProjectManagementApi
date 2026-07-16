@@ -25,6 +25,13 @@ public sealed class ArchiveBoardHandler(IAppDbContext db) : ICommandHandler<Arch
         // Domain enforces: board not already archived.
         board.Archive();
 
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(nameof(Board), command.BoardId, ex);
+        }
     }
 }

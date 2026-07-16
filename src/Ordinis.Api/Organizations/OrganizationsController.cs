@@ -146,10 +146,12 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The organization was suspended.</response>
     /// <response code="404">No organization exists with the given ID.</response>
+    /// <response code="409">The organization was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The organization is already suspended (<c>organization.already-suspended</c>).</response>
     [HttpPost("{id:guid}/suspend")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Suspend(Guid id, CancellationToken cancellationToken)
     {
@@ -164,10 +166,12 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The organization was reactivated.</response>
     /// <response code="404">No organization exists with the given ID.</response>
+    /// <response code="409">The organization was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The organization is already active (<c>organization.already-active</c>).</response>
     [HttpPost("{id:guid}/reactivate")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Reactivate(Guid id, CancellationToken cancellationToken)
     {

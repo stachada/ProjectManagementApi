@@ -153,10 +153,12 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The board was archived.</response>
     /// <response code="404">No board exists with the given ID.</response>
+    /// <response code="409">The board was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The board is already archived (<c>board.already-archived</c>).</response>
     [HttpPost("{id:guid}/archive")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> ArchiveBoard(Guid id, CancellationToken cancellationToken)
     {
@@ -172,10 +174,12 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The board was unarchived.</response>
     /// <response code="404">No board exists with the given ID.</response>
+    /// <response code="409">The board was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The board is not archived (<c>board.not-archived</c>).</response>
     [HttpPost("{id:guid}/unarchive")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> UnarchiveBoard(Guid id, CancellationToken cancellationToken)
     {

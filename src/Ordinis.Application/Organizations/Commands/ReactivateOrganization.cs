@@ -30,6 +30,13 @@ public sealed class ReactivateOrganizationHandler(
 
         organization.Reactivate();
 
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(nameof(Organization), command.OrganizationId, ex);
+        }
     }
 }

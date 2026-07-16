@@ -192,6 +192,20 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
     }
 
     [Fact]
+    public async Task UpdateUser_ConcurrentModification_OneRequestReturns409()
+    {
+        // No ETag/If-Match mechanism is wired at the HTTP layer, so a genuine 409 can only come
+        // from a real RowVersion collision - see IntegrationTestBase.AssertConcurrentRequestsConflictAsync
+        // and docs/INTEGRATION_TESTS.md for the deterministic mechanism.
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId, "Alice", "alice@example.com");
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PutAsJsonAsync($"/api/v1/users/{userId}", new UpdateUserRequest("Name from request 1", userId)),
+            () => Client.PutAsJsonAsync($"/api/v1/users/{userId}", new UpdateUserRequest("Name from request 2", userId)));
+    }
+
+    [Fact]
     public async Task UpdateUser_NonexistentUser_Returns404()
     {
         var request = new UpdateUserRequest("Alice Updated", Guid.CreateVersion7());
@@ -228,6 +242,20 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
     }
 
     [Fact]
+    public async Task ChangeOrgRole_ConcurrentModification_OneRequestReturns409()
+    {
+        // No ETag/If-Match mechanism is wired at the HTTP layer, so a genuine 409 can only come
+        // from a real RowVersion collision - see IntegrationTestBase.AssertConcurrentRequestsConflictAsync
+        // and docs/INTEGRATION_TESTS.md for the deterministic mechanism.
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId, "Alice", "alice@example.com", Role.Member);
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PutAsJsonAsync($"/api/v1/users/{userId}/org-role", new ChangeUserOrgRoleRequest(Role.Admin, userId)),
+            () => Client.PutAsJsonAsync($"/api/v1/users/{userId}/org-role", new ChangeUserOrgRoleRequest(Role.Viewer, userId)));
+    }
+
+    [Fact]
     public async Task ChangeOrgRole_NonexistentUser_Returns404()
     {
         var request = new ChangeUserOrgRoleRequest(Role.Admin, Guid.CreateVersion7());
@@ -249,6 +277,21 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}");
         Assert.False(user!.IsActive);
+    }
+
+    [Fact]
+    public async Task DeactivateUser_ConcurrentModification_Returns409()
+    {
+        // Two identical Deactivate calls race: the second (winner) sees the user still active in
+        // the database (the first hasn't saved yet, since it's parked) and succeeds; the first
+        // then resumes with a stale RowVersion and conflicts - see
+        // IntegrationTestBase.AssertConcurrentRequestsConflictAsync.
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId, "Alice", "alice@example.com");
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PostAsJsonAsync($"/api/v1/users/{userId}/deactivate", new DeactivateUserRequest(userId)),
+            () => Client.PostAsJsonAsync($"/api/v1/users/{userId}/deactivate", new DeactivateUserRequest(userId)));
     }
 
     [Fact]
@@ -286,6 +329,19 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}");
         Assert.True(user!.IsActive);
+    }
+
+    [Fact]
+    public async Task ReactivateUser_ConcurrentModification_Returns409()
+    {
+        // Two identical Reactivate calls race, same pattern as DeactivateUser_ConcurrentModification_Returns409.
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId, "Alice", "alice@example.com");
+        await Client.PostAsJsonAsync($"/api/v1/users/{userId}/deactivate", new DeactivateUserRequest(userId));
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PostAsJsonAsync($"/api/v1/users/{userId}/reactivate", new ReactivateUserRequest(userId)),
+            () => Client.PostAsJsonAsync($"/api/v1/users/{userId}/reactivate", new ReactivateUserRequest(userId)));
     }
 
     [Fact]

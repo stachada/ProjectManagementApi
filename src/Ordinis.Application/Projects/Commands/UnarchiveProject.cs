@@ -25,6 +25,14 @@ public sealed class UnarchiveProjectHandler(IAppDbContext db) : ICommandHandler<
                 ?? throw new NotFoundException(nameof(Project), command.ProjectId);
 
         project.Unarchive();
-        await db.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(nameof(Project), command.ProjectId, ex);
+        }
     }
 }

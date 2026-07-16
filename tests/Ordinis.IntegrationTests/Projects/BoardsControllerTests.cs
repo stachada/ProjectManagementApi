@@ -156,6 +156,21 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     }
 
     [Fact]
+    public async Task RenameBoard_ConcurrentModification_OneRequestReturns409()
+    {
+        // No ETag/If-Match mechanism is wired at the HTTP layer, so a genuine 409 can only come
+        // from a real RowVersion collision - see IntegrationTestBase.AssertConcurrentRequestsConflictAsync
+        // and docs/INTEGRATION_TESTS.md for the deterministic mechanism. The two requests use
+        // distinct names so neither trips RenameBoardValidator's duplicate-name 422 instead.
+        (Guid userId, Guid projectId) = await SeedProjectAsync();
+        Guid boardId = await SeedBoardAsync(projectId, userId, "Original Name");
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PutAsJsonAsync($"/api/v1/boards/{boardId}/name", new RenameBoardRequest("Name from request 1")),
+            () => Client.PutAsJsonAsync($"/api/v1/boards/{boardId}/name", new RenameBoardRequest("Name from request 2")));
+    }
+
+    [Fact]
     public async Task RenameBoard_NonexistentBoard_Returns404()
     {
         var request = new RenameBoardRequest("Renamed Board");
@@ -205,6 +220,21 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     }
 
     [Fact]
+    public async Task ArchiveBoard_ConcurrentModification_Returns409()
+    {
+        // Two identical Archive calls race: the second (winner) sees the board still active in
+        // the database (the first hasn't saved yet, since it's parked) and succeeds; the first
+        // then resumes with a stale RowVersion and conflicts - see
+        // IntegrationTestBase.AssertConcurrentRequestsConflictAsync.
+        (Guid userId, Guid projectId) = await SeedProjectAsync();
+        Guid boardId = await SeedBoardAsync(projectId, userId);
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PostAsync($"/api/v1/boards/{boardId}/archive", null),
+            () => Client.PostAsync($"/api/v1/boards/{boardId}/archive", null));
+    }
+
+    [Fact]
     public async Task ArchiveBoard_NonexistentBoard_Returns404()
     {
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/boards/{Guid.CreateVersion7()}/archive", null);
@@ -236,6 +266,19 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         BoardDto? board = await Client.GetFromJsonAsync<BoardDto>($"/api/v1/boards/{boardId}");
         Assert.False(board!.IsArchived);
+    }
+
+    [Fact]
+    public async Task UnarchiveBoard_ConcurrentModification_Returns409()
+    {
+        // Two identical Unarchive calls race, same pattern as ArchiveBoard_ConcurrentModification_Returns409.
+        (Guid userId, Guid projectId) = await SeedProjectAsync();
+        Guid boardId = await SeedBoardAsync(projectId, userId);
+        await Client.PostAsync($"/api/v1/boards/{boardId}/archive", null);
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PostAsync($"/api/v1/boards/{boardId}/unarchive", null),
+            () => Client.PostAsync($"/api/v1/boards/{boardId}/unarchive", null));
     }
 
     [Fact]

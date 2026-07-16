@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Ordinis.Domain.Organizations;
 using Ordinis.Domain.Users;
@@ -65,6 +66,38 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 
         return (org.Id, user.Id);
     });
+
+    /// <summary>
+    /// Deterministically triggers an optimistic-concurrency conflict: fires
+    /// <paramref name="sendFirstRequest"/>, waits for it to pause mid-save via
+    /// <see cref="ConcurrencyRaceInterceptor"/>, then fully runs <paramref name="sendSecondRequest"/>
+    /// to completion (it loads the pre-conflict state and saves normally), then releases the first
+    /// request so its save observes a stale RowVersion. Asserts the first request gets
+    /// <c>409 Conflict</c> and the second gets <c>204 No Content</c> - the only way this API (no
+    /// ETag/If-Match at the HTTP layer) can produce a genuine optimistic-concurrency conflict.
+    /// See docs/INTEGRATION_TESTS.md for the full mechanism.
+    /// </summary>
+    protected async Task AssertConcurrentRequestsConflictAsync(
+        Func<Task<HttpResponseMessage>> sendFirstRequest,
+        Func<Task<HttpResponseMessage>> sendSecondRequest)
+    {
+        ConcurrencyRaceInterceptor interceptor = Factory.Services.GetRequiredService<ConcurrencyRaceInterceptor>();
+        interceptor.Arm();
+
+        // fire and forget the first request, which will pause mid-save in the interceptor
+        Task<HttpResponseMessage> firstResponseTask = sendFirstRequest();
+        // Bounded wait rather than an unbounded await: if the interceptor mechanism ever
+        // regresses (e.g. stops being attached to AppDbContext), this fails fast with a clear
+        // timeout instead of hanging the test run forever.
+        await interceptor.WaitForFirstArrivalAsync().WaitAsync(TimeSpan.FromSeconds(15));
+
+        HttpResponseMessage secondResponse = await sendSecondRequest().WaitAsync(TimeSpan.FromSeconds(15));
+        interceptor.ReleaseFirst();
+        HttpResponseMessage firstResponse = await firstResponseTask.WaitAsync(TimeSpan.FromSeconds(15));
+
+        Assert.Equal(HttpStatusCode.Conflict, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, secondResponse.StatusCode);
+    }
 
     public Task InitializeAsync() => Task.CompletedTask;
 

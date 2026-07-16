@@ -129,6 +129,19 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     }
 
     [Fact]
+    public async Task Update_ConcurrentModification_OneRequestReturns409()
+    {
+        // No ETag/If-Match mechanism is wired at the HTTP layer, so a genuine 409 can only come
+        // from a real RowVersion collision - see IntegrationTestBase.AssertConcurrentRequestsConflictAsync
+        // and docs/INTEGRATION_TESTS.md for the deterministic mechanism.
+        Guid orgId = await SeedOrganizationAsync();
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PutAsJsonAsync($"/api/v1/organizations/{orgId}", new UpdateOrganizationRequest("Name from request 1", "Description 1")),
+            () => Client.PutAsJsonAsync($"/api/v1/organizations/{orgId}", new UpdateOrganizationRequest("Name from request 2", "Description 2")));
+    }
+
+    [Fact]
     public async Task Update_NonExistingOrganization_Returns404NotFound()
     {
         Guid nonExistingId = Guid.CreateVersion7();
@@ -184,6 +197,20 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     }
 
     [Fact]
+    public async Task Suspend_ConcurrentModification_Returns409()
+    {
+        // Two identical Suspend calls race: the second (winner) sees the organization still
+        // active in the database (the first hasn't saved yet, since it's parked) and succeeds;
+        // the first then resumes with a stale RowVersion and conflicts - see
+        // IntegrationTestBase.AssertConcurrentRequestsConflictAsync.
+        Guid orgId = await SeedOrganizationAsync();
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PostAsync($"/api/v1/organizations/{orgId}/suspend", null),
+            () => Client.PostAsync($"/api/v1/organizations/{orgId}/suspend", null));
+    }
+
+    [Fact]
     public async Task Suspend_NotExistingOrganization_Returns404NotFound()
     {
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/organizations/{Guid.CreateVersion7()}/suspend", null);
@@ -212,6 +239,17 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         OrganizationDto? updatedOrganization = await Client.GetFromJsonAsync<OrganizationDto>($"/api/v1/organizations/{orgId}");
         Assert.NotNull(updatedOrganization);
         Assert.True(updatedOrganization.IsActive);
+    }
+
+    [Fact]
+    public async Task Reactivate_ConcurrentModification_Returns409()
+    {
+        // Two identical Reactivate calls race, same pattern as Suspend_ConcurrentModification_Returns409.
+        Guid orgId = await SeedOrganizationAsync(isSuspended: true);
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PostAsync($"/api/v1/organizations/{orgId}/reactivate", null),
+            () => Client.PostAsync($"/api/v1/organizations/{orgId}/reactivate", null));
     }
 
     [Fact]

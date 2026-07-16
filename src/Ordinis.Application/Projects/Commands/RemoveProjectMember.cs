@@ -29,6 +29,14 @@ public sealed class RemoveProjectMemberHandler(IAppDbContext db) : ICommandHandl
                 ?? throw new NotFoundException(nameof(Project), command.ProjectId);
 
         project.RemoveMember(command.UserId);
-        await db.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(nameof(Project), command.ProjectId, ex);
+        }
     }
 }

@@ -32,7 +32,14 @@ internal sealed class ReactivateUserHandler(IAppDbContext db)
         // Domain guards: throws DomainException if already active.
         user.Reactivate();
 
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(nameof(User), command.UserId, ex);
+        }
     }
 }
 

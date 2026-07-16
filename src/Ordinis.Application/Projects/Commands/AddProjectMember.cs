@@ -40,7 +40,15 @@ public sealed class AddProjectMemberHandler(
 
         DateTimeOffset now = timeProvider.GetUtcNow();
         project.AddMember(command.UserId, command.Role, now);
-        await db.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(nameof(Project), command.ProjectId, ex);
+        }
     }
 }
 

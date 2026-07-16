@@ -209,9 +209,11 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The task was deleted.</response>
     /// <response code="404">No task exists with the given ID.</response>
+    /// <response code="409">The task was concurrently modified (stale <c>RowVersion</c>).</response>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(
         Guid id,
         [FromQuery] Guid requestedByUserId,
