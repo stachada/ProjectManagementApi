@@ -26,6 +26,14 @@ public sealed class ArchiveProjectHandler(IAppDbContext db) : ICommandHandler<Ar
                 ?? throw new NotFoundException(nameof(Project), command.ProjectId);
 
         project.Archive();
-        await db.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(nameof(Project), command.ProjectId, ex);
+        }
     }
 }

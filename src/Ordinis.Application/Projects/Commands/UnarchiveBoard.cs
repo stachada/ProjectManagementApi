@@ -25,6 +25,13 @@ public sealed class UnarchiveBoardHandler(IAppDbContext db) : ICommandHandler<Un
         // Domain enforces: board is currently archived.
         board.Unarchive();
 
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(nameof(Board), command.BoardId, ex);
+        }
     }
 }

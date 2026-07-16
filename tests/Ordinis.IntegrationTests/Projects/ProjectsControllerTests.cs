@@ -334,6 +334,21 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     }
 
     [Fact]
+    public async Task Update_ConcurrentModification_OneRequestReturns409()
+    {
+        // No ETag/If-Match mechanism is wired at the HTTP layer, so a genuine 409 can only come
+        // from a real RowVersion collision - see IntegrationTestBase.AssertConcurrentRequestsConflictAsync
+        // and docs/INTEGRATION_TESTS.md for the deterministic mechanism.
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 1", "Description 1")),
+            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 2", "Description 2")));
+    }
+
+    [Fact]
     public async Task Update_NonexistentProject_Returns404()
     {
         var request = new UpdateProjectRequest("Updated Name", null);
@@ -385,6 +400,21 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     }
 
     [Fact]
+    public async Task Delete_ConcurrentModification_Returns409()
+    {
+        // DeleteProjectHandler loads and saves the same Project aggregate as Update, so a
+        // delete racing a concurrent update collides on RowVersion exactly like two updates do -
+        // see IntegrationTestBase.AssertConcurrentRequestsConflictAsync.
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.DeleteAsync($"/api/v1/projects/{projectId}"),
+            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 2", "Description 2")));
+    }
+
+    [Fact]
     public async Task Delete_NonexistentProject_Returns404()
     {
         HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/projects/{Guid.CreateVersion7()}");
@@ -405,6 +435,20 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         ProjectDto? project = await Client.GetFromJsonAsync<ProjectDto>($"/api/v1/projects/{projectId}");
         Assert.NotNull(project);
         Assert.True(project!.IsArchived);
+    }
+
+    [Fact]
+    public async Task Archive_ConcurrentModification_Returns409()
+    {
+        // ArchiveProjectHandler loads and saves the same Project aggregate as Update - see
+        // IntegrationTestBase.AssertConcurrentRequestsConflictAsync.
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PostAsync($"/api/v1/projects/{projectId}/archive", null),
+            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 2", "Description 2")));
     }
 
     [Fact]
@@ -445,6 +489,24 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     }
 
     [Fact]
+    public async Task Unarchive_ConcurrentModification_Returns409()
+    {
+        // UnarchiveProjectHandler loads and saves the same Project aggregate as Delete - see
+        // IntegrationTestBase.AssertConcurrentRequestsConflictAsync. Update can't be used as the
+        // second (winner) request here: while request 1 is parked, the project is still archived
+        // in the database (its own save hasn't landed yet), and Project.Rename/UpdateDescription
+        // both call EnsureNotArchived - Delete is the only mutation that doesn't.
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+        await Client.PostAsync($"/api/v1/projects/{projectId}/archive", null);
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PostAsync($"/api/v1/projects/{projectId}/unarchive", null),
+            () => Client.DeleteAsync($"/api/v1/projects/{projectId}"));
+    }
+
+    [Fact]
     public async Task Unarchive_NonexistentProject_Returns404()
     {
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/projects/{Guid.CreateVersion7()}/unarchive", null);
@@ -481,6 +543,21 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Assert.Equal(newMemberId, member!.UserId);
         Assert.Equal(Role.Member, member.Role);
         Assert.Equal($"/api/v1/projects/{projectId}/members", response.Headers.Location?.PathAndQuery);
+    }
+
+    [Fact]
+    public async Task AddMember_ConcurrentModification_Returns409()
+    {
+        // AddProjectMemberHandler loads and saves the same Project aggregate as Update - see
+        // IntegrationTestBase.AssertConcurrentRequestsConflictAsync.
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+        Guid newMemberId = await SeedUserAsync(organizationId);
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/members", new AddProjectMemberRequest(newMemberId, Role.Member)),
+            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 2", "Description 2")));
     }
 
     [Fact]
@@ -543,6 +620,22 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     }
 
     [Fact]
+    public async Task ChangeMemberRole_ConcurrentModification_Returns409()
+    {
+        // ChangeMemberRoleHandler loads and saves the same Project aggregate as Update - see
+        // IntegrationTestBase.AssertConcurrentRequestsConflictAsync.
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+        Guid memberId = await SeedUserAsync(organizationId);
+        await SeedProjectMemberAsync(projectId, memberId, Role.Member);
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}/members/{memberId}/role", new ChangeMemberRoleRequest(Role.Viewer)),
+            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 2", "Description 2")));
+    }
+
+    [Fact]
     public async Task ChangeMemberRole_NonexistentProject_Returns404()
     {
         var request = new ChangeMemberRoleRequest(Role.Viewer);
@@ -595,6 +688,22 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         List<ProjectMemberDto>? members = await Client.GetFromJsonAsync<List<ProjectMemberDto>>($"/api/v1/projects/{projectId}/members");
         Assert.DoesNotContain(members!, m => m.UserId == memberId);
+    }
+
+    [Fact]
+    public async Task RemoveMember_ConcurrentModification_Returns409()
+    {
+        // RemoveProjectMemberHandler loads and saves the same Project aggregate as Update - see
+        // IntegrationTestBase.AssertConcurrentRequestsConflictAsync.
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+        Guid memberId = await SeedUserAsync(organizationId);
+        await SeedProjectMemberAsync(projectId, memberId, Role.Member);
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.DeleteAsync($"/api/v1/projects/{projectId}/members/{memberId}"),
+            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 2", "Description 2")));
     }
 
     [Fact]

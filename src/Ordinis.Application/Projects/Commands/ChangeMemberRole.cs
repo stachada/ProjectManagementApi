@@ -30,7 +30,15 @@ public sealed class ChangeMemberRoleHandler(IAppDbContext db) : ICommandHandler<
                 ?? throw new NotFoundException(nameof(Project), command.ProjectId);
 
         project.ChangeMemberRole(command.UserId, command.NewRole);
-        await db.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(nameof(Project), command.ProjectId, ex);
+        }
     }
 }
 

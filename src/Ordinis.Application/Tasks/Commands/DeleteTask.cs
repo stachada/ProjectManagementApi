@@ -57,6 +57,13 @@ internal sealed class DeleteTaskHandler(
 
         task.Delete(command.RequestedByUserId, now);
 
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(nameof(ProjectTask), command.TaskId, ex);
+        }
     }
 }

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Ordinis.Infrastructure.Persistence;
 using Respawn;
@@ -84,6 +85,18 @@ public sealed class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLi
             // limiting should build their own factory/limiter config instead of relying on this
             // shared instance.
             services.Configure<RateLimiterOptions>(options => options.GlobalLimiter = null);
+
+            // Lets tests deterministically force an optimistic-concurrency race via a
+            // SaveChangesAsync barrier instead of racing real HTTP/DB timing - see
+            // docs/INTEGRATION_TESTS.md and ConcurrencyRaceInterceptor's XML doc. EF Core does not
+            // auto-attach interceptors merely because they're registered as ISaveChangesInterceptor
+            // services - AddInterceptors must be called explicitly on the options builder, so a
+            // second AddDbContext<AppDbContext> call layers this on top of the one already
+            // registered in InfrastructureServiceExtensions (EF Core composes multiple
+            // IDbContextOptionsConfiguration<TContext> registrations rather than replacing).
+            services.AddSingleton<ConcurrencyRaceInterceptor>();
+            services.AddDbContext<AppDbContext>((sp, options) =>
+                options.AddInterceptors(sp.GetRequiredService<ConcurrencyRaceInterceptor>()));
         });
     }
 

@@ -116,6 +116,20 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     }
 
     [Fact]
+    public async Task Update_ConcurrentModification_OneRequestReturns409()
+    {
+        // No ETag/If-Match mechanism is wired at the HTTP layer, so a genuine 409 can only come
+        // from a real RowVersion collision - see IntegrationTestBase.AssertConcurrentRequestsConflictAsync
+        // and docs/INTEGRATION_TESTS.md for the deterministic mechanism.
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId, "Original title");
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}", new UpdateTaskRequest("Title from request 1", null, Priority.Medium, null, userId)),
+            () => Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}", new UpdateTaskRequest("Title from request 2", null, Priority.Medium, null, userId)));
+    }
+
+    [Fact]
     public async Task Update_NonexistentTask_Returns404()
     {
         var request = new UpdateTaskRequest("Title", null, Priority.Medium, null, Guid.CreateVersion7());
@@ -156,6 +170,20 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/tasks/{Guid.CreateVersion7()}?requestedByUserId={Guid.CreateVersion7()}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_ConcurrentModification_Returns409()
+    {
+        // DeleteTaskHandler loads and saves the same ProjectTask aggregate as Update, so a
+        // delete racing a concurrent update collides on RowVersion exactly like two updates do -
+        // see IntegrationTestBase.AssertConcurrentRequestsConflictAsync.
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId, "Original title");
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.DeleteAsync($"/api/v1/tasks/{taskId}?requestedByUserId={userId}"),
+            () => Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}", new UpdateTaskRequest("Title from request 2", null, Priority.Medium, null, userId)));
     }
 
     [Fact]

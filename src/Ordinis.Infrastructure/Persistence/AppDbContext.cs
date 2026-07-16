@@ -1,5 +1,7 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Ordinis.Application.Common;
 using Ordinis.Domain.Common;
 using Ordinis.Domain.Organizations;
@@ -129,10 +131,70 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     /// </summary>
     private void SetConcurrencyTokens()
     {
+        MarkAggregateRootsDirtyForChangedChildren();
+
         foreach (var entry in ChangeTracker.Entries<AggregateRoot>())
         {
             if (entry.State is EntityState.Added or EntityState.Modified)
                 entry.Entity.RowVersion = Guid.CreateVersion7().ToByteArray();
+        }
+    }
+
+    /// <summary>
+    /// EF Core only marks an entity <c>Modified</c> when one of its own scalar/complex properties
+    /// changes - adding, updating, or removing a child entity that lives in a separate table (e.g.
+    /// <c>ProjectMember</c> under <see cref="Project"/>) leaves the owning aggregate root
+    /// <c>Unchanged</c>, so it never participates in the <c>UPDATE</c> batch and its
+    /// <c>RowVersion</c> is never reassigned or checked - a concurrent child mutation could never
+    /// be detected as conflicting with it. Since the aggregate root is the DDD consistency
+    /// boundary, any child mutation is conceptually an aggregate mutation: this walks every
+    /// non-root tracked entry that changed and, if one of its navigation references points at a
+    /// still-<c>Unchanged</c> aggregate root, marks that root <c>Modified</c> too so it gets a
+    /// fresh <c>RowVersion</c> and a real optimistic-concurrency check on save.
+    /// </summary>
+    private void MarkAggregateRootsDirtyForChangedChildren()
+    {
+        foreach (EntityEntry entry in ChangeTracker.Entries().ToList())
+        {
+            if (entry.Entity is AggregateRoot || entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            // Walk navigation metadata (not entry.References/entry.Navigations) and resolve the
+            // owner via foreign-key property values rather than navigation fixup: a Deleted
+            // entry's ReferenceEntry.TargetEntry is always null (EF Core severs the fixup once an
+            // entity is marked for deletion), but its FK property values remain readable until the
+            // DELETE command actually executes.
+            foreach (INavigation navigation in entry.Metadata.GetNavigations())
+            {
+                if (navigation.IsCollection || navigation.Inverse is not { IsCollection: true })
+                {
+                    // Only follow the navigation whose inverse is a collection on the other side -
+                    // that's the "owning aggregate root's collection" signal (e.g. ProjectMember.Project,
+                    // whose inverse is Project.Members). A plain reference with no collection inverse
+                    // (e.g. ProjectMember.User) is not an ownership relationship and must not cascade.
+                    continue;
+                }
+
+                IForeignKey foreignKey = navigation.ForeignKey;
+                var fkValues = foreignKey.Properties
+                    .Select(p => entry.Property(p.Name).CurrentValue)
+                    .ToArray();
+
+                EntityEntry? owner = ChangeTracker.Entries()
+                    .FirstOrDefault(e =>
+                        e.Entity is AggregateRoot
+                        && e.Metadata == foreignKey.PrincipalEntityType
+                        && foreignKey.PrincipalKey.Properties
+                            .Select(p => e.Property(p.Name).CurrentValue)
+                            .SequenceEqual(fkValues));
+
+                if (owner is { State: EntityState.Unchanged })
+                {
+                    owner.State = EntityState.Modified;
+                }
+            }
         }
     }
 

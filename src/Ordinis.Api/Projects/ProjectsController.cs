@@ -253,9 +253,11 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The project was deleted.</response>
     /// <response code="404">No project exists with the given ID.</response>
+    /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         await _dispatcher.SendAsync(new DeleteProject(id), cancellationToken);
@@ -269,9 +271,11 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The project was archived.</response>
     /// <response code="404">No project exists with the given ID.</response>
+    /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     [HttpPost("{id:guid}/archive")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Archive(Guid id, CancellationToken cancellationToken)
     {
         await _dispatcher.SendAsync(new ArchiveProject(id), cancellationToken);
@@ -285,9 +289,11 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The project was unarchived.</response>
     /// <response code="404">No project exists with the given ID.</response>
+    /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     [HttpPost("{id:guid}/unarchive")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Unarchive(Guid id, CancellationToken cancellationToken)
     {
         await _dispatcher.SendAsync(new UnarchiveProject(id), cancellationToken);
@@ -301,9 +307,11 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <param name="request">The user to add and the role to assign.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="201">The member was added. The <c>Location</c> header points at <see cref="GetMembers"/>.</response>
+    /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The request failed validation (e.g. project does not exist, user not found, already a member).</response>
     [HttpPost("{id:guid}/members")]
     [ProducesResponseType(typeof(ProjectMemberDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<ProjectMemberDto>> AddMember(
         Guid id,
@@ -329,10 +337,12 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The member's role was changed.</response>
     /// <response code="404">No project or membership exists for the given IDs.</response>
+    /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">Not allowed (e.g. demoting the last Admin).</response>
     [HttpPut("{id:guid}/members/{userId:guid}/role")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> ChangeMemberRole(
         Guid id,
@@ -352,10 +362,12 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The member was removed.</response>
     /// <response code="404">No project or membership exists for the given IDs.</response>
+    /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">Not allowed (e.g. removing the last Admin).</response>
     [HttpDelete("{id:guid}/members/{userId:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> RemoveMember(Guid id, Guid userId, CancellationToken cancellationToken)
     {

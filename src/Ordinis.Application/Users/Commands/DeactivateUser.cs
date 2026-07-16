@@ -40,7 +40,14 @@ internal sealed class DeactivateUserHandler(IAppDbContext db)
         // Domain guards: throws DomainException if already inactive.
         user.Deactivate();
 
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(nameof(User), command.UserId, ex);
+        }
     }
 }
 

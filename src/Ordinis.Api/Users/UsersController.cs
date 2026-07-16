@@ -196,10 +196,12 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The user was deactivated.</response>
     /// <response code="404">No user exists with the given ID.</response>
+    /// <response code="409">The user was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The user is already inactive (<c>user.already-inactive</c>).</response>
     [HttpPost("{id:guid}/deactivate")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> DeactivateUser(
         Guid id,
@@ -223,10 +225,12 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The user was reactivated.</response>
     /// <response code="404">No user exists with the given ID.</response>
+    /// <response code="409">The user was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The user is already active (<c>user.already-active</c>).</response>
     [HttpPost("{id:guid}/reactivate")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> ReactivateUser(
         Guid id,

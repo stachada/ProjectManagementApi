@@ -28,6 +28,14 @@ public sealed class DeleteProjectHandler(IAppDbContext db, TimeProvider timeProv
 
         DateTimeOffset now = timeProvider.GetUtcNow();
         project.SoftDelete(now);
-        await db.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyException(nameof(Project), command.ProjectId, ex);
+        }
     }
 }
