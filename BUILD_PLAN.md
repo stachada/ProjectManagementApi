@@ -1140,7 +1140,64 @@ entirely. Fixed by serializing via the runtime type instead:
     near-identical copies (`TasksControllerTests`, `BoardsControllerTests`,
     `ProjectsControllerTests`), matching this project's established "extract on the third
     duplicate" convention.
-- [ ] Concurrency conflict tests — load same entity in two contexts, update both, assert second `PUT` returns `409 Conflict`
+- [x] Concurrency conflict tests — load same entity in two contexts, update both, assert second `PUT` returns `409 Conflict`
+  - 6 tests added, one per `Update`-style action with a `409` contract: `TasksController.Update`,
+    `OrganizationsController.Update`, `ProjectsController.Update`, `BoardsController.RenameBoard`,
+    `UsersController.UpdateUser`, `UsersController.ChangeOrgRole`.
+  - No ETag/If-Match is wired at the HTTP layer yet (still pending — Phase 7), so the only way to
+    trigger a genuine `409` today is a real `RowVersion` collision, not a client-supplied stale
+    version header.
+  - An initial `Task.WhenAll`-based approach (racing two concurrent `PUT`s and hoping their DB
+    round trips overlapped) worked for 5/6 endpoints but was flaky for
+    `BoardsController.RenameBoard` specifically when run in a full batch (timing-dependent, not a
+    product bug — see `docs/INTEGRATION_TESTS.md`). Replaced with a deterministic mechanism:
+    `ConcurrencyRaceInterceptor`, a test-only `ISaveChangesInterceptor` attached to `AppDbContext`
+    via `AddInterceptors(...)` on a second `AddDbContext<AppDbContext>` call in
+    `OrdinisApiFactory` (merely registering it as a DI service was tried first and silently
+    didn't attach — EF Core requires `AddInterceptors` explicitly), pauses the first request's
+    `SaveChangesAsync` immediately before its UPDATE; the test then runs a second request to
+    completion (it saves normally, bumping `RowVersion`), then releases the first, guaranteeing it
+    observes a stale `RowVersion` and gets a real `DbUpdateConcurrencyException` → `409`. No
+    product code changed — only test infrastructure. See `docs/INTEGRATION_TESTS.md` for the full
+    mechanism, a sequence diagram, and why every wait in the driving helper is bounded
+    (`WaitAsync(TimeSpan)`) rather than unbounded.
+  - **Follow-up audit found this was a systemic gap, not just missing test coverage.** CLAUDE.md
+    mandates as a hard rule that "`DbUpdateConcurrencyException` must be caught in command handlers
+    and translated to `409 Conflict`" — a full pass over every mutating endpoint found **13** that
+    load and save a `RowVersion`-tracked aggregate but had no catch block at all, meaning a real
+    conflict would surface as an unhandled `500`, not the documented `409`:
+    `TasksController.Delete`, `ProjectsController.Delete`/`Archive`/`Unarchive`/`AddMember`/
+    `ChangeMemberRole`/`RemoveMember`, `BoardsController.ArchiveBoard`/`UnarchiveBoard`,
+    `OrganizationsController.Suspend`/`Reactivate`, `UsersController.DeactivateUser`/`ReactivateUser`.
+    All 13 handlers fixed with the same `catch (DbUpdateConcurrencyException) → throw new
+    ConcurrencyException(...)` pattern already used by the original 6, their controller actions'
+    XML docs and `[ProducesResponseType]` attributes updated to document `409`, and a
+    `_ConcurrentModification_Returns409` integration test added for every one of them (13 more
+    tests, same `AssertConcurrentRequestsConflictAsync` mechanism — 19 concurrency tests total now).
+    Three commands with existing catch blocks were confirmed out of scope: `MoveTask`/`AssignTask`/
+    `UnassignTask` are already concurrency-safe but unreachable — no controller route calls them yet
+    (deferred to Phase 7 per `TasksController`'s own doc-comment) — and `RenameOrganization`/
+    `UpdateOrganizationDescription` are dead code superseded by the consolidated `UpdateOrganization`.
+  - **Deeper finding: `AddMember`/`ChangeMemberRole`/`RemoveMember` could never actually conflict**,
+    even with a correct catch block, until a real bug in `AppDbContext` was fixed. `ProjectMember`
+    lives in its own table with no `RowVersion` of its own (owned by `Project` per the aggregate
+    boundary, but not EF-Core-owned/embedded) — so adding, updating, or removing one only touches
+    the `ProjectMembers` table; `Project`'s own row (and its `RowVersion`) was never included in the
+    `UPDATE` batch, since EF Core only reassigns a tracked `AggregateRoot`'s `RowVersion` when that
+    entity itself is `Added`/`Modified` (`AppDbContext.SetConcurrencyTokens`). Confirmed empirically:
+    the new `AddMember_ConcurrentModification_Returns409` test initially failed with both requests
+    returning success, not one 409 — a structural gap, not a flaky test. Fixed at the infrastructure
+    level (not per-handler) with `AppDbContext.MarkAggregateRootsDirtyForChangedChildren()`, called
+    from `SetConcurrencyTokens()`: it walks every changed non-root tracked entry, resolves its
+    owning aggregate root via foreign-key *values* (not navigation-fixup, which EF Core severs for
+    `Deleted` entries — confirmed via a second failing test, `RemoveMember_ConcurrentModification`,
+    that `ReferenceEntry.TargetEntry` is `null` once an entity is marked `Deleted`) matched against
+    `INavigation.Inverse.IsCollection` to distinguish real ownership (`ProjectMember.Project`, whose
+    inverse `Project.Members` is a collection) from unrelated references (`ProjectMember.User`, which
+    has no such inverse — `User.ProjectMemberships` was already removed per the note above), and
+    marks that owner `Modified` so it gets a fresh `RowVersion` and a genuine optimistic-concurrency
+    check. This is a general, one-time fix in the shared save pipeline, not scattered per-handler
+    logic — it will also protect any future aggregate/child-table pair without further changes.
 - [ ] Validation error tests — submit invalid payloads, assert `422 Unprocessable Entity` with correct error fields
 - [ ] Auth tests — unauthenticated requests to protected endpoints return `401`; wrong role returns `403`
 - [ ] Rate limiting tests — exceed limit, assert `429 Too Many Requests` with `Retry-After` header
