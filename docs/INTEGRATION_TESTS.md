@@ -233,6 +233,359 @@ public abstract class IntegrationTestBase(OrdinisApiFactory factory) : IAsyncLif
 - `DisposeAsync()` calls `Factory.ResetDatabaseAsync()` after every test, so tests stay independent
   regardless of execution order.
 
+## Testing optimistic-concurrency conflicts deterministically
+
+`TasksController.Update`, `OrganizationsController.Update`, `ProjectsController.Update`,
+`BoardsController.RenameBoard`, `UsersController.UpdateUser`, and `UsersController.ChangeOrgRole`
+all document a `409 Conflict` response and catch `DbUpdateConcurrencyException` in their handlers
+(the CLAUDE.md-mandated `RowVersion` + `DbUpdateConcurrencyException → 409` pattern). Proving that
+contract from an integration test turned out to be the hardest test-infra problem in this suite,
+because of one fact: **as of this writing, this API has no ETag/If-Match mechanism wired at the
+HTTP layer.** That's not an oversight — it's still-pending work tracked as its own item on
+BUILD_PLAN.md's Phase 7 checklist (`TaskDto.ConcurrencyToken` as an `ETag` response header,
+`If-Match`-required `PUT`/state-transition endpoints, a `ConcurrencyTokenMiddleware` to decode it —
+see BUILD_PLAN.md:851-854). Until that phase lands, a client can never *deliberately* trigger a 409
+by supplying a stale version header — the only way to ever observe a genuine 409 today is a true
+race, where two requests both load the same `RowVersion` before either one saves. **Once Phase 7
+ships, these tests should be revisited** — a real `If-Match` header would let a test trigger a 409
+directly (send a known-stale token) instead of needing to force a race at all, which would make
+this whole interceptor mechanism unnecessary for coverage purposes (though it may still be useful
+for testing the true-race edge case specifically).
+
+### Why racing real HTTP requests was rejected
+
+The first approach fired two concurrent `PUT` requests via `Task.WhenAll` against the real SQL
+Server Testcontainer and relied on their SELECT/UPDATE round trips genuinely overlapping — real
+network/DB latency was the only thing creating the race window. This worked reliably for 5 of the
+6 target endpoints across repeated runs. `BoardsController.RenameBoard`'s version of the test,
+though, passed 4/4 in isolation but failed 3/3 when run alongside the other five concurrency tests
+in one batch (`Actual: [NoContent, NoContent]` — no race occurred, both requests completed
+sequentially without overlapping). The failure was 100% reproducible in that specific
+isolation-vs-batch split, which rules out one-off flakiness: something about batch execution
+context (thread pool/connection pool "warmth" after several prior tests have already run in the
+same shared `ApiCollection`/factory) reliably closes the race window for this one test, even
+though the underlying concurrency-handling code was never in question — it was already proven
+correct by unit tests and by the other five tests passing repeatedly.
+
+Retrying the race a bounded number of times would have reduced the failure rate, but every attempt
+would still be a coin flip against real timing — not a fix, just fewer visible failures. The right
+fix was to stop depending on timing at all.
+
+### The mechanism: `ConcurrencyRaceInterceptor`
+
+`ConcurrencyRaceInterceptor` (`Infrastructure/ConcurrencyRaceInterceptor.cs`) is a test-only
+`Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor`, registered as a DI singleton in
+`OrdinisApiFactory.ConfigureTestServices`:
+
+```csharp
+services.AddSingleton<ConcurrencyRaceInterceptor>();
+services.AddDbContext<AppDbContext>((sp, options) =>
+    options.AddInterceptors(sp.GetRequiredService<ConcurrencyRaceInterceptor>()));
+```
+
+Merely registering `ConcurrencyRaceInterceptor` as a DI service is **not** enough — EF Core does
+not auto-attach interceptors just because they exist somewhere in the application's `IServiceCollection`
+(this was confirmed the hard way: an earlier version of this registration compiled fine, resolved
+fine, but the interceptor's `SavingChangesAsync` was simply never invoked, and the affected test
+hung forever waiting on a signal that would never come — see "Why a bounded wait, not an unbounded
+one" below). `AddInterceptors(...)` must be called explicitly on the `DbContextOptionsBuilder`.
+Since `AppDbContext` is already registered once via `AddDbContext` in
+`InfrastructureServiceExtensions.AddDatabase`
+(`src/Ordinis.Infrastructure/Common/InfrastructureServiceExtensions.cs`), this test-side
+`AddDbContext<AppDbContext>` call is a **second** registration — EF Core composes multiple
+`IDbContextOptionsConfiguration<TContext>` registrations for the same context type rather than one
+replacing the other (the same layering pattern already used one call above for
+`Configure<RateLimiterOptions>`), so this purely *adds* the interceptor on top of the SQL Server
+options already configured in production code. No production code changes were needed — this
+mechanism lives entirely in `OrdinisApiFactory`. It works because
+`AppDbContext.SaveChangesAsync` (`src/Ordinis.Infrastructure/Persistence/AppDbContext.cs:101`) sets
+audit timestamps and drains the outbox, then delegates to `base.SaveChangesAsync`, which is what
+actually invokes the interceptor pipeline — so the interceptor sees every real save a `PUT` request
+triggers, with no special-casing needed for the outbox or timestamp logic layered on top.
+
+The interceptor is a one-shot gate, armed per race:
+
+```csharp
+public sealed class ConcurrencyRaceInterceptor : SaveChangesInterceptor
+{
+    private TaskCompletionSource? _firstArrived;
+    private TaskCompletionSource? _releaseFirst;
+    private int _state; // 0 = disarmed, 1 = armed, 2 = first arrival consumed
+
+    public void Arm() { /* resets both TaskCompletionSources, sets _state = 1 */ }
+    public Task WaitForFirstArrivalAsync() => _firstArrived!.Task;
+    public void ReleaseFirst() => _releaseFirst!.SetResult();
+
+    public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+        DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.CompareExchange(ref _state, 2, 1) == 1)
+        {
+            _firstArrived!.SetResult();
+            await _releaseFirst!.Task;   // parked here until the test calls ReleaseFirst()
+        }
+
+        return await base.SavingChangesAsync(eventData, result, cancellationToken);
+    }
+}
+```
+
+`Interlocked.CompareExchange(ref _state, 2, 1)` is what makes this a *one-shot* gate: only the
+first `SaveChangesAsync` call to reach it after `Arm()` sees `_state == 1` and gets parked; every
+later call (state already `2`) falls straight through to `base.SavingChangesAsync` untouched. This
+is what lets the second request in a race proceed completely normally.
+
+`IntegrationTestBase.AssertConcurrentRequestsConflictAsync` drives the whole sequence:
+
+```csharp
+protected async Task AssertConcurrentRequestsConflictAsync(
+    Func<Task<HttpResponseMessage>> sendFirstRequest,
+    Func<Task<HttpResponseMessage>> sendSecondRequest)
+{
+    ConcurrencyRaceInterceptor interceptor = Factory.Services.GetRequiredService<ConcurrencyRaceInterceptor>();
+    interceptor.Arm();
+
+    Task<HttpResponseMessage> firstResponseTask = sendFirstRequest();
+    await interceptor.WaitForFirstArrivalAsync().WaitAsync(TimeSpan.FromSeconds(15));
+
+    HttpResponseMessage secondResponse = await sendSecondRequest().WaitAsync(TimeSpan.FromSeconds(15));
+    interceptor.ReleaseFirst();
+    HttpResponseMessage firstResponse = await firstResponseTask.WaitAsync(TimeSpan.FromSeconds(15));
+
+    Assert.Equal(HttpStatusCode.Conflict, firstResponse.StatusCode);
+    Assert.Equal(HttpStatusCode.NoContent, secondResponse.StatusCode);
+}
+```
+
+**Why a bounded wait, not an unbounded one.** Every `await` in this method is wrapped in
+`.WaitAsync(TimeSpan.FromSeconds(15))`. This isn't defensive boilerplate — it's there because of a
+real failure mode hit while building this mechanism: an earlier version of the interceptor
+registration (see the callout above — registering `ConcurrencyRaceInterceptor` as a plain DI
+service instead of via `AddInterceptors(...)`) compiled and resolved without error, but the
+interceptor was never actually attached to `AppDbContext`. The request ran straight through,
+`_firstArrived` never completed, and `await interceptor.WaitForFirstArrivalAsync()` — unbounded at
+the time — hung the test (and the whole `dotnet test` process) indefinitely, with no exception, no
+timeout, and no output. A 15-second bound turns that class of regression back into an immediate,
+diagnosable test failure instead of a silent hang that has to be killed by hand.
+
+```mermaid
+sequenceDiagram
+    participant Test
+    participant Interceptor as ConcurrencyRaceInterceptor
+    participant Put1 as PUT request 1
+    participant Put2 as PUT request 2
+    participant DB as SQL Server
+
+    Test->>Interceptor: Arm()
+    Test->>Put1: sendFirstRequest() - not awaited yet
+    Put1->>DB: SELECT (loads RowVersion V1)
+    Put1->>Interceptor: SavingChangesAsync - first arrival
+    Interceptor->>Interceptor: state 1 -> 2, signal _firstArrived
+    Interceptor--xPut1: await _releaseFirst (parked)
+    Test->>Interceptor: await WaitForFirstArrivalAsync() completes
+    Test->>Put2: await sendSecondRequest()
+    Put2->>DB: SELECT (loads RowVersion V1)
+    Put2->>DB: UPDATE ... WHERE RowVersion = V1 - succeeds, bumps to V2
+    Put2-->>Test: 204 No Content
+    Test->>Interceptor: ReleaseFirst()
+    Interceptor->>Put1: _releaseFirst completes, resumes
+    Put1->>DB: UPDATE ... WHERE RowVersion = V1 - 0 rows match (DB has V2)
+    DB-->>Put1: DbUpdateConcurrencyException
+    Put1-->>Test: 409 Conflict (handler's catch block translates it)
+```
+
+The sequence diagram above shows *what* messages happen in *what order*, but not *how long* each
+side is actually running versus sitting parked — which is the part that makes this deterministic
+rather than a race. This timeline makes that explicit: PUT1 spends most of the test blocked inside
+`SavingChangesAsync`, doing nothing, while PUT2 runs its entire load-modify-save cycle to
+completion in that window; PUT1 only resumes, and fails, after PUT2 is already done.
+
+```mermaid
+sequenceDiagram
+    participant Test
+    participant PUT1 as PUT1 the loser
+    participant PUT2 as PUT2 the winner
+    participant DB as SQL Server
+
+    Test->>PUT1: send, not awaited
+    activate PUT1
+    PUT1->>DB: SELECT loads RowVersion V1
+    Note right of PUT1: PARKED in SavingChangesAsync<br/>waiting for ReleaseFirst
+
+    Test->>Test: WaitForFirstArrivalAsync completes
+
+    Test->>PUT2: send and await
+    activate PUT2
+    PUT2->>DB: SELECT loads RowVersion V1
+    PUT2->>DB: UPDATE succeeds, V1 becomes V2
+    PUT2-->>Test: 204 No Content
+    deactivate PUT2
+
+    Test->>PUT1: ReleaseFirst
+    Note right of PUT1: resumes
+    PUT1->>DB: UPDATE where RowVersion = V1, 0 rows match
+    DB-->>PUT1: DbUpdateConcurrencyException
+    PUT1-->>Test: 409 Conflict
+    deactivate PUT1
+```
+
+The `activate`/`deactivate` bars are the key thing to read here: PUT1's bar spans the entire
+diagram top to bottom, while PUT2's bar is short and sits fully nested inside it. That containment
+is the whole mechanism, drawn directly rather than described:
+
+- **PUT1 is parked, not racing.** From the moment it reaches `SavingChangesAsync` until
+  `ReleaseFirst` is called, PUT1 does nothing — it isn't retrying, isn't polling, isn't competing
+  with PUT2 for anything. It's mechanically incapable of touching the database again until the test
+  says so.
+- **PUT2's entire life cycle happens inside that idle window.** PUT2 is not even sent until
+  `await WaitForFirstArrivalAsync()` returns — that's what enforces the gap. There's no window
+  where both requests are genuinely racing each other in real time: PUT2's entire life cycle
+  happens strictly *after* PUT1 has already committed to becoming stale, and strictly *before*
+  PUT1 is allowed to try again.
+
+Because request 1 loaded the entity (capturing `RowVersion` V1 in its change tracker's
+`OriginalValues`) *before* it was parked, and request 2 fully completes its own load-modify-save
+cycle while request 1 is paused, request 1's UPDATE is guaranteed to run against data that has
+already moved on by the time it's released — a real `DbUpdateConcurrencyException`, not a
+simulated one. The existing handler catch block (present in every `Update`-style handler per
+CLAUDE.md's concurrency convention) is exercised exactly as it would be in production.
+
+### Why a shared singleton interceptor is safe here
+
+`ConcurrencyRaceInterceptor` is one instance shared by every `AppDbContext` for the lifetime of the
+factory — but that's safe because `ApiCollection` (see above) already guarantees test *classes*
+within the shared collection run sequentially, never concurrently, against the same shared
+database. Only one test ever has the gate armed at a time, and each test re-arms it fresh via
+`Arm()`, so there's no risk of two unrelated tests' save calls colliding on the same barrier.
+
+### Why this is deterministic where `Task.WhenAll` wasn't
+
+No step in this sequence depends on wall-clock timing or network/DB latency. Request 2 is not even
+*started* until the test has confirmed — via the awaited `_firstArrived` `TaskCompletionSource` —
+that request 1's save is already parked immediately before its UPDATE. The interleaving is enforced
+by explicit signaling between the test and the interceptor, not by hoping two independently-timed
+async operations happen to overlap. This is why it passes identically whether `BoardsControllerTests`
+runs alone or as part of the full batch — the isolation-vs-batch distinction that broke the
+`Task.WhenAll` version doesn't exist here, because there's no longer anything for batch-vs-solo
+timing differences to affect.
+
+### Coverage: all 19 endpoints that can conflict, and why `ProjectMember` mutations needed a real fix
+
+The original 6 concurrency tests covered every documented `Update`-style action. A follow-up audit
+of every mutating endpoint (Controllers + Minimal APIs) found 13 more that load and save a
+`RowVersion`-tracked aggregate but had no `catch (DbUpdateConcurrencyException)` at all —
+`TasksController.Delete`; `ProjectsController.Delete`/`Archive`/`Unarchive`/`AddMember`/
+`ChangeMemberRole`/`RemoveMember`; `BoardsController.ArchiveBoard`/`UnarchiveBoard`;
+`OrganizationsController.Suspend`/`Reactivate`; `UsersController.DeactivateUser`/`ReactivateUser`.
+CLAUDE.md makes catching this exception a hard rule, not a nice-to-have, so a real conflict on any
+of these would have surfaced as an unhandled `500`, not the documented `409`. All 13 got the same
+catch-and-translate pattern as the original 6, plus a `_ConcurrentModification_Returns409` test
+each, using the exact same `AssertConcurrentRequestsConflictAsync` mechanism described above — 19
+concurrency tests total.
+
+Most of the 13 new tests pair two *identical* requests (e.g. `ArchiveBoard_ConcurrentModification_Returns409`
+fires the same `POST /archive` twice) rather than two different mutations like the `Update` tests
+do. This isn't arbitrary: several of these aggregates reject *any* other mutation while in the
+in-between state the losing request is parked in - e.g. `Project.Rename`/`UpdateDescription`/
+`AddMember`/etc. all call `EnsureNotArchived()`, so while an `Unarchive` request is parked (the
+database still shows the project as archived, since the parked request's own save hasn't landed),
+a second request trying to `Update` the same project would itself fail with `422`, not the `204`
+the helper expects from the "winner." Firing the *same* action twice sidesteps this entirely: the
+second call sees the pre-conflict state (still archived) and satisfies whatever precondition that
+state implies, succeeds normally, and only then does releasing the first one produce the genuine
+stale-`RowVersion` conflict. (`ProjectsController.Unarchive`'s test is the one exception - it pairs
+with `Delete`, since `Project.SoftDelete` is the one mutation that does *not* call
+`EnsureNotArchived()`.)
+
+**A real, structural bug surfaced while writing these tests, not a test-writing mistake.** The new
+`AddMember_ConcurrentModification_Returns409` test initially failed with *both* requests returning
+success - no conflict at all, even with the catch block correctly in place. The reason:
+`ProjectMember` (`src/Ordinis.Infrastructure/Projects/ProjectMemberConfiguration.cs`) maps to its
+own `ProjectMembers` table with no `RowVersion` of its own - it's owned by `Project` in the DDD
+sense (created and removed only through `Project.AddMember`/`RemoveMember`), but not EF-Core-owned
+or embedded in the same table. Adding, changing, or removing a `ProjectMember` therefore only ever
+produces an `INSERT`/`UPDATE`/`DELETE` against `ProjectMembers` - `Project`'s own row is never
+included in the `UPDATE` batch, because `AppDbContext.SetConcurrencyTokens()` only reassigns
+`RowVersion` for a tracked `AggregateRoot` whose own `EntityState` is `Added`/`Modified`, and
+`Project` stays `Unchanged` when only a child row changes. There was structurally nothing for
+`DbUpdateConcurrencyException` to ever detect, no matter how the two requests were timed.
+
+The fix is infrastructure-level, not per-handler, since the aggregate root is the DDD consistency
+boundary - any child mutation is conceptually an aggregate mutation, and re-deriving that fact by
+hand in every handler that touches a child table would be exactly the kind of scattered, easy-to-
+forget logic this project avoids. `AppDbContext.MarkAggregateRootsDirtyForChangedChildren()`
+(called from `SetConcurrencyTokens()`, before token assignment) walks every changed non-root
+tracked entry and, for each navigation whose *inverse* is a collection on an aggregate root (the
+signal that distinguishes real ownership - `ProjectMember.Project`, whose inverse `Project.Members`
+is a collection, from an unrelated reference like `ProjectMember.User`, which has no such inverse
+since `User.ProjectMemberships` was deliberately removed earlier in this project - see the
+aggregate-references row in CLAUDE.md's design-decision table), resolves the owning aggregate root
+and marks it `Modified` if it's still `Unchanged`.
+
+That resolution has to go through foreign-key **values**, not navigation fixup
+(`ReferenceEntry.TargetEntry`) - a second failure while building this (`RemoveMember_ConcurrentModification_Returns409`,
+this time correctly detecting the missing-cascade bug but for a different underlying reason) showed
+that `TargetEntry` is always `null` once an entity is marked `Deleted`, because EF Core severs the
+navigation fixup at that point. The FK property values, by contrast, remain readable on the entry
+until the `DELETE` command actually executes, so resolving the owner by matching FK values against
+tracked `AggregateRoot` entries' primary-key values works uniformly across `Added`, `Modified`, and
+`Deleted` children.
+
+This fix isn't just about making the new tests pass - it closes a real invariant-violation window.
+`Project.RemoveMember`'s domain guard blocks removing the last remaining Admin, but that guard only
+checks the aggregate's state *as loaded*, not as it is at the moment of write. Without the
+aggregate-level `RowVersion` bump, two concurrent removals of two *different* Admins can each pass
+the guard independently:
+
+1. Project has two Admins, Alice and Bob.
+2. Request A: `RemoveMember(Bob)` loads the project, sees `{Alice: Admin, Bob: Admin}`, the guard
+   passes ("Alice remains"), and it proceeds.
+3. Request B (concurrent): `RemoveMember(Alice)` loads the project *independently*, also sees
+   `{Alice: Admin, Bob: Admin}` (A hasn't committed yet), the guard passes ("Bob remains"), and it
+   proceeds.
+4. Both saves succeed - zero Admins remain. The invariant is violated, and neither guard ever saw
+   anything wrong, because each was checking a snapshot that was true when read but stale by the
+   time it was acted on - a classic time-of-check-to-time-of-use race.
+
+With the cascade fix in place, request B's save fails with `409` (`Project`'s `RowVersion` was
+already bumped by A's commit), forcing a reload - at which point the guard correctly sees only
+Alice remaining and blocks the removal. Domain guards and optimistic concurrency are complementary,
+not redundant: the guard enforces that the invariant is true *at the moment of the check*;
+`RowVersion` ensures that moment is still valid *at the moment of the write*.
+
+This fix is general rather than `ProjectMember`-specific: it will automatically protect any future
+aggregate/child-table pair that follows the same "owned child in its own table, referenced by a
+collection navigation" shape, with no further changes needed anywhere else.
+
+**Known limitations, not currently exercised by this domain model.** The fix's ownership signal -
+`navigation.Inverse is { IsCollection: true }` - and its single-pass walk both make assumptions that
+hold for every owned child in this codebase today (`ProjectMember`, `Comment`, `Attachment`: all
+one level deep, all one-to-many), but wouldn't generalize automatically if either assumption stopped
+holding:
+
+- **A one-to-one owned child would not cascade.** The "inverse is a collection" check is what
+  distinguishes a real ownership relationship (`ProjectMember.Project`, whose inverse
+  `Project.Members` is a collection) from an unrelated reference (`ProjectMember.User`, which has no
+  such inverse). In a 1:1 relationship (e.g. a hypothetical `Project.Settings` ↔
+  `ProjectSettings.Project`), the inverse on the owner side is *also* a plain reference, not a
+  collection - so the current check would treat a genuinely owned 1:1 child exactly like an
+  unrelated reference and silently skip it. A bare FK shape can't distinguish "1:1 owned child" from
+  "1:1 reference to an unrelated aggregate" on its own; closing this gap would need an extra signal
+  (e.g. EF Core's `OwnsOne`, if adopted, or an explicit project convention/marker).
+
+- **A multi-level hierarchy (root → child → grandchild) only cascades reliably one hop, and even
+  that hop depends on enumeration order.** `MarkAggregateRootsDirtyForChangedChildren` takes a
+  single snapshot of `ChangeTracker.Entries()` and makes one pass over it. If a grandchild changes,
+  the method correctly marks its immediate parent `Modified` - but whether that newly-`Modified`
+  parent then gets its *own* turn to cascade further up to the root depends on where the parent's
+  entry happened to land in that same enumeration snapshot relative to the grandchild's. If the
+  parent was enumerated first, it was still `Unchanged` at that point, was skipped, and never gets
+  revisited - the cascade silently stops one level short of the root. Fixing this properly means
+  walking the ownership chain iteratively from each changed entry - following "owner via FK"
+  repeatedly until landing on an actual `AggregateRoot` - rather than relying on a single pass over
+  a snapshot; that would be deterministic regardless of hierarchy depth or enumeration order, and is
+  a comparatively small change if this domain ever grows a grandchild relationship.
+
 ## Writing a new integration test class
 
 ```csharp
