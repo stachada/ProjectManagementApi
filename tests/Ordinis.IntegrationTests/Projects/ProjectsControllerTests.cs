@@ -112,7 +112,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/projects", request);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        await AssertValidationProblemAsync(response, "Name");
     }
 
     [Fact]
@@ -386,6 +386,20 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     }
 
     [Fact]
+    public async Task Update_DescriptionOverMaxLength_Returns422()
+    {
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+        string longDescription = new string('A', 1001);
+        var request = new UpdateProjectRequest("Valid Name", longDescription);
+
+        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", request);
+
+        await AssertValidationProblemAsync(response, "NewDescription");
+    }
+
+    [Fact]
     public async Task Delete_ExistingProject_Returns204AndSoftDeletesProject()
     {
         Guid organizationId = await SeedOrganizationAsync();
@@ -603,6 +617,20 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     }
 
     [Fact]
+    public async Task AddMember_InvalidRole_Returns422()
+    {
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+        Guid newMemberId = await SeedUserAsync(organizationId);
+        var request = new AddProjectMemberRequest(newMemberId, (Role)9999);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/members", request);
+
+        await AssertValidationProblemAsync(response, "Role");
+    }
+
+    [Fact]
     public async Task ChangeMemberRole_ValidRequest_Returns204AndChangesRole()
     {
         Guid organizationId = await SeedOrganizationAsync();
@@ -658,6 +686,21 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/projects/{projectId}/members/{nonMemberId}/role", request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChangeMemberRole_InvalidRole_Returns422()
+    {
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+        Guid memberId = await SeedUserAsync(organizationId);
+        await SeedProjectMemberAsync(projectId, memberId, Role.Member);
+        var request = new ChangeMemberRoleRequest((Role)9999);
+
+        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/projects/{projectId}/members/{memberId}/role", request);
+
+        await AssertValidationProblemAsync(response, "NewRole");
     }
 
     [Fact]

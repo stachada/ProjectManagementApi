@@ -1,4 +1,7 @@
 using System.Net;
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Ordinis.Domain.Organizations;
 using Ordinis.Domain.Users;
@@ -97,6 +100,37 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.Conflict, firstResponse.StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, secondResponse.StatusCode);
+    }
+
+    /// <summary>
+    /// Asserts a response is a <c>422 Unprocessable Entity</c> with the FluentValidation-driven
+    /// <see cref="ValidationProblemDetails"/> shape this API always returns for validation
+    /// failures (see <c>ProblemDetailsFactory.CreateValidation</c>): correct status/title, and an
+    /// <c>errors</c> entry for <paramref name="expectedField"/>. Message text isn't asserted
+    /// beyond an optional substring check - exact FluentValidation wording is covered by that
+    /// validator's own unit tests and isn't worth pinning an HTTP-level test to.
+    /// </summary>
+    protected static async Task AssertValidationProblemAsync(
+        HttpResponseMessage response,
+        string expectedField,
+        string? expectedMessageSubstring = null)
+    {
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+
+        ValidationProblemDetails? problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.NotNull(problem);
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, problem.Status);
+        Assert.Equal("One or more validation errors occurred.", problem.Title);
+        Assert.True(
+            problem.Errors.ContainsKey(expectedField),
+            $"Expected an error for field '{expectedField}', got: [{string.Join(", ", problem.Errors.Keys)}]");
+
+        if (expectedMessageSubstring is not null)
+        {
+            Assert.Contains(
+                problem.Errors[expectedField],
+                m => m.Contains(expectedMessageSubstring, StringComparison.OrdinalIgnoreCase));
+        }
     }
 
     public Task InitializeAsync() => Task.CompletedTask;

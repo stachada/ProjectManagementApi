@@ -86,7 +86,7 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
 
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/boards", request);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        await AssertValidationProblemAsync(response, "Name");
     }
 
     [Fact]
@@ -191,6 +191,30 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/boards/{boardId}/name", request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RenameBoard_EmptyName_Returns422()
+    {
+        (Guid userId, Guid projectId) = await SeedProjectAsync();
+        Guid boardId = await SeedBoardAsync(projectId, userId, "Original Name");
+        var request = new RenameBoardRequest(string.Empty);
+
+        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/boards/{boardId}/name", request);
+
+        await AssertValidationProblemAsync(response, "NewName");
+    }
+
+    [Fact]
+    public async Task RenameBoard_NameTooLong_Returns422()
+    {
+        (Guid userId, Guid projectId) = await SeedProjectAsync();
+        Guid boardId = await SeedBoardAsync(projectId, userId, "Original Name");
+        var request = new RenameBoardRequest(new string('A', 101));
+
+        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/boards/{boardId}/name", request);
+
+        await AssertValidationProblemAsync(response, "NewName");
     }
 
     [Fact]

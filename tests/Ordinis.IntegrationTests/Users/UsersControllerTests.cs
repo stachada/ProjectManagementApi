@@ -102,7 +102,41 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/users", request);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        await AssertValidationProblemAsync(response, "DisplayName");
+    }
+
+    [Fact]
+    public async Task CreateUser_DisplayNameTooLong_Returns422()
+    {
+        Guid organizationId = await SeedOrganizationAsync();
+        var request = new CreateUserRequest(organizationId, new string('A', 101), "alice@example.com", "password123", Role.Member);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/users", request);
+
+        await AssertValidationProblemAsync(response, "DisplayName");
+    }
+
+    [Fact]
+    public async Task CreateUser_EmailTooLong_Returns422()
+    {
+        Guid organizationId = await SeedOrganizationAsync();
+        string longEmail = new string('a', 250) + "@x.co";
+        var request = new CreateUserRequest(organizationId, "Alice", longEmail, "password123", Role.Member);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/users", request);
+
+        await AssertValidationProblemAsync(response, "Email");
+    }
+
+    [Fact]
+    public async Task CreateUser_InvalidOrgRole_Returns422()
+    {
+        Guid organizationId = await SeedOrganizationAsync();
+        var request = new CreateUserRequest(organizationId, "Alice", "alice@example.com", "password123", (Role)9999);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/users", request);
+
+        await AssertValidationProblemAsync(response, "OrgRole");
     }
 
     [Fact]
@@ -228,6 +262,18 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
     }
 
     [Fact]
+    public async Task UpdateUser_DisplayNameTooLong_Returns422()
+    {
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId, "Alice", "alice@example.com");
+        var request = new UpdateUserRequest(new string('A', 101), userId);
+
+        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/users/{userId}", request);
+
+        await AssertValidationProblemAsync(response, "DisplayName");
+    }
+
+    [Fact]
     public async Task ChangeOrgRole_ValidRequest_Returns204AndChangesRole()
     {
         Guid organizationId = await SeedOrganizationAsync();
@@ -253,6 +299,18 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         await AssertConcurrentRequestsConflictAsync(
             () => Client.PutAsJsonAsync($"/api/v1/users/{userId}/org-role", new ChangeUserOrgRoleRequest(Role.Admin, userId)),
             () => Client.PutAsJsonAsync($"/api/v1/users/{userId}/org-role", new ChangeUserOrgRoleRequest(Role.Viewer, userId)));
+    }
+
+    [Fact]
+    public async Task ChangeOrgRole_InvalidNewOrgRole_Returns422()
+    {
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId, "Alice", "alice@example.com", Role.Member);
+        var request = new ChangeUserOrgRoleRequest((Role)9999, userId);
+
+        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/users/{userId}/org-role", request);
+
+        await AssertValidationProblemAsync(response, "NewOrgRole");
     }
 
     [Fact]
