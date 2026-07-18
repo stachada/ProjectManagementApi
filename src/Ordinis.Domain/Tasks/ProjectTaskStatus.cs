@@ -17,9 +17,14 @@ namespace Ordinis.Domain.Tasks;
 /// ToDo        -> InProgress, Cancelled
 /// InProgress  -> InReview, ToDo, Cancelled
 /// InReview    -> Done, InProgress, Cancelled
-/// Done        -> (terminal - no further transitions)
+/// Done        -> ToDo (reopen only)
 /// Cancelled   -> (terminal - no further transitions)
 /// </code>
+/// <see cref="ProjectTaskStatusExtensions.IsTerminal"/> is a separate, explicit concept from
+/// "has outbound transitions" - it gates <see cref="ProjectTask.Update"/>/<see cref="ProjectTask.Assign"/>/
+/// <see cref="ProjectTask.Unassign"/> and still treats <c>Done</c> as terminal even though <c>Move</c>
+/// permits the single <c>Done -> ToDo</c> reopen transition. A closed task must be explicitly reopened
+/// via <c>Move</c> before it can be edited or reassigned again.
 /// </para>
 /// <para>
 /// <b>EF Core mapping:</b> Stored as a <c>varchar</c> string column (not an integer)
@@ -73,8 +78,8 @@ public static class ProjectTaskStatusExtensions
         [ProjectTaskStatus.ToDo] = new HashSet<ProjectTaskStatus> { ProjectTaskStatus.InProgress, ProjectTaskStatus.Cancelled },
         [ProjectTaskStatus.InProgress] = new HashSet<ProjectTaskStatus> { ProjectTaskStatus.InReview, ProjectTaskStatus.ToDo, ProjectTaskStatus.Cancelled },
         [ProjectTaskStatus.InReview] = new HashSet<ProjectTaskStatus> { ProjectTaskStatus.Done, ProjectTaskStatus.InProgress, ProjectTaskStatus.Cancelled },
-        [ProjectTaskStatus.Done] = new HashSet<ProjectTaskStatus>(), // terminal
-        [ProjectTaskStatus.Cancelled] = new HashSet<ProjectTaskStatus>() // terminal
+        [ProjectTaskStatus.Done] = new HashSet<ProjectTaskStatus> { ProjectTaskStatus.ToDo }, // reopen only
+        [ProjectTaskStatus.Cancelled] = new HashSet<ProjectTaskStatus>() // fully terminal
     };
 
     /// <summary>
@@ -95,18 +100,25 @@ public static class ProjectTaskStatusExtensions
 
     /// <summary>
     /// Returns all statuses that can be legally reached from <paramref name="from"/>.
-    /// Returns an empty collection for terminal states (<see cref="ProjectTaskStatus.Done"/>
-    /// and <see cref="ProjectTaskStatus.Cancelled"/>).
+    /// Returns an empty collection for <see cref="ProjectTaskStatus.Cancelled"/> (fully terminal)
+    /// and a single-element set (<see cref="ProjectTaskStatus.ToDo"/>) for
+    /// <see cref="ProjectTaskStatus.Done"/> (reopen only).
     /// </summary>
     /// <param name="from">The task's current status.</param>
     public static IReadOnlySet<ProjectTaskStatus> GetAllowedTransitions(this ProjectTaskStatus from)
         => AllowedTransitions[from];
 
     /// <summary>
-    /// Returns whether <paramref name="status"/> is a terminal state from which
-    /// no further transitions are allowed.
+    /// Returns whether <paramref name="status"/> is a terminal business state -
+    /// <see cref="ProjectTaskStatus.Done"/> or <see cref="ProjectTaskStatus.Cancelled"/>.
     /// </summary>
+    /// <remarks>
+    /// This is deliberately independent of <see cref="GetAllowedTransitions"/>: <c>Done</c> still
+    /// permits the single <c>Done -> ToDo</c> reopen move via <see cref="ProjectTask.Move"/>, but
+    /// remains terminal for every other mutation (<see cref="ProjectTask.Update"/>,
+    /// <see cref="ProjectTask.Assign"/>, <see cref="ProjectTask.Unassign"/>) until it is reopened.
+    /// </remarks>
     /// <param name="status">The status to evaluate.</param>
     public static bool IsTerminal(this ProjectTaskStatus status)
-        => AllowedTransitions[status].Count == 0;
+        => status is ProjectTaskStatus.Done or ProjectTaskStatus.Cancelled;
 }

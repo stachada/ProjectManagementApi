@@ -25,8 +25,9 @@ namespace Ordinis.Domain.Tasks;
 /// <b>State machine:</b> Status transitions are validated against the adjacency
 /// list in <see cref="ProjectTaskStatusExtensions"/>. Calling <see cref="Move"/> with
 /// an illegal transition throws a <see cref="DomainException"/> with error code
-/// <c>"task.invalid-status-transition"</c>. Terminal states (<c>Done</c> and <c>Cancelled</c>)
-/// reject all further transitions.
+/// <c>"task.invalid-status-transition"</c>. <c>Cancelled</c> rejects all further transitions;
+/// <c>Done</c> permits only <c>Done -> ToDo</c> (reopen). Both remain terminal for every
+/// other mutation - see <see cref="ProjectTaskStatusExtensions.IsTerminal"/>.
 /// </para>
 /// <para>
 /// <b>Concurrency:</b> <see cref="AggregateRoot.RowVersion"/> is mapped as a

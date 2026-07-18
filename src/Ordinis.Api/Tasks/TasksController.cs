@@ -169,7 +169,9 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
 
     /// <summary>
     /// Updates a task's title, description, priority, and due date.
-    /// Status and assignment changes go through dedicated endpoints (Phase 7).
+    /// Status and assignment changes go through the dedicated <see cref="Move"/>,
+    /// <see cref="Assign"/>, <see cref="Unassign"/>, <see cref="Close"/>, and
+    /// <see cref="Reopen"/> endpoints instead.
     /// </summary>
     /// <param name="id">The task to update.</param>
     /// <param name="request">The new task details.</param>
@@ -220,6 +222,160 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
         CancellationToken cancellationToken)
     {
         await _dispatcher.SendAsync(new DeleteTask(id, requestedByUserId), cancellationToken);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Transitions a task to a new workflow status.
+    /// </summary>
+    /// <param name="id">The task to transition.</param>
+    /// <param name="request">The target status and the requesting user.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="204">The task was transitioned.</response>
+    /// <response code="404">No task exists with the given ID.</response>
+    /// <response code="409">The task was concurrently modified (stale <c>RowVersion</c>).</response>
+    /// <response code="422">The transition is not legal from the task's current status.</response>
+    [HttpPost("{id:guid}/move")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Move(
+        Guid id,
+        [FromBody] MoveTaskRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var command = new MoveTask(
+            TaskId: id,
+            NewStatus: request.Status,
+            RequestedByUserId: request.RequestedByUserId);
+
+        await _dispatcher.SendAsync(command, cancellationToken);
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Assigns a task to a user, or reassigns it from the current assignee.
+    /// </summary>
+    /// <param name="id">The task to assign.</param>
+    /// <param name="request">The target assignee and the requesting user.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="204">The task was assigned.</response>
+    /// <response code="404">No task exists with the given ID.</response>
+    /// <response code="409">The task was concurrently modified (stale <c>RowVersion</c>).</response>
+    /// <response code="422">The request failed validation (e.g. assignee does not exist, task is in a terminal state, or already assigned to this user).</response>
+    [HttpPost("{id:guid}/assign")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Assign(
+        Guid id,
+        [FromBody] AssignTaskRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var command = new AssignTask(
+            TaskId: id,
+            AssigneeId: request.AssigneeId,
+            RequestedByUserId: request.RequestedByUserId);
+
+        await _dispatcher.SendAsync(command, cancellationToken);
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Removes the current assignee from a task, leaving it unassigned.
+    /// </summary>
+    /// <param name="id">The task to unassign.</param>
+    /// <param name="request">The requesting user.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="204">The task was unassigned.</response>
+    /// <response code="404">No task exists with the given ID.</response>
+    /// <response code="409">The task was concurrently modified (stale <c>RowVersion</c>).</response>
+    /// <response code="422">The task is in a terminal state or already unassigned.</response>
+    [HttpPost("{id:guid}/unassign")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Unassign(
+        Guid id,
+        [FromBody] UnassignTaskRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await _dispatcher.SendAsync(new UnassignTask(id, request.RequestedByUserId), cancellationToken);
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Convenience alias for <see cref="Move"/> that transitions the task to
+    /// <see cref="ProjectTaskStatus.Done"/>.
+    /// </summary>
+    /// <param name="id">The task to close.</param>
+    /// <param name="request">The requesting user.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="204">The task was closed.</response>
+    /// <response code="404">No task exists with the given ID.</response>
+    /// <response code="409">The task was concurrently modified (stale <c>RowVersion</c>).</response>
+    /// <response code="422">
+    /// The task cannot move to <see cref="ProjectTaskStatusExtensions.CanTransitionTo"/>
+    /// <see cref="ProjectTaskStatus.Done"/> from its current status - only <see cref="ProjectTaskStatus.InReview"/> allows it.
+    /// </response>
+    [HttpPost("{id:guid}/close")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Close(
+        Guid id,
+        [FromBody] CloseTaskRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var command = new MoveTask(
+            TaskId: id,
+            NewStatus: ProjectTaskStatus.Done,
+            RequestedByUserId: request.RequestedByUserId);
+
+        await _dispatcher.SendAsync(command, cancellationToken);
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Convenience alias for <see cref="Move"/> that transitions a
+    /// <see cref="ProjectTaskStatus.Done"/> task back to <see cref="ProjectTaskStatus.ToDo"/>.
+    /// </summary>
+    /// <param name="id">The task to reopen.</param>
+    /// <param name="request">The requesting user.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="204">The task was reopened.</response>
+    /// <response code="404">No task exists with the given ID.</response>
+    /// <response code="409">The task was concurrently modified (stale <c>RowVersion</c>).</response>
+    /// <response code="422">
+    /// The task is not currently <see cref="ProjectTaskStatus.Done"/> - reopening is the only
+    /// transition <see cref="ProjectTaskStatus.Done"/> permits, and it is not reachable from
+    /// any other status.
+    /// </response>
+    [HttpPost("{id:guid}/reopen")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Reopen(
+        Guid id,
+        [FromBody] ReopenTaskRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var command = new MoveTask(
+            TaskId: id,
+            NewStatus: ProjectTaskStatus.ToDo,
+            RequestedByUserId: request.RequestedByUserId);
+
+        await _dispatcher.SendAsync(command, cancellationToken);
+
         return NoContent();
     }
 

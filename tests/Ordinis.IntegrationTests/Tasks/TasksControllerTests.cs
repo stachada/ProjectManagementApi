@@ -255,6 +255,207 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     }
 
     [Fact]
+    public async Task Move_ValidTransition_Returns204AndPersistsStatus()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        var request = new MoveTaskRequest(ProjectTaskStatus.ToDo, userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/move", request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Equal(ProjectTaskStatus.ToDo, task!.Status);
+    }
+
+    [Fact]
+    public async Task Move_InvalidTransition_Returns422()
+    {
+        // Backlog cannot jump straight to Done - only InReview -> Done is legal.
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        var request = new MoveTaskRequest(ProjectTaskStatus.Done, userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/move", request);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Move_NonexistentTask_Returns404()
+    {
+        var request = new MoveTaskRequest(ProjectTaskStatus.ToDo, Guid.CreateVersion7());
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/move", request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Move_ConcurrentModification_OneRequestReturns409()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+
+        await AssertConcurrentRequestsConflictAsync(
+            () => Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/move", new MoveTaskRequest(ProjectTaskStatus.ToDo, userId)),
+            () => Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/move", new MoveTaskRequest(ProjectTaskStatus.Cancelled, userId)));
+    }
+
+    [Fact]
+    public async Task Assign_ValidRequest_Returns204AndPersistsAssignee()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        var request = new AssignTaskRequest(userId, userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/assign", request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Equal(userId, task!.AssigneeId);
+    }
+
+    [Fact]
+    public async Task Assign_NonexistentAssignee_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        var request = new AssignTaskRequest(Guid.CreateVersion7(), userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/assign", request);
+
+        await AssertValidationProblemAsync(response, "AssigneeId");
+    }
+
+    [Fact]
+    public async Task Assign_NonexistentTask_Returns404()
+    {
+        (Guid userId, _) = await SeedBoardAsync();
+        var request = new AssignTaskRequest(userId, userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/assign", request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Unassign_AssignedTask_Returns204AndClearsAssignee()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/assign", new AssignTaskRequest(userId, userId));
+        var request = new UnassignTaskRequest(userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/unassign", request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Null(task!.AssigneeId);
+    }
+
+    [Fact]
+    public async Task Unassign_AlreadyUnassignedTask_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        var request = new UnassignTaskRequest(userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/unassign", request);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Unassign_NonexistentTask_Returns404()
+    {
+        var request = new UnassignTaskRequest(Guid.CreateVersion7());
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/unassign", request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Close_TaskInReview_Returns204AndSetsStatusDone()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        await MoveTaskAsync(taskId, userId, ProjectTaskStatus.ToDo, ProjectTaskStatus.InProgress, ProjectTaskStatus.InReview);
+        var request = new CloseTaskRequest(userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/close", request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Equal(ProjectTaskStatus.Done, task!.Status);
+    }
+
+    [Fact]
+    public async Task Close_TaskNotInReview_Returns422()
+    {
+        // A freshly created task starts in Backlog - Backlog -> Done is not a legal transition.
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        var request = new CloseTaskRequest(userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/close", request);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Close_NonexistentTask_Returns404()
+    {
+        var request = new CloseTaskRequest(Guid.CreateVersion7());
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/close", request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reopen_DoneTask_Returns204AndSetsStatusToDo()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        await MoveTaskAsync(taskId, userId, ProjectTaskStatus.ToDo, ProjectTaskStatus.InProgress, ProjectTaskStatus.InReview, ProjectTaskStatus.Done);
+        var request = new ReopenTaskRequest(userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/reopen", request);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Equal(ProjectTaskStatus.ToDo, task!.Status);
+    }
+
+    [Fact]
+    public async Task Reopen_TaskNotDone_Returns422()
+    {
+        // Reopen is Done -> ToDo only. Backlog -> ToDo happens to be a legal transition in its
+        // own right, so this needs a status that cannot reach ToDo at all - InReview's allowed
+        // transitions are Done/InProgress/Cancelled, not ToDo.
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        await MoveTaskAsync(taskId, userId, ProjectTaskStatus.ToDo, ProjectTaskStatus.InProgress, ProjectTaskStatus.InReview);
+        var request = new ReopenTaskRequest(userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/reopen", request);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reopen_NonexistentTask_Returns404()
+    {
+        var request = new ReopenTaskRequest(Guid.CreateVersion7());
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/reopen", request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task AddComment_ValidRequest_Returns201WithLocation()
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
@@ -629,6 +830,24 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         await db.SaveChangesAsync();
 
         return task.Id;
+    });
+
+    /// <summary>
+    /// Walks a task through a sequence of legal transitions directly via the domain, bypassing
+    /// HTTP - used to put a task into a specific status (e.g. InReview, Done) as test setup
+    /// without that setup itself depending on the <c>/move</c> endpoint under test.
+    /// </summary>
+    private Task<bool> MoveTaskAsync(Guid taskId, Guid movedByUserId, params ProjectTaskStatus[] path) => SeedAsync(async db =>
+    {
+        var task = await db.Tasks.FindAsync(taskId);
+        foreach (ProjectTaskStatus status in path)
+        {
+            task!.Move(status, movedByUserId, DateTimeOffset.UtcNow);
+        }
+
+        await db.SaveChangesAsync();
+
+        return true;
     });
 
     private Task<Guid> SeedCommentAsync(Guid taskId, Guid authorId, string content) => SeedAsync(async db =>
