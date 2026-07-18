@@ -836,11 +836,11 @@ entirely. Fixed by serializing via the runtime type instead:
 > ⚠️ Requires Phase 6.
 
 ### State transitions
-- [ ] `POST /api/v1/tasks/{id}/move` → `MoveTask` — body: `{ "status": "InProgress" }`
-- [ ] `POST /api/v1/tasks/{id}/assign` → `AssignTask` — body: `{ "assigneeId": "..." }`
-- [ ] `POST /api/v1/tasks/{id}/unassign` → `UnassignTask`
-- [ ] `POST /api/v1/tasks/{id}/close` → `MoveTask` with `status: Closed` (convenience alias)
-- [ ] `POST /api/v1/tasks/{id}/reopen` → `MoveTask` with `status: ToDo`
+- [x] `POST /api/v1/tasks/{id}/move` → `MoveTask` — body: `{ "status": "InProgress", "requestedByUserId": "..." }` (done — `src/Ordinis.Api/Tasks/TasksController.cs` `Move`; the command/handler/validator already existed from Phase 4/9, this phase only wired the HTTP endpoint)
+- [x] `POST /api/v1/tasks/{id}/assign` → `AssignTask` — body: `{ "assigneeId": "...", "requestedByUserId": "..." }` (done — `TasksController.Assign`)
+- [x] `POST /api/v1/tasks/{id}/unassign` → `UnassignTask` — body: `{ "requestedByUserId": "..." }` (done — `TasksController.Unassign`)
+- [x] `POST /api/v1/tasks/{id}/close` → `MoveTask` with `status: Done` (convenience alias) (done — `TasksController.Close`. **Design deviation from this checklist, flagged and agreed before implementing:** the checklist named a `Closed` status that doesn't exist in `ProjectTaskStatus` — the domain only has `Done`/`Cancelled` as terminal states. `close` aliases to `Done`, the closest existing equivalent)
+- [x] `POST /api/v1/tasks/{id}/reopen` → `MoveTask` with `status: ToDo` (done — `TasksController.Reopen`. **Second deviation, same discussion:** `Done` and `Cancelled` previously had zero outbound transitions (`AllowedTransitions[Done] = {}`), so `reopen` as originally specified could never succeed. Extended the state machine with a single `Done -> ToDo` transition (`ProjectTaskStatusExtensions.AllowedTransitions`); `Cancelled` remains fully terminal — cancelling is meant to be final, unlike closing. To avoid silently loosening `Update`/`Assign`/`Unassign`, which gate on `EnsureNotTerminal()` → `IsTerminal()`, `IsTerminal()` was changed from `AllowedTransitions[status].Count == 0` (derived) to an explicit `status is Done or Cancelled` check, decoupled from the transition adjacency list — so `Done` still blocks edits/(re)assignment until explicitly reopened via `Move`, it just now has exactly one legal way out. Updated `ProjectTaskStatusExtensionsTests`/`ProjectTaskTests` accordingly; added `Move_FromDoneToToDo_Reopens`/`Move_FromDoneToAnyOtherStatus_ThrowsDomainException`)
 
 ### HATEOAS
 - [ ] Add `HateoasLinks` record — `{ rel, href, method }` list embedded in responses as `_links`
