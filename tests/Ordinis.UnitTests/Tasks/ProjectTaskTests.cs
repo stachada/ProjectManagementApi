@@ -84,14 +84,32 @@ public class ProjectTaskTests
         Assert.Equal("task.invalid-status-transition", ex.ErrorCode);
     }
 
-    [Theory]
-    [InlineData(ProjectTaskStatus.Done)]
-    [InlineData(ProjectTaskStatus.Cancelled)]
-    public void Move_FromTerminalState_ThrowsDomainException(ProjectTaskStatus terminalStatus)
+    [Fact]
+    public void Move_FromCancelled_ThrowsDomainException()
     {
-        ProjectTask task = BuildTaskInStatus(terminalStatus);
+        ProjectTask task = BuildTaskInStatus(ProjectTaskStatus.Cancelled);
 
         DomainException ex = Assert.Throws<DomainException>(() => task.Move(ProjectTaskStatus.ToDo, Guid.CreateVersion7(), Now));
+        Assert.Equal("task.invalid-status-transition", ex.ErrorCode);
+    }
+
+    [Fact]
+    public void Move_FromDoneToToDo_Reopens()
+    {
+        ProjectTask task = BuildTaskInStatus(ProjectTaskStatus.Done);
+        var userId = Guid.CreateVersion7();
+
+        task.Move(ProjectTaskStatus.ToDo, userId, Now);
+
+        Assert.Equal(ProjectTaskStatus.ToDo, task.Status);
+    }
+
+    [Fact]
+    public void Move_FromDoneToAnyOtherStatus_ThrowsDomainException()
+    {
+        ProjectTask task = BuildTaskInStatus(ProjectTaskStatus.Done);
+
+        DomainException ex = Assert.Throws<DomainException>(() => task.Move(ProjectTaskStatus.InProgress, Guid.CreateVersion7(), Now));
         Assert.Equal("task.invalid-status-transition", ex.ErrorCode);
     }
     #endregion

@@ -11,7 +11,7 @@ namespace Ordinis.UnitTests.Tasks;
 ///   ToDo       → InProgress, Cancelled
 ///   InProgress → InReview, ToDo, Cancelled
 ///   InReview   → Done, InProgress, Cancelled
-///   Done       → (terminal)
+///   Done       → ToDo (reopen only)
 ///   Cancelled  → (terminal)
 /// </summary>
 public sealed class TaskStatusExtensionsTests
@@ -29,6 +29,7 @@ public sealed class TaskStatusExtensionsTests
         [ProjectTaskStatus.InReview, ProjectTaskStatus.Done],
         [ProjectTaskStatus.InReview, ProjectTaskStatus.InProgress],
         [ProjectTaskStatus.InReview, ProjectTaskStatus.Cancelled],
+        [ProjectTaskStatus.Done, ProjectTaskStatus.ToDo],
     ];
 
     [Theory]
@@ -70,12 +71,13 @@ public sealed class TaskStatusExtensionsTests
         [ProjectTaskStatus.InReview,   ProjectTaskStatus.Backlog],
         [ProjectTaskStatus.InReview,   ProjectTaskStatus.ToDo],
 
-        // Terminal states have no outbound transitions
+        // Done permits only the ToDo reopen transition
         [ProjectTaskStatus.Done,       ProjectTaskStatus.Backlog],
-        [ProjectTaskStatus.Done,       ProjectTaskStatus.ToDo],
         [ProjectTaskStatus.Done,       ProjectTaskStatus.InProgress],
         [ProjectTaskStatus.Done,       ProjectTaskStatus.InReview],
         [ProjectTaskStatus.Done,       ProjectTaskStatus.Cancelled],
+
+        // Cancelled has no outbound transitions
         [ProjectTaskStatus.Cancelled,  ProjectTaskStatus.Backlog],
         [ProjectTaskStatus.Cancelled,  ProjectTaskStatus.ToDo],
         [ProjectTaskStatus.Cancelled,  ProjectTaskStatus.InProgress],
@@ -114,12 +116,10 @@ public sealed class TaskStatusExtensionsTests
     #endregion
 
     #region GetAllowedTransitions
-    [Theory]
-    [InlineData(ProjectTaskStatus.Done)]
-    [InlineData(ProjectTaskStatus.Cancelled)]
-    public void GetAllowedTransitions_TerminalStatus_ReturnsEmptySet(ProjectTaskStatus status)
+    [Fact]
+    public void GetAllowedTransitions_Cancelled_ReturnsEmptySet()
     {
-        IReadOnlySet<ProjectTaskStatus> allowed = status.GetAllowedTransitions();
+        IReadOnlySet<ProjectTaskStatus> allowed = ProjectTaskStatus.Cancelled.GetAllowedTransitions();
 
         Assert.Empty(allowed);
     }
@@ -128,7 +128,8 @@ public sealed class TaskStatusExtensionsTests
     [InlineData(ProjectTaskStatus.Backlog, new[] { ProjectTaskStatus.ToDo, ProjectTaskStatus.Cancelled })]
     [InlineData(ProjectTaskStatus.ToDo, new[] { ProjectTaskStatus.InProgress, ProjectTaskStatus.Cancelled })]
     [InlineData(ProjectTaskStatus.InReview, new[] { ProjectTaskStatus.Done, ProjectTaskStatus.InProgress, ProjectTaskStatus.Cancelled })]
-    public void GetAllowedTransitions_NonTerminalStatus_ReturnsExpectedSet(
+    [InlineData(ProjectTaskStatus.Done, new[] { ProjectTaskStatus.ToDo })]
+    public void GetAllowedTransitions_NonCancelledStatus_ReturnsExpectedSet(
         ProjectTaskStatus status,
         ProjectTaskStatus[] expected)
     {
