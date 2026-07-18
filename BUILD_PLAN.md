@@ -1198,7 +1198,42 @@ entirely. Fixed by serializing via the runtime type instead:
     marks that owner `Modified` so it gets a fresh `RowVersion` and a genuine optimistic-concurrency
     check. This is a general, one-time fix in the shared save pipeline, not scattered per-handler
     logic — it will also protect any future aggregate/child-table pair without further changes.
-- [ ] Validation error tests — submit invalid payloads, assert `422 Unprocessable Entity` with correct error fields
+- [x] Validation error tests — submit invalid payloads, assert `422 Unprocessable Entity` with correct error fields
+  - A survey found FluentValidation failures already map to a real, well-defined contract — RFC
+    9457 `ValidationProblemDetails` with a per-field `errors` dictionary (`Dispatcher.ValidateAsync`
+    groups errors by `PropertyName`; `ProblemDetailsFactory.CreateValidation` builds the response)
+    — but of the 34 existing `422` tests at the time, every single one checked status code only,
+    never the body. Added `IntegrationTestBase.AssertValidationProblemAsync(response, expectedField,
+    expectedMessageSubstring?)`, which asserts status `422`, the `Title`, and that `errors` contains
+    the expected field key. Retrofitted 5 existing tests (one `Create_EmptyName`-style test per
+    controller) as canonical examples; left the other 29 as status-code-only by deliberate scope
+    decision.
+  - Cross-referenced all 22 `AbstractValidator<T>` classes' rules against integration coverage.
+    21 already have thorough per-field FluentValidation unit tests (`TestValidate`/
+    `ShouldHaveValidationErrorFor`), so new integration tests target the HTTP contract and
+    endpoint wiring, not re-deriving exact per-field messages. Added ~30 new tests filling every
+    genuinely-reachable gap: duplicate-slug uniqueness, over-length descriptions, invalid enum
+    values (`Role`/`Priority` via an out-of-range cast — enums serialize numerically by default,
+    so this round-trips through JSON and only `IsInEnum()` rejects it), nonexistent
+    assignee/reporter/uploader IDs, over-length titles/content/names, and the `AddAttachment`
+    validator (`FileName`, `ContentType`, `SizeInBytes`, `UploadedByUserId`), which had
+    essentially zero coverage before this pass.
+  - Added the one missing validator unit test file, `UpdateProjectValidatorTests.cs` — the only
+    validator in the codebase without dedicated unit coverage.
+  - `MoveTask`/`AssignTask` and `RenameOrganization`/`UpdateOrganizationDescription` showed as
+    "zero coverage" in the audit but are **not gaps**: no controller route calls them (Phase 7
+    dependency / dead code respectively, both already noted elsewhere in this file) — nothing to
+    test.
+  - Two validator rules turned out to be structurally unreachable via real HTTP requests, the same
+    class of finding as other unreachable-rule cases already documented in this file:
+    `AddAttachmentValidator.FileStream.NotNull()` (`[FromForm] IFormFile file` is a required action
+    parameter; omitting the file part fails ASP.NET Core model binding before the validator runs)
+    and `FileName.NotEmpty()` (confirmed empirically — even manually constructing a
+    `Content-Disposition` header with an empty filename gets ASP.NET Core's own `IFormFile` binder
+    to reject it with `400 Bad Request` before the request reaches the validator). No test is
+    possible for either without bypassing normal HTTP semantics.
+  - `dotnet build`: 0 warnings, 0 errors. `Ordinis.UnitTests`: 584/584 passing (575 + 9 new).
+    `Ordinis.IntegrationTests`: 178/178 passing (152 + 26 new).
 - [ ] Auth tests — unauthenticated requests to protected endpoints return `401`; wrong role returns `403`
 - [ ] Rate limiting tests — exceed limit, assert `429 Too Many Requests` with `Retry-After` header
 - [ ] Idempotency tests — repeat `POST` with same `Idempotency-Key`, assert same response and no duplicate record
