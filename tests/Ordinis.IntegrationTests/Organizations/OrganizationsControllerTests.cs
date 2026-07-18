@@ -34,7 +34,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/organizations", request);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        await AssertValidationProblemAsync(response, "Name");
     }
 
     [Fact]
@@ -46,6 +46,17 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/organizations", request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Create_DuplicateSlug_Returns422()
+    {
+        var request = new CreateOrganizationRequest("Acme Corp", "First one");
+        await Client.PostAsJsonAsync("/api/v1/organizations", request);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/organizations", request);
+
+        await AssertValidationProblemAsync(response, "Name");
     }
 
     [Fact]
@@ -150,6 +161,18 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/organizations/{nonExistingId}", request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Update_DescriptionOverMaxLength_Returns422()
+    {
+        Guid orgId = await SeedOrganizationAsync();
+        string longDescription = new string('A', 1001);
+        var request = new UpdateOrganizationRequest("Valid Name", longDescription);
+
+        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/organizations/{orgId}", request);
+
+        await AssertValidationProblemAsync(response, "NewDescription");
     }
 
     [Fact]

@@ -50,7 +50,51 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/tasks", request);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        await AssertValidationProblemAsync(response, "Title");
+    }
+
+    [Fact]
+    public async Task Create_TitleTooLong_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        var request = new CreateTaskRequest(boardId, new string('A', 201), null, Priority.Medium, null, null, userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/tasks", request);
+
+        await AssertValidationProblemAsync(response, "Title");
+    }
+
+    [Fact]
+    public async Task Create_InvalidPriority_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        var request = new CreateTaskRequest(boardId, "Valid title", null, (Priority)9999, null, null, userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/tasks", request);
+
+        await AssertValidationProblemAsync(response, "Priority");
+    }
+
+    [Fact]
+    public async Task Create_NonexistentAssignee_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        var request = new CreateTaskRequest(boardId, "Valid title", null, Priority.Medium, Guid.CreateVersion7(), null, userId);
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/tasks", request);
+
+        await AssertValidationProblemAsync(response, "AssigneeId");
+    }
+
+    [Fact]
+    public async Task Create_NonexistentRequestedByUser_Returns422()
+    {
+        (_, Guid boardId) = await SeedBoardAsync();
+        var request = new CreateTaskRequest(boardId, "Valid title", null, Priority.Medium, null, null, Guid.CreateVersion7());
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/tasks", request);
+
+        await AssertValidationProblemAsync(response, "RequestedByUserId");
     }
 
     [Fact]
@@ -152,6 +196,30 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     }
 
     [Fact]
+    public async Task Update_TitleTooLong_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        var request = new UpdateTaskRequest(new string('A', 201), null, Priority.Medium, null, userId);
+
+        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}", request);
+
+        await AssertValidationProblemAsync(response, "Title");
+    }
+
+    [Fact]
+    public async Task Update_InvalidPriority_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        var request = new UpdateTaskRequest("Valid title", null, (Priority)9999, null, userId);
+
+        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}", request);
+
+        await AssertValidationProblemAsync(response, "Priority");
+    }
+
+    [Fact]
     public async Task Delete_ExistingTask_Returns204AndSoftDeletesTask()
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
@@ -225,6 +293,18 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     }
 
     [Fact]
+    public async Task AddComment_ContentTooLong_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        var request = new AddCommentRequest(userId, new string('A', 10_001));
+
+        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/comments/", request);
+
+        await AssertValidationProblemAsync(response, "Content");
+    }
+
+    [Fact]
     public async Task EditComment_ValidRequest_Returns204AndPersistsChanges()
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
@@ -274,6 +354,36 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}/comments/{commentId}", request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task EditComment_ContentTooLong_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        Guid commentId = await SeedCommentAsync(taskId, userId, "Initial comment");
+        var request = new EditCommentRequest(new string('A', 10_001), userId);
+
+        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}/comments/{commentId}", request);
+
+        await AssertValidationProblemAsync(response, "NewContent");
+    }
+
+    [Fact]
+    public async Task EditComment_NonAuthorEditsSomeonesComment_Returns422()
+    {
+        // The combined task/comment/author MustAsync rule has no OverridePropertyName, so
+        // FluentValidation keys it under the empty string "" - the same rule the
+        // NonExistingTask/NonexistentComment tests above already trip, just via a different input.
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        Guid commentId = await SeedCommentAsync(taskId, userId, "Initial comment");
+        (_, Guid nonAuthorUserId) = await SeedOrganizationWithUserAsync("Bob", "bob@example.com");
+        var request = new EditCommentRequest("Edited by someone else", nonAuthorUserId);
+
+        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}/comments/{commentId}", request);
+
+        await AssertValidationProblemAsync(response, string.Empty);
     }
 
     [Fact]
@@ -355,6 +465,100 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/attachments", content);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    // AddAttachmentValidator.FileName.NotEmpty() is unreachable via a real HTTP request, the same
+    // way FileStream.NotNull() is: ASP.NET Core's IFormFile model binder itself rejects a
+    // multipart file part with an empty filename with 400 Bad Request before the request ever
+    // reaches the validator (confirmed empirically - manually constructing a Content-Disposition
+    // header with an empty filename still gets a 400, not a 422). No integration test possible
+    // for this specific rule without bypassing normal HTTP semantics.
+
+    [Fact]
+    public async Task AddAttachment_FileNameTooLong_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+
+        using var content = new MultipartFormDataContent();
+        using var fileContent = new ByteArrayContent([1, 2, 3]);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+        content.Add(fileContent, "file", new string('a', 256) + ".txt");
+        content.Add(new StringContent(userId.ToString()), "uploadedByUserId");
+
+        HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
+
+        await AssertValidationProblemAsync(response, "FileName");
+    }
+
+    [Fact]
+    public async Task AddAttachment_EmptyContentType_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+
+        using var content = new MultipartFormDataContent();
+        using var fileContent = new ByteArrayContent([1, 2, 3]);
+        // Deliberately not setting fileContent.Headers.ContentType - IFormFile.ContentType comes
+        // through as "" when the file part has no Content-Type header, which is what this test
+        // needs to trigger AddAttachmentValidator's ContentType.NotEmpty() rule.
+        content.Add(fileContent, "file", "notes.txt");
+        content.Add(new StringContent(userId.ToString()), "uploadedByUserId");
+
+        HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
+
+        await AssertValidationProblemAsync(response, "ContentType");
+    }
+
+    [Fact]
+    public async Task AddAttachment_ContentTypeTooLong_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+
+        using var content = new MultipartFormDataContent();
+        using var fileContent = new ByteArrayContent([1, 2, 3]);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/" + new string('a', 100));
+        content.Add(fileContent, "file", "notes.txt");
+        content.Add(new StringContent(userId.ToString()), "uploadedByUserId");
+
+        HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
+
+        await AssertValidationProblemAsync(response, "ContentType");
+    }
+
+    [Fact]
+    public async Task AddAttachment_ZeroByteFile_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+
+        using var content = new MultipartFormDataContent();
+        using var fileContent = new ByteArrayContent([]);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+        content.Add(fileContent, "file", "empty.txt");
+        content.Add(new StringContent(userId.ToString()), "uploadedByUserId");
+
+        HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
+
+        await AssertValidationProblemAsync(response, "SizeInBytes");
+    }
+
+    [Fact]
+    public async Task AddAttachment_NonexistentUploadedByUser_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+
+        using var content = new MultipartFormDataContent();
+        using var fileContent = new ByteArrayContent([1, 2, 3]);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+        content.Add(fileContent, "file", "notes.txt");
+        content.Add(new StringContent(Guid.CreateVersion7().ToString()), "uploadedByUserId");
+
+        HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
+
+        await AssertValidationProblemAsync(response, "UploadedByUserId");
     }
 
     [Fact]
