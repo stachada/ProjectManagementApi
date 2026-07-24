@@ -115,6 +115,42 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     }
 
     [Fact]
+    public async Task GetById_ExistingTask_LinksIncludeSelfAssignDeleteAndValidTransitions()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId, "Investigate outage");
+
+        HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks/{taskId}");
+
+        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>();
+        Assert.NotNull(task);
+        // A freshly-created task starts in Backlog, which allows ToDo and Cancelled.
+        Assert.Equal(ProjectTaskStatus.Backlog, task!.Status);
+        Assert.Contains(task.Links, l => l.Rel == "self" && l.Href == $"/api/v1/tasks/{taskId}" && l.Method == "GET");
+        Assert.Contains(task.Links, l => l.Rel == "assign" && l.Href == $"/api/v1/tasks/{taskId}/assign" && l.Method == "POST");
+        Assert.Contains(task.Links, l => l.Rel == "delete" && l.Href == $"/api/v1/tasks/{taskId}" && l.Method == "DELETE");
+        Assert.Contains(task.Links, l => l.Rel == "move" && l.Href == $"/api/v1/tasks/{taskId}/move" && l.Method == "POST");
+        Assert.Contains(task.Links, l => l.Rel == "move:todo" && l.Href == $"/api/v1/tasks/{taskId}/move" && l.Method == "POST");
+        Assert.Contains(task.Links, l => l.Rel == "move:cancelled" && l.Href == $"/api/v1/tasks/{taskId}/move" && l.Method == "POST");
+    }
+
+    [Fact]
+    public async Task GetById_CancelledTask_LinksExcludeMove()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId, "Abandoned task");
+        await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/move", new MoveTaskRequest(ProjectTaskStatus.Cancelled, userId));
+
+        HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks/{taskId}");
+
+        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>();
+        Assert.NotNull(task);
+        Assert.Equal(ProjectTaskStatus.Cancelled, task!.Status);
+        Assert.DoesNotContain(task.Links, l => l.Rel == "move" || l.Rel.StartsWith("move:", StringComparison.Ordinal));
+        Assert.Contains(task.Links, l => l.Rel == "self");
+    }
+
+    [Fact]
     public async Task GetById_NonexistentTask_Returns404()
     {
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks/{Guid.CreateVersion7()}");

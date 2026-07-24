@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using Ordinis.Application.Common;
 
 namespace Ordinis.Application.Projects.Dtos;
 
@@ -102,4 +104,11 @@ public sealed record ProjectDto
     /// Call <c>GET /api/v1/projects/{id}/members</c> for the full list.
     /// </summary>
     public bool MembersAreTruncated => Members.Count < MemberCount;
+
+    /// <summary>
+    /// HATEOAS links describing available actions on this project: <c>self</c>, <c>tasks</c>,
+    /// <c>boards</c>, <c>members</c>, and <c>delete</c>.
+    /// </summary>
+    [JsonPropertyName("_links")]
+    public required IReadOnlyList<HateoasLink> Links { get; init; }
 }

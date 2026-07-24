@@ -65,6 +65,7 @@ public static class TaskMapper
                 .ThenByStableId()
                 .Select(a => a.ToAttachmentDto())
                 .ToList(),
+            Links = BuildLinks(task.Id, task.Status),
         };
 
     /// <summary>
@@ -98,6 +99,39 @@ public static class TaskMapper
         };
 
     #region Private helpers - not part of the public mapping surface
+
+    /// <summary>
+    /// Builds the <c>_links</c> set for a <see cref="TaskDto"/>: <c>self</c>, <c>assign</c>,
+    /// and <c>delete</c> are always present. <c>move</c> plus one <c>move:{status}</c> link per
+    /// legally reachable status are included only when <paramref name="status"/> has outbound
+    /// transitions (empty for <see cref="ProjectTaskStatus.Cancelled"/>) - no point advertising
+    /// an action that would fail validation.
+    /// </summary>
+    private static IReadOnlyList<HateoasLink> BuildLinks(Guid taskId, ProjectTaskStatus status)
+    {
+        var basePath = $"/api/v1/tasks/{taskId}";
+
+        var links = new List<HateoasLink>
+        {
+            new("self", basePath, "GET"),
+            new("assign", $"{basePath}/assign", "POST"),
+            new("delete", basePath, "DELETE"),
+        };
+
+        IReadOnlySet<ProjectTaskStatus> allowedTransitions = status.GetAllowedTransitions();
+        if (allowedTransitions.Count > 0)
+        {
+            links.Add(new HateoasLink("move", $"{basePath}/move", "POST"));
+
+            foreach (ProjectTaskStatus target in allowedTransitions)
+            {
+                links.Add(new HateoasLink($"move:{target.ToString().ToLowerInvariant()}", $"{basePath}/move", "POST"));
+            }
+        }
+
+        return links;
+    }
+
     private static CommentDto ToCommentDto(this Comment comment, IReadOnlyDictionary<Guid, string> userLookup)
         => new()
         {

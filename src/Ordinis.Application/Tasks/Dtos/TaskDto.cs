@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+using Ordinis.Application.Common;
 using Ordinis.Domain.Tasks;
 
 namespace Ordinis.Application.Tasks.Dtos;
@@ -87,4 +89,13 @@ public class TaskDto
     /// All attachments on this task, ordered by upload time ascending.
     /// </summary>
     public IReadOnlyList<AttachmentDto> Attachments { get; init; } = [];
+
+    /// <summary>
+    /// HATEOAS links describing available actions on this task: <c>self</c>, <c>assign</c>,
+    /// <c>delete</c>, and — when the task has legal outbound transitions — <c>move</c> plus one
+    /// <c>move:{status}</c> link per status reachable from <see cref="Status"/>
+    /// (see <see cref="Ordinis.Domain.Tasks.ProjectTaskStatusExtensions.GetAllowedTransitions"/>).
+    /// </summary>
+    [JsonPropertyName("_links")]
+    public IReadOnlyList<HateoasLink> Links { get; init; } = [];
 }

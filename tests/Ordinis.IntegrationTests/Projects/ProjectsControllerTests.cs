@@ -231,6 +231,24 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     }
 
     [Fact]
+    public async Task GetById_ExistingProject_LinksIncludeSelfTasksBoardsMembersAndDelete()
+    {
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+
+        HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/projects/{projectId}");
+
+        ProjectDto? fetchedDto = await getResponse.Content.ReadFromJsonAsync<ProjectDto>();
+        Assert.NotNull(fetchedDto);
+        Assert.Contains(fetchedDto!.Links, l => l.Rel == "self" && l.Href == $"/api/v1/projects/{projectId}" && l.Method == "GET");
+        Assert.Contains(fetchedDto.Links, l => l.Rel == "tasks" && l.Href == $"/api/v1/projects/{projectId}/tasks" && l.Method == "GET");
+        Assert.Contains(fetchedDto.Links, l => l.Rel == "boards" && l.Href == $"/api/v1/projects/{projectId}/boards" && l.Method == "GET");
+        Assert.Contains(fetchedDto.Links, l => l.Rel == "members" && l.Href == $"/api/v1/projects/{projectId}/members" && l.Method == "GET");
+        Assert.Contains(fetchedDto.Links, l => l.Rel == "delete" && l.Href == $"/api/v1/projects/{projectId}" && l.Method == "DELETE");
+    }
+
+    [Fact]
     public async Task GetById_NonExistingProject_Returns404()
     {
         Guid nonExistingProjectId = Guid.CreateVersion7();
