@@ -2,8 +2,11 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Ordinis.Domain.Organizations;
+using Ordinis.Domain.Projects;
+using Ordinis.Domain.Tasks;
 using Ordinis.Domain.Users;
 using Ordinis.Infrastructure.Persistence;
 
@@ -69,6 +72,59 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 
         return (org.Id, user.Id);
     });
+
+    /// <summary>
+    /// Reads a <see cref="ProjectTask"/>'s current <c>RowVersion</c> straight from the database -
+    /// the token every guarded Tasks endpoint now requires as <c>If-Match</c>. Seed helpers in the
+    /// test files return only the new entity's <see cref="Guid"/>, not the entity itself, so this
+    /// (and its Project/Board counterparts below) is the simplest way to get a fresh, correct
+    /// token for a request without an extra GET-and-parse-ETag round trip.
+    /// </summary>
+    protected Task<byte[]?> GetTaskRowVersionAsync(Guid taskId) => SeedAsync(
+        db => db.Tasks.Where(t => t.Id == taskId).Select(t => t.RowVersion).SingleAsync());
+
+    /// <summary>Reads a <see cref="Project"/>'s current <c>RowVersion</c> - see <see cref="GetTaskRowVersionAsync"/>.</summary>
+    protected Task<byte[]?> GetProjectRowVersionAsync(Guid projectId) => SeedAsync(
+        db => db.Projects.Where(p => p.Id == projectId).Select(p => p.RowVersion).SingleAsync());
+
+    /// <summary>Reads a <see cref="Board"/>'s current <c>RowVersion</c> - see <see cref="GetTaskRowVersionAsync"/>.</summary>
+    protected Task<byte[]?> GetBoardRowVersionAsync(Guid boardId) => SeedAsync(
+        db => db.Boards.Where(b => b.Id == boardId).Select(b => b.RowVersion).SingleAsync());
+
+    /// <summary>
+    /// A stand-in <c>If-Match</c> token for tests that only need a non-null value to get past the
+    /// <c>IfMatch.NotNull()</c> validation rule (e.g. a nonexistent-entity 404 test, where the
+    /// actual RowVersion comparison in <c>ConcurrencyGuard.EnsureMatch</c> never runs because the
+    /// handler's own existence check throws <c>NotFoundException</c> first) or a deliberately
+    /// wrong/stale token to provoke a genuine <c>409</c> from <c>ConcurrencyGuard</c>.
+    /// </summary>
+    protected static readonly byte[] PlaceholderIfMatch = [0, 0, 0, 0, 0, 0, 0, 1];
+
+    /// <summary>
+    /// Sends an HTTP request with an optional JSON body and an optional <c>If-Match</c> header,
+    /// since <see cref="HttpClient"/>'s <c>PutAsJsonAsync</c>/<c>PostAsJsonAsync</c>/<c>DeleteAsync</c>
+    /// convenience methods don't support attaching custom headers. The header is Base64-encoded
+    /// and quoted to match what <see cref="ConcurrencyTokenMiddleware"/> expects and what
+    /// <c>TaskMapper</c>/<c>ProjectMapper</c>/<c>BoardMapper</c>'s <c>ConcurrencyToken</c>
+    /// produces. A <see langword="null"/> <paramref name="ifMatch"/> simply omits the header -
+    /// useful for the "missing If-Match" 422 test cases.
+    /// </summary>
+    protected async Task<HttpResponseMessage> SendAsync(HttpMethod method, string requestUri, byte[]? ifMatch, object? body = null)
+    {
+        using var request = new HttpRequestMessage(method, requestUri);
+
+        if (body is not null)
+        {
+            request.Content = JsonContent.Create(body);
+        }
+
+        if (ifMatch is not null)
+        {
+            request.Headers.TryAddWithoutValidation("If-Match", $"\"{Convert.ToBase64String(ifMatch)}\"");
+        }
+
+        return await Client.SendAsync(request);
+    }
 
     /// <summary>
     /// Deterministically triggers an optimistic-concurrency conflict: fires

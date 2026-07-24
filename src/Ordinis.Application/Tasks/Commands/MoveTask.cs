@@ -18,10 +18,15 @@ namespace Ordinis.Application.Tasks.Commands;
 /// <param name="TaskId">ID of the task to transition.</param>
 /// <param name="NewStatus">Target status.</param>
 /// <param name="RequestedByUserId">ID of the user issuing this command.</param>
+/// <param name="IfMatch">
+/// The task's expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// Compared against the task's current <c>RowVersion</c> before the transition is applied.
+/// </param>
 public sealed record MoveTask(
     Guid TaskId,
     ProjectTaskStatus NewStatus,
-    Guid RequestedByUserId) : ICommand;
+    Guid RequestedByUserId,
+    byte[]? IfMatch) : ICommand;
 
 // Handler
 /// <summary>
@@ -43,6 +48,8 @@ internal sealed class MoveTaskHandler(
         ProjectTask task = await db.Tasks
             .FirstOrDefaultAsync(t => t.Id == command.TaskId, cancellationToken)
                 ?? throw new NotFoundException(nameof(ProjectTask), command.TaskId);
+
+        ConcurrencyGuard.EnsureMatch(task.RowVersion, command.IfMatch, "Task", command.TaskId);
 
         task.Move(command.NewStatus, command.RequestedByUserId, timeProvider.GetUtcNow());
 
@@ -83,5 +90,9 @@ internal sealed class MoveTaskValidator : AbstractValidator<MoveTask>
 
         RuleFor(x => x.RequestedByUserId)
             .NotEmpty();
+
+        RuleFor(x => x.IfMatch)
+            .NotNull()
+            .WithMessage("If-Match header is required.");
     }
 }

@@ -15,7 +15,7 @@ namespace Ordinis.UnitTests.Application.Projects.Validators;
 public sealed class AddProjectMemberValidatorTests
 {
     private static AddProjectMember ValidCommand(Guid projectId, Guid userId, Role role = Role.Member)
-        => new(projectId, userId, role);
+        => new(projectId, userId, role, [1, 2, 3, 4]);
 
     [Fact]
     public async Task TestValidateAsync_ValidCommand_HasNoValidationErrors()
@@ -191,5 +191,23 @@ public sealed class AddProjectMemberValidatorTests
         TestValidationResult<AddProjectMember> result = await validator.TestValidateAsync(ValidCommand(project.Id, user.Id));
 
         result.ShouldNotHaveValidationErrorFor(x => x.UserId);
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_NullIfMatch_HasValidationErrorForIfMatch()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Project project = ProjectBuilder.Create();
+        User user = UserBuilder.Create();
+        db.Projects.Add(project);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        var validator = new AddProjectMemberValidator(db);
+        AddProjectMember command = ValidCommand(project.Id, user.Id) with { IfMatch = null };
+
+        TestValidationResult<AddProjectMember> result = await validator.TestValidateAsync(command);
+
+        result.ShouldHaveValidationErrorFor(x => x.IfMatch)
+            .WithErrorMessage("If-Match header is required.");
     }
 }

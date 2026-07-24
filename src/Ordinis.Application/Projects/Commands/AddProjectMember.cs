@@ -13,10 +13,14 @@ namespace Ordinis.Application.Projects.Commands;
 /// <param name="ProjectId">The project to add the member to.</param>
 /// <param name="UserId">The user to add. Must exist and not already be a member.</param>
 /// <param name="Role">The role to assign within the project.</param>
+/// <param name="IfMatch">
+/// The project's expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// </param>
 public sealed record AddProjectMember(
     Guid ProjectId,
     Guid UserId,
-    Role Role) : ICommand;
+    Role Role,
+    byte[]? IfMatch) : ICommand;
 
 // Handler
 /// <summary>
@@ -37,6 +41,8 @@ public sealed class AddProjectMemberHandler(
             .Include(p => p.Members)
             .SingleOrDefaultAsync(p => p.Id == command.ProjectId, cancellationToken)
                 ?? throw new NotFoundException(nameof(Project), command.ProjectId);
+
+        ConcurrencyGuard.EnsureMatch(project.RowVersion, command.IfMatch, nameof(Project), command.ProjectId);
 
         DateTimeOffset now = timeProvider.GetUtcNow();
         project.AddMember(command.UserId, command.Role, now);
@@ -82,5 +88,9 @@ public sealed class AddProjectMemberValidator : AbstractValidator<AddProjectMemb
                     .AnyAsync(m => m.ProjectId == command.ProjectId && m.UserId == command.UserId, ct))
             .WithMessage("User is already a member of the project.")
             .OverridePropertyName(nameof(AddProjectMember.UserId));
+
+        RuleFor(x => x.IfMatch)
+            .NotNull()
+            .WithMessage("If-Match header is required.");
     }
 }

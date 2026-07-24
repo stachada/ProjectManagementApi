@@ -16,7 +16,8 @@ public sealed class UpdateTaskValidatorTests
             Description: "Description",
             Priority: Priority.Medium,
             DueDate: null,
-            RequestedByUserId: Guid.CreateVersion7());
+            RequestedByUserId: Guid.CreateVersion7(),
+            IfMatch: [1, 2, 3, 4]);
 
     [Fact]
     public async Task TestValidateAsync_ValidCommand_HasNoValidationErrors()
@@ -92,5 +93,17 @@ public sealed class UpdateTaskValidatorTests
         TestValidationResult<UpdateTask> result = await validator.TestValidateAsync(command);
 
         result.ShouldHaveValidationErrorFor(x => x.RequestedByUserId);
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_NullIfMatch_HasValidationErrorForIfMatch()
+    {
+        var validator = new UpdateTaskValidator();
+        UpdateTask command = ValidCommand(Guid.CreateVersion7()) with { IfMatch = null };
+
+        TestValidationResult<UpdateTask> result = await validator.TestValidateAsync(command);
+
+        result.ShouldHaveValidationErrorFor(x => x.IfMatch)
+            .WithErrorMessage("If-Match header is required.");
     }
 }

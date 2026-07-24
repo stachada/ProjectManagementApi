@@ -13,10 +13,14 @@ namespace Ordinis.Application.Projects.Commands;
 /// <param name="ProjectId">The project to update.</param>
 /// <param name="NewName">New display name. Must not be empty.</param>
 /// <param name="NewDescription">New description, or <c>null</c> to clear it.</param>
+/// <param name="IfMatch">
+/// The project's expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// </param>
 public sealed record UpdateProject(
     Guid ProjectId,
     string NewName,
-    string? NewDescription) : ICommand;
+    string? NewDescription,
+    byte[]? IfMatch) : ICommand;
 
 // Handler
 /// <summary>
@@ -33,6 +37,8 @@ public sealed class UpdateProjectHandler(IAppDbContext db) : ICommandHandler<Upd
         Project project = await db.Projects
             .SingleOrDefaultAsync(p => p.Id == command.ProjectId, cancellationToken)
                 ?? throw new NotFoundException(nameof(Project), command.ProjectId);
+
+        ConcurrencyGuard.EnsureMatch(project.RowVersion, command.IfMatch, nameof(Project), command.ProjectId);
 
         project.Rename(command.NewName);
         project.UpdateDescription(command.NewDescription);
@@ -68,5 +74,9 @@ public sealed class UpdateProjectValidator : AbstractValidator<UpdateProject>
         RuleFor(x => x.NewDescription)
             .MaximumLength(1000)
             .When(x => x.NewDescription is not null);
+
+        RuleFor(x => x.IfMatch)
+            .NotNull()
+            .WithMessage("If-Match header is required.");
     }
 }

@@ -14,7 +14,7 @@ namespace Ordinis.UnitTests.Application.Projects.Validators;
 public sealed class RenameBoardValidatorTests
 {
     private static RenameBoard ValidCommand(Guid boardId, string newName = "Renamed Board")
-        => new(boardId, newName);
+        => new(boardId, newName, [1, 2, 3, 4]);
 
     [Fact]
     public async Task TestValidateAsync_ValidCommand_HasNoValidationErrors()
@@ -182,5 +182,21 @@ public sealed class RenameBoardValidatorTests
         TestValidationResult<RenameBoard> result = await validator.TestValidateAsync(command);
 
         result.ShouldNotHaveValidationErrorFor(x => x.NewName);
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_NullIfMatch_HasValidationErrorForIfMatch()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Board board = BoardBuilder.Create();
+        db.Boards.Add(board);
+        await db.SaveChangesAsync();
+        var validator = new RenameBoardValidator(db);
+        RenameBoard command = ValidCommand(board.Id) with { IfMatch = null };
+
+        TestValidationResult<RenameBoard> result = await validator.TestValidateAsync(command);
+
+        result.ShouldHaveValidationErrorFor(x => x.IfMatch)
+            .WithErrorMessage("If-Match header is required.");
     }
 }

@@ -10,8 +10,8 @@ namespace Ordinis.UnitTests.Application.Projects.Validators;
 /// </summary>
 public sealed class UpdateProjectValidatorTests
 {
-    private static UpdateProject ValidCommand(Guid? projectId = null, string newName = "Updated Name", string? newDescription = null)
-        => new(projectId ?? ProjectBuilder.Create().Id, newName, newDescription);
+    private static UpdateProject ValidCommand(Guid? projectId = null, string newName = "Updated Name", string? newDescription = null, byte[]? ifMatch = null)
+        => new(projectId ?? ProjectBuilder.Create().Id, newName, newDescription, ifMatch ?? [1, 2, 3, 4]);
 
     [Fact]
     public void TestValidate_ValidCommand_HasNoValidationErrors()
@@ -108,5 +108,18 @@ public sealed class UpdateProjectValidatorTests
         TestValidationResult<UpdateProject> result = validator.TestValidate(command);
 
         result.ShouldNotHaveValidationErrorFor(x => x.NewDescription);
+    }
+
+    [Fact]
+    public void TestValidate_NullIfMatch_HasValidationErrorForIfMatch()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new UpdateProjectValidator(db);
+        UpdateProject command = ValidCommand() with { IfMatch = null };
+
+        TestValidationResult<UpdateProject> result = validator.TestValidate(command);
+
+        result.ShouldHaveValidationErrorFor(x => x.IfMatch)
+            .WithErrorMessage("If-Match header is required.");
     }
 }

@@ -18,7 +18,7 @@ public class ArchiveBoardHandlerTests
         db.Boards.Add(board);
         await db.SaveChangesAsync();
 
-        await new ArchiveBoardHandler(db).HandleAsync(new ArchiveBoard(board.Id));
+        await new ArchiveBoardHandler(db).HandleAsync(new ArchiveBoard(board.Id, board.RowVersion));
 
         Board reloaded = await db.Boards.SingleAsync(b => b.Id == board.Id);
         Assert.True(reloaded.IsArchived);
@@ -30,7 +30,7 @@ public class ArchiveBoardHandlerTests
         using TestAppDbContext db = TestDbContextFactory.Create();
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            new ArchiveBoardHandler(db).HandleAsync(new ArchiveBoard(Guid.CreateVersion7())));
+            new ArchiveBoardHandler(db).HandleAsync(new ArchiveBoard(Guid.CreateVersion7(), null)));
     }
 
     [Fact]
@@ -43,6 +43,6 @@ public class ArchiveBoardHandlerTests
         await db.SaveChangesAsync();
 
         await Assert.ThrowsAsync<DomainException>(() =>
-            new ArchiveBoardHandler(db).HandleAsync(new ArchiveBoard(board.Id)));
+            new ArchiveBoardHandler(db).HandleAsync(new ArchiveBoard(board.Id, board.RowVersion)));
     }
 }

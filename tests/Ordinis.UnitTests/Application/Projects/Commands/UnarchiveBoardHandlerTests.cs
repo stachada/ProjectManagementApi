@@ -19,7 +19,7 @@ public class UnarchiveBoardHandlerTests
         db.Boards.Add(board);
         await db.SaveChangesAsync();
 
-        await new UnarchiveBoardHandler(db).HandleAsync(new UnarchiveBoard(board.Id));
+        await new UnarchiveBoardHandler(db).HandleAsync(new UnarchiveBoard(board.Id, board.RowVersion));
 
         Board reloaded = await db.Boards.SingleAsync(b => b.Id == board.Id);
         Assert.False(reloaded.IsArchived);
@@ -31,7 +31,7 @@ public class UnarchiveBoardHandlerTests
         using TestAppDbContext db = TestDbContextFactory.Create();
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            new UnarchiveBoardHandler(db).HandleAsync(new UnarchiveBoard(Guid.CreateVersion7())));
+            new UnarchiveBoardHandler(db).HandleAsync(new UnarchiveBoard(Guid.CreateVersion7(), null)));
     }
 
     [Fact]
@@ -43,6 +43,6 @@ public class UnarchiveBoardHandlerTests
         await db.SaveChangesAsync();
 
         await Assert.ThrowsAsync<DomainException>(() =>
-            new UnarchiveBoardHandler(db).HandleAsync(new UnarchiveBoard(board.Id)));
+            new UnarchiveBoardHandler(db).HandleAsync(new UnarchiveBoard(board.Id, board.RowVersion)));
     }
 }

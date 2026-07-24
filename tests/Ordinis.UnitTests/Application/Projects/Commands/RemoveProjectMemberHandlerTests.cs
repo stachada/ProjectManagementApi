@@ -24,7 +24,7 @@ public class RemoveProjectMemberHandlerTests
         await db.SaveChangesAsync();
 
         await new RemoveProjectMemberHandler(db)
-            .HandleAsync(new RemoveProjectMember(project.Id, memberUserId));
+            .HandleAsync(new RemoveProjectMember(project.Id, memberUserId, project.RowVersion));
 
         bool stillMember = await db.ProjectMembers
             .AnyAsync(m => m.ProjectId == project.Id && m.UserId == memberUserId);
@@ -38,7 +38,7 @@ public class RemoveProjectMemberHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             new RemoveProjectMemberHandler(db)
-                .HandleAsync(new RemoveProjectMember(Guid.CreateVersion7(), Guid.CreateVersion7())));
+                .HandleAsync(new RemoveProjectMember(Guid.CreateVersion7(), Guid.CreateVersion7(), null)));
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public class RemoveProjectMemberHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(() =>
             new RemoveProjectMemberHandler(db)
-                .HandleAsync(new RemoveProjectMember(project.Id, Guid.CreateVersion7())));
+                .HandleAsync(new RemoveProjectMember(project.Id, Guid.CreateVersion7(), project.RowVersion)));
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public class RemoveProjectMemberHandlerTests
         // Creator is the only Admin — removing them must be blocked
         await Assert.ThrowsAsync<DomainException>(() =>
             new RemoveProjectMemberHandler(db)
-                .HandleAsync(new RemoveProjectMember(project.Id, createdByUserId)));
+                .HandleAsync(new RemoveProjectMember(project.Id, createdByUserId, project.RowVersion)));
     }
 
     [Fact]
@@ -82,6 +82,6 @@ public class RemoveProjectMemberHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(() =>
             new RemoveProjectMemberHandler(db)
-                .HandleAsync(new RemoveProjectMember(project.Id, memberUserId)));
+                .HandleAsync(new RemoveProjectMember(project.Id, memberUserId, project.RowVersion)));
     }
 }

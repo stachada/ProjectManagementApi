@@ -53,6 +53,14 @@ public sealed record BoardDto
     public required DateTimeOffset UpdatedAt { get; init; }
 
     /// <summary>
+    /// Base64-encoded <c>RowVersion</c> used for optimistic concurrency.
+    /// The API layer returns it as an <c>ETag</c> response header on
+    /// <c>GET /api/v1/boards/{id}</c>; mutating endpoints require it back via
+    /// the <c>If-Match</c> request header.
+    /// </summary>
+    public string ConcurrencyToken { get; init; } = string.Empty;
+
+    /// <summary>
     /// True when <see cref="Tasks"/> does not contain all tasks on this board.
     /// Derived from <c>Tasks.Count &lt; TaskCount</c> — no mapper input required.
     /// Call <c>GET /api/v1/boards/{id}/tasks</c> to retrieve the full paginated list.

@@ -28,7 +28,7 @@ public class DeleteTaskHandlerTests
         var handler = new DeleteTaskHandler(db, new FakeTimeProvider(Now));
 
         await handler.HandleAsync(
-            new DeleteTask(TaskId: task.Id, RequestedByUserId: requestedBy),
+            new DeleteTask(TaskId: task.Id, RequestedByUserId: requestedBy, IfMatch: task.RowVersion),
             CancellationToken.None);
 
         ProjectTask reloaded = await db.Tasks.SingleAsync(t => t.Id == task.Id);
@@ -49,7 +49,7 @@ public class DeleteTaskHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.HandleAsync(
-                new DeleteTask(TaskId: Guid.CreateVersion7(), RequestedByUserId: Guid.CreateVersion7()),
+                new DeleteTask(TaskId: Guid.CreateVersion7(), RequestedByUserId: Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 }

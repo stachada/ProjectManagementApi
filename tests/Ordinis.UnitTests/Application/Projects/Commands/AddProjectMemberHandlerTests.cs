@@ -23,7 +23,7 @@ public class AddProjectMemberHandlerTests
 
         var userId = Guid.CreateVersion7();
         await new AddProjectMemberHandler(db, new FakeTimeProvider(Now))
-            .HandleAsync(new AddProjectMember(project.Id, userId, Role.Member));
+            .HandleAsync(new AddProjectMember(project.Id, userId, Role.Member, project.RowVersion));
 
         ProjectMember member = await db.ProjectMembers.SingleAsync(m => m.ProjectId == project.Id && m.UserId == userId);
         Assert.Equal(Role.Member, member.Role);
@@ -37,7 +37,7 @@ public class AddProjectMemberHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             new AddProjectMemberHandler(db, new FakeTimeProvider(Now))
-                .HandleAsync(new AddProjectMember(Guid.CreateVersion7(), Guid.CreateVersion7(), Role.Member)));
+                .HandleAsync(new AddProjectMember(Guid.CreateVersion7(), Guid.CreateVersion7(), Role.Member, null)));
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public class AddProjectMemberHandlerTests
         // The creator is auto-added as Admin on project creation
         await Assert.ThrowsAsync<DomainException>(() =>
             new AddProjectMemberHandler(db, new FakeTimeProvider(Now))
-                .HandleAsync(new AddProjectMember(project.Id, createdByUserId, Role.Viewer)));
+                .HandleAsync(new AddProjectMember(project.Id, createdByUserId, Role.Viewer, project.RowVersion)));
     }
 
     [Fact]
@@ -66,6 +66,6 @@ public class AddProjectMemberHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(() =>
             new AddProjectMemberHandler(db, new FakeTimeProvider(Now))
-                .HandleAsync(new AddProjectMember(project.Id, Guid.CreateVersion7(), Role.Member)));
+                .HandleAsync(new AddProjectMember(project.Id, Guid.CreateVersion7(), Role.Member, project.RowVersion)));
     }
 }

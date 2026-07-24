@@ -11,7 +11,7 @@ namespace Ordinis.UnitTests.Application.Projects.Validators;
 public sealed class ChangeMemberRoleValidatorTests
 {
     private static ChangeMemberRole ValidCommand(Guid? projectId = null, Guid? userId = null, Role newRole = Role.Admin)
-        => new(projectId ?? Guid.CreateVersion7(), userId ?? Guid.CreateVersion7(), newRole);
+        => new(projectId ?? Guid.CreateVersion7(), userId ?? Guid.CreateVersion7(), newRole, [1, 2, 3, 4]);
 
     [Fact]
     public async Task TestValidateAsync_ValidCommand_HasNoValidationErrors()
@@ -65,5 +65,17 @@ public sealed class ChangeMemberRoleValidatorTests
         TestValidationResult<ChangeMemberRole> result = await validator.TestValidateAsync(ValidCommand(newRole: role));
 
         result.ShouldNotHaveValidationErrorFor(x => x.NewRole);
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_NullIfMatch_HasValidationErrorForIfMatch()
+    {
+        var validator = new ChangeMemberRoleValidator();
+        ChangeMemberRole command = ValidCommand() with { IfMatch = null };
+
+        TestValidationResult<ChangeMemberRole> result = await validator.TestValidateAsync(command);
+
+        result.ShouldHaveValidationErrorFor(x => x.IfMatch)
+            .WithErrorMessage("If-Match header is required.");
     }
 }

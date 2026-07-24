@@ -45,7 +45,8 @@ public class UpdateTaskHandlerTests
                 Description: "Updated description",
                 Priority: Priority.High,
                 DueDate: Now.AddDays(3),
-                RequestedByUserId: Guid.CreateVersion7()),
+                RequestedByUserId: Guid.CreateVersion7(),
+                IfMatch: existing.RowVersion),
             CancellationToken.None);
 
         ProjectTask reloaded = await db.Tasks.SingleAsync(t => t.Id == existing.Id);
@@ -69,7 +70,7 @@ public class UpdateTaskHandlerTests
         var requestedBy = Guid.CreateVersion7();
 
         await handler.HandleAsync(
-            new UpdateTask(task.Id, "Updated Title", null, Priority.Medium, Now.AddDays(7), requestedBy),
+            new UpdateTask(task.Id, "Updated Title", null, Priority.Medium, Now.AddDays(7), requestedBy, task.RowVersion),
             CancellationToken.None);
 
         ProjectTask reloaded = await db.Tasks.SingleAsync(t => t.Id == task.Id);
@@ -93,7 +94,7 @@ public class UpdateTaskHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.HandleAsync(
-                new UpdateTask(Guid.CreateVersion7(), "Title", null, Priority.Medium, null, Guid.CreateVersion7()),
+                new UpdateTask(Guid.CreateVersion7(), "Title", null, Priority.Medium, null, Guid.CreateVersion7(), null),
                 CancellationToken.None));
     }
 
@@ -115,7 +116,7 @@ public class UpdateTaskHandlerTests
 
         await Assert.ThrowsAsync<ConcurrencyException>(() =>
             handler.HandleAsync(
-                new UpdateTask(task.Id, "Lost the race", null, Priority.Medium, null, Guid.CreateVersion7()),
+                new UpdateTask(task.Id, "Lost the race", null, Priority.Medium, null, Guid.CreateVersion7(), null),
                 CancellationToken.None));
     }
 }

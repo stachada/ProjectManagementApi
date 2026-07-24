@@ -24,7 +24,7 @@ public class ChangeMemberRoleHandlerTests
         await db.SaveChangesAsync();
 
         await new ChangeMemberRoleHandler(db)
-            .HandleAsync(new ChangeMemberRole(project.Id, memberUserId, Role.Viewer));
+            .HandleAsync(new ChangeMemberRole(project.Id, memberUserId, Role.Viewer, project.RowVersion));
 
         ProjectMember member = await db.ProjectMembers
             .SingleAsync(m => m.ProjectId == project.Id && m.UserId == memberUserId);
@@ -38,7 +38,7 @@ public class ChangeMemberRoleHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             new ChangeMemberRoleHandler(db)
-                .HandleAsync(new ChangeMemberRole(Guid.CreateVersion7(), Guid.CreateVersion7(), Role.Member)));
+                .HandleAsync(new ChangeMemberRole(Guid.CreateVersion7(), Guid.CreateVersion7(), Role.Member, null)));
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public class ChangeMemberRoleHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(() =>
             new ChangeMemberRoleHandler(db)
-                .HandleAsync(new ChangeMemberRole(project.Id, Guid.CreateVersion7(), Role.Member)));
+                .HandleAsync(new ChangeMemberRole(project.Id, Guid.CreateVersion7(), Role.Member, project.RowVersion)));
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public class ChangeMemberRoleHandlerTests
         // Creator is the only Admin — demoting them must be blocked
         await Assert.ThrowsAsync<DomainException>(() =>
             new ChangeMemberRoleHandler(db)
-                .HandleAsync(new ChangeMemberRole(project.Id, createdByUserId, Role.Member)));
+                .HandleAsync(new ChangeMemberRole(project.Id, createdByUserId, Role.Member, project.RowVersion)));
     }
 
     [Fact]
@@ -82,6 +82,6 @@ public class ChangeMemberRoleHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(() =>
             new ChangeMemberRoleHandler(db)
-                .HandleAsync(new ChangeMemberRole(project.Id, memberUserId, Role.Viewer)));
+                .HandleAsync(new ChangeMemberRole(project.Id, memberUserId, Role.Viewer, project.RowVersion)));
     }
 }
