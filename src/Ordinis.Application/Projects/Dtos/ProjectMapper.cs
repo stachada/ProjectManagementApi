@@ -98,8 +98,27 @@ public static class ProjectMapper
             Boards = boardDtos,
             Members = members,
             CreatedAt = project.CreatedAt,
-            UpdatedAt = project.UpdatedAt
+            UpdatedAt = project.UpdatedAt,
+            Links = BuildLinks(project.Id)
         };
+    }
+
+    /// <summary>
+    /// Builds the <c>_links</c> set for a <see cref="ProjectDto"/>: <c>self</c>, <c>tasks</c>,
+    /// <c>boards</c>, <c>members</c>, and <c>delete</c>.
+    /// </summary>
+    private static IReadOnlyList<HateoasLink> BuildLinks(Guid projectId)
+    {
+        var basePath = $"/api/v1/projects/{projectId}";
+
+        return
+        [
+            new HateoasLink("self", basePath, "GET"),
+            new HateoasLink("tasks", $"{basePath}/tasks", "GET"),
+            new HateoasLink("boards", $"{basePath}/boards", "GET"),
+            new HateoasLink("members", $"{basePath}/members", "GET"),
+            new HateoasLink("delete", basePath, "DELETE"),
+        ];
     }
 
     /// <summary>
