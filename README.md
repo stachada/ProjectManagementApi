@@ -61,7 +61,7 @@ tests/
 - Filtering, sorting, pagination, sparse fields, search
 - State transition endpoints (`POST /tasks/{id}/move`, `/assign`, `/close`, `/reopen`)
 - HATEOAS (`_links` on task and project responses)
-- Optimistic concurrency via ETags and `If-Match`
+- Optimistic concurrency via ETags and `If-Match` (see [docs/CONCURRENCY.md](docs/CONCURRENCY.md))
 - Idempotency keys on POST endpoints (`Idempotency-Key` header)
 - API versioning (`/api/v1`, `/api/v2`)
 - Problem Details error responses (RFC 9457)

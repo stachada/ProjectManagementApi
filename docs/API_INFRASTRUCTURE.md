@@ -5,7 +5,7 @@ runs. This doc explains what each piece is for and why it sits where it does in
 [Program.cs](../src/Ordinis.Api/Program.cs):
 
 ```
-correlation ID → request logging → global exception → status code pages → routing → auth (Phase 8) → endpoints
+correlation ID → request logging → global exception → concurrency token extraction → status code pages → routing → auth (Phase 8) → endpoints
 ```
 
 All of it lives in [src/Ordinis.Api/Common/](../src/Ordinis.Api/Common/).
@@ -89,6 +89,42 @@ thrown by anything downstream — routing, model binding, controller actions, an
 
 **What it can't catch:** only *thrown exceptions*. Two classes of error reach the client without
 ever throwing — see "Status code pages" and "ApiServiceExtensions" below for how those are covered.
+
+---
+
+## ConcurrencyTokenMiddleware
+
+Extracts the `If-Match` request header (if present), decodes it from Base64, and stashes
+the resulting `byte[]` on `HttpContext.Items` for controllers to read and forward into
+commands as the `IfMatch` concurrency token
+([ConcurrencyTokenMiddleware.cs](../src/Ordinis.Api/Common/ConcurrencyTokenMiddleware.cs)).
+See [CONCURRENCY.md](CONCURRENCY.md) for the full ETag/If-Match mechanism this middleware
+is one link in — GET response `ETag` headers, per-command `IfMatch` validation, and the
+`ConcurrencyGuard`/`ConcurrencyException` handling that turns a mismatch into `409
+Conflict`.
+
+What it does, in order:
+
+1. If an `If-Match` header is present, strip a leading `W/` (weak-validator prefix) and
+   surrounding quotes, leaving the raw Base64 payload the API's own DTOs produce
+   (`TaskDto.ConcurrencyToken` and friends).
+2. `Convert.FromBase64String(...)` it and store the `byte[]` under
+   `HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey]`.
+3. If the header is absent, or present but not valid Base64, leave the item unset and
+   continue the pipeline — this middleware never rejects a request itself.
+
+That last point is deliberate: this middleware is a dumb, endpoint-agnostic extractor. It
+has no notion of *which* endpoints require `If-Match` — that policy lives entirely in each
+guarded command's own FluentValidation `NotNull()` rule on `IfMatch`, run centrally by the
+`Dispatcher` exactly like every other per-command validation rule. A missing header and a
+malformed one both surface identically downstream as a `422` with an `IfMatch` field
+error, rather than this middleware needing a second, parallel "is this required" concept
+to keep in sync with each controller's routes.
+
+It's registered **after** `GlobalExceptionMiddleware` (no exception-worthy work happens
+here, but keeping the exception handler as far upstream as practical is the established
+convention in this pipeline) and **before** routing/endpoints, so the decoded token is
+already sitting on `HttpContext.Items` by the time any controller action runs.
 
 ---
 
