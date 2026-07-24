@@ -17,10 +17,14 @@ namespace Ordinis.Application.Tasks.Commands;
 /// <param name="TaskId">ID of the task to assign.</param>
 /// <param name="AssigneeId">ID of the user to assign the task to.</param>
 /// <param name="RequestedByUserId">ID of the user issuing this command.</param>
+/// <param name="IfMatch">
+/// The task's expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// </param>
 public sealed record AssignTask(
     Guid TaskId,
     Guid AssigneeId,
-    Guid RequestedByUserId) : ICommand;
+    Guid RequestedByUserId,
+    byte[]? IfMatch) : ICommand;
 
 // Handler
 /// <summary>
@@ -34,6 +38,8 @@ internal sealed class AssignTaskHandler(
         ProjectTask task = await db.Tasks
             .FirstOrDefaultAsync(t => t.Id == command.TaskId, cancellationToken)
                 ?? throw new NotFoundException(nameof(ProjectTask), command.TaskId);
+
+        ConcurrencyGuard.EnsureMatch(task.RowVersion, command.IfMatch, "Task", command.TaskId);
 
         task.Assign(command.AssigneeId, command.RequestedByUserId, timeProvider.GetUtcNow());
 
@@ -75,5 +81,9 @@ internal sealed class AssignTaskValidator : AbstractValidator<AssignTask>
 
         RuleFor(t => t.RequestedByUserId)
             .NotEmpty();
+
+        RuleFor(t => t.IfMatch)
+            .NotNull()
+            .WithMessage("If-Match header is required.");
     }
 }

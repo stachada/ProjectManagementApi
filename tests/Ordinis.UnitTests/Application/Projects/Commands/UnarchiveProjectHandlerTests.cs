@@ -19,7 +19,7 @@ public class UnarchiveProjectHandlerTests
         db.Projects.Add(project);
         await db.SaveChangesAsync();
 
-        await new UnarchiveProjectHandler(db).HandleAsync(new UnarchiveProject(project.Id));
+        await new UnarchiveProjectHandler(db).HandleAsync(new UnarchiveProject(project.Id, project.RowVersion));
 
         Project reloaded = await db.Projects.SingleAsync(p => p.Id == project.Id);
         Assert.False(reloaded.IsArchived);
@@ -31,7 +31,7 @@ public class UnarchiveProjectHandlerTests
         using TestAppDbContext db = TestDbContextFactory.Create();
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            new UnarchiveProjectHandler(db).HandleAsync(new UnarchiveProject(Guid.CreateVersion7())));
+            new UnarchiveProjectHandler(db).HandleAsync(new UnarchiveProject(Guid.CreateVersion7(), null)));
     }
 
     [Fact]
@@ -43,6 +43,6 @@ public class UnarchiveProjectHandlerTests
         await db.SaveChangesAsync();
 
         await Assert.ThrowsAsync<DomainException>(() =>
-            new UnarchiveProjectHandler(db).HandleAsync(new UnarchiveProject(project.Id)));
+            new UnarchiveProjectHandler(db).HandleAsync(new UnarchiveProject(project.Id, project.RowVersion)));
     }
 }

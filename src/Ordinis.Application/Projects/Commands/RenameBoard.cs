@@ -13,7 +13,10 @@ namespace Ordinis.Application.Projects.Commands;
 /// </summary>
 /// <param name="BoardId">The board to rename.</param>
 /// <param name="NewName">The new display name.</param>
-public sealed record RenameBoard(Guid BoardId, string NewName) : ICommand;
+/// <param name="IfMatch">
+/// The board's expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// </param>
+public sealed record RenameBoard(Guid BoardId, string NewName, byte[]? IfMatch) : ICommand;
 
 // Handler
 /// <summary>
@@ -31,6 +34,8 @@ public sealed class RenameBoardHandler(IAppDbContext db) : ICommandHandler<Renam
         Board board = await db.Boards
             .SingleOrDefaultAsync(b => b.Id == command.BoardId, cancellationToken)
                 ?? throw new NotFoundException(nameof(Board), command.BoardId);
+
+        ConcurrencyGuard.EnsureMatch(board.RowVersion, command.IfMatch, nameof(Board), command.BoardId);
 
         board.Rename(command.NewName);
 
@@ -84,5 +89,9 @@ public sealed class RenameBoardValidator : AbstractValidator<RenameBoard>
                         && b.Name.ToLower() == newName.Trim().ToLower(), ct);
             })
             .WithMessage("A board with this name already exists in the project.");
+
+        RuleFor(x => x.IfMatch)
+            .NotNull()
+            .WithMessage("If-Match header is required.");
     }
 }

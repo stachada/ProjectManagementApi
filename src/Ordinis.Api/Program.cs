@@ -28,10 +28,12 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-// Middleware order: correlation ID -> request logging -> global exception -> routing -> auth (Phase 8) -> endpoints.
+// Middleware order: correlation ID -> request logging -> global exception -> concurrency token
+// extraction -> routing -> auth (Phase 8) -> endpoints.
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseMiddleware<GlobalExceptionMiddleware>();
+app.UseMiddleware<ConcurrencyTokenMiddleware>();
 
 // Gives a Problem Details body to error status codes that reach the client without an
 // exception ever being thrown - an unmatched route (404) or a disallowed HTTP method (405) -

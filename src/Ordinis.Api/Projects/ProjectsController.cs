@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Ordinis.Api.Common;
 using Ordinis.Api.Common.DataShaping;
 using Ordinis.Api.Projects.Requests;
 using Ordinis.Application.Common;
@@ -89,6 +90,11 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     {
         ProjectDto dto = await _dispatcher.QueryAsync<GetProjectById, ProjectDto>(
             new GetProjectById(id), cancellationToken);
+
+        if (!string.IsNullOrEmpty(dto.ConcurrencyToken))
+        {
+            Response.Headers.ETag = $"\"{dto.ConcurrencyToken}\"";
+        }
 
         return Ok(dto);
     }
@@ -242,7 +248,8 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
         [FromBody] UpdateProjectRequest request,
         CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new UpdateProject(id, request.NewName, request.NewDescription), cancellationToken);
+        var command = new UpdateProject(id, request.NewName, request.NewDescription, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        await _dispatcher.SendAsync(command, cancellationToken);
         return NoContent();
     }
 
@@ -254,13 +261,16 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="204">The project was deleted.</response>
     /// <response code="404">No project exists with the given ID.</response>
     /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
+    /// <response code="422">The <c>If-Match</c> header is missing.</response>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new DeleteProject(id), cancellationToken);
+        var command = new DeleteProject(id, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        await _dispatcher.SendAsync(command, cancellationToken);
         return NoContent();
     }
 
@@ -272,13 +282,16 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="204">The project was archived.</response>
     /// <response code="404">No project exists with the given ID.</response>
     /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
+    /// <response code="422">The <c>If-Match</c> header is missing.</response>
     [HttpPost("{id:guid}/archive")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Archive(Guid id, CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new ArchiveProject(id), cancellationToken);
+        var command = new ArchiveProject(id, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        await _dispatcher.SendAsync(command, cancellationToken);
         return NoContent();
     }
 
@@ -290,13 +303,16 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="204">The project was unarchived.</response>
     /// <response code="404">No project exists with the given ID.</response>
     /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
+    /// <response code="422">The <c>If-Match</c> header is missing.</response>
     [HttpPost("{id:guid}/unarchive")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Unarchive(Guid id, CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new UnarchiveProject(id), cancellationToken);
+        var command = new UnarchiveProject(id, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        await _dispatcher.SendAsync(command, cancellationToken);
         return NoContent();
     }
 
@@ -318,7 +334,8 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
         [FromBody] AddProjectMemberRequest request,
         CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new AddProjectMember(id, request.UserId, request.Role), cancellationToken);
+        var command = new AddProjectMember(id, request.UserId, request.Role, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        await _dispatcher.SendAsync(command, cancellationToken);
 
         IReadOnlyList<ProjectMemberDto> members = await _dispatcher.QueryAsync<GetProjectMembers, IReadOnlyList<ProjectMemberDto>>(
             new GetProjectMembers(id), cancellationToken);
@@ -350,7 +367,8 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
         [FromBody] ChangeMemberRoleRequest request,
         CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new ChangeMemberRole(id, userId, request.NewRole), cancellationToken);
+        var command = new ChangeMemberRole(id, userId, request.NewRole, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        await _dispatcher.SendAsync(command, cancellationToken);
         return NoContent();
     }
 
@@ -371,7 +389,8 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> RemoveMember(Guid id, Guid userId, CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new RemoveProjectMember(id, userId), cancellationToken);
+        var command = new RemoveProjectMember(id, userId, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        await _dispatcher.SendAsync(command, cancellationToken);
         return NoContent();
     }
 }

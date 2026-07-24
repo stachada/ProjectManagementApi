@@ -1,3 +1,4 @@
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Ordinis.Application.Common;
 using Ordinis.Domain.Projects;
@@ -12,7 +13,10 @@ namespace Ordinis.Application.Projects.Commands;
 /// </summary>
 /// <param name="ProjectId">The project to remove the member from.</param>
 /// <param name="UserId">The user to remove.</param>
-public sealed record RemoveProjectMember(Guid ProjectId, Guid UserId) : ICommand;
+/// <param name="IfMatch">
+/// The project's expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// </param>
+public sealed record RemoveProjectMember(Guid ProjectId, Guid UserId, byte[]? IfMatch) : ICommand;
 
 // Handler
 /// <summary>
@@ -28,6 +32,8 @@ public sealed class RemoveProjectMemberHandler(IAppDbContext db) : ICommandHandl
             .SingleOrDefaultAsync(p => p.Id == command.ProjectId, cancellationToken)
                 ?? throw new NotFoundException(nameof(Project), command.ProjectId);
 
+        ConcurrencyGuard.EnsureMatch(project.RowVersion, command.IfMatch, nameof(Project), command.ProjectId);
+
         project.RemoveMember(command.UserId);
 
         try
@@ -38,5 +44,19 @@ public sealed class RemoveProjectMemberHandler(IAppDbContext db) : ICommandHandl
         {
             throw new ConcurrencyException(nameof(Project), command.ProjectId, ex);
         }
+    }
+}
+
+// Validator
+/// <summary>
+/// Validates <see cref="RemoveProjectMember"/> commands.
+/// </summary>
+public sealed class RemoveProjectMemberValidator : AbstractValidator<RemoveProjectMember>
+{
+    public RemoveProjectMemberValidator()
+    {
+        RuleFor(x => x.IfMatch)
+            .NotNull()
+            .WithMessage("If-Match header is required.");
     }
 }

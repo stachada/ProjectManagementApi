@@ -14,7 +14,10 @@ namespace Ordinis.Application.Projects.Commands;
 /// <param name="ProjectId">The project containing the member.</param>
 /// <param name="UserId">The user whose role should change.</param>
 /// <param name="NewRole">The new role to assign.</param>
-public sealed record ChangeMemberRole(Guid ProjectId, Guid UserId, Role NewRole) : ICommand;
+/// <param name="IfMatch">
+/// The project's expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// </param>
+public sealed record ChangeMemberRole(Guid ProjectId, Guid UserId, Role NewRole, byte[]? IfMatch) : ICommand;
 
 /// Handler
 /// <summary>
@@ -28,6 +31,8 @@ public sealed class ChangeMemberRoleHandler(IAppDbContext db) : ICommandHandler<
             .Include(p => p.Members)
             .SingleOrDefaultAsync(p => p.Id == command.ProjectId, cancellationToken)
                 ?? throw new NotFoundException(nameof(Project), command.ProjectId);
+
+        ConcurrencyGuard.EnsureMatch(project.RowVersion, command.IfMatch, nameof(Project), command.ProjectId);
 
         project.ChangeMemberRole(command.UserId, command.NewRole);
 
@@ -52,5 +57,6 @@ public sealed class ChangeMemberRoleValidator : AbstractValidator<ChangeMemberRo
         RuleFor(x => x.ProjectId).NotEmpty();
         RuleFor(x => x.UserId).NotEmpty();
         RuleFor(x => x.NewRole).IsInEnum().WithMessage("Invalid role value.");
+        RuleFor(x => x.IfMatch).NotNull().WithMessage("If-Match header is required.");
     }
 }

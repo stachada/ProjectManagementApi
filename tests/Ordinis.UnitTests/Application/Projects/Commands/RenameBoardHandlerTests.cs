@@ -19,7 +19,7 @@ public class RenameBoardHandlerTests
         await db.SaveChangesAsync();
 
         await new RenameBoardHandler(db)
-            .HandleAsync(new RenameBoard(board.Id, "  New Name  ")); // whitespace trimmed by Board.Rename
+            .HandleAsync(new RenameBoard(board.Id, "  New Name  ", board.RowVersion)); // whitespace trimmed by Board.Rename
 
         Board reloaded = await db.Boards.SingleAsync(b => b.Id == board.Id);
         Assert.Equal("New Name", reloaded.Name);
@@ -32,7 +32,7 @@ public class RenameBoardHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             new RenameBoardHandler(db)
-                .HandleAsync(new RenameBoard(Guid.CreateVersion7(), "New Name")));
+                .HandleAsync(new RenameBoard(Guid.CreateVersion7(), "New Name", null)));
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public class RenameBoardHandlerTests
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             new RenameBoardHandler(db)
-                .HandleAsync(new RenameBoard(board.Id, "")));
+                .HandleAsync(new RenameBoard(board.Id, "", board.RowVersion)));
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public class RenameBoardHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(() =>
             new RenameBoardHandler(db)
-                .HandleAsync(new RenameBoard(board.Id, "New Name")));
+                .HandleAsync(new RenameBoard(board.Id, "New Name", board.RowVersion)));
     }
 
     [Fact]
@@ -78,6 +78,6 @@ public class RenameBoardHandlerTests
 
         await Assert.ThrowsAsync<ConcurrencyException>(() =>
             new RenameBoardHandler(db)
-                .HandleAsync(new RenameBoard(board.Id, "Lost the race")));
+                .HandleAsync(new RenameBoard(board.Id, "Lost the race", null)));
     }
 }

@@ -1,3 +1,4 @@
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Ordinis.Application.Common;
 using Ordinis.Domain.Tasks;
@@ -10,16 +11,17 @@ namespace Ordinis.Application.Tasks.Commands;
 /// global EF Core query filter.
 /// </summary>
 /// <remarks>
-/// No validator is registered for this command - it carries only an ID and a
-/// user reference, both of which are non-empty GUIDs guaranteed by the route
-/// binding and authentication middleware before this command is constructed.
 /// Task existence is checked in the handler; a missing task returns 404.
 /// </remarks>
 /// <param name="TaskId">ID of the task to soft-delete.</param>
 /// <param name="RequestedByUserId">ID of the user issuing this command.</param>
+/// <param name="IfMatch">
+/// The task's expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// </param>
 public sealed record DeleteTask(
     Guid TaskId,
-    Guid RequestedByUserId
+    Guid RequestedByUserId,
+    byte[]? IfMatch
 ) : ICommand;
 
 // Handler
@@ -53,6 +55,8 @@ internal sealed class DeleteTaskHandler(
             .FirstOrDefaultAsync(t => t.Id == command.TaskId, cancellationToken)
                 ?? throw new NotFoundException(nameof(ProjectTask), command.TaskId);
 
+        ConcurrencyGuard.EnsureMatch(task.RowVersion, command.IfMatch, "Task", command.TaskId);
+
         DateTimeOffset now = timeProvider.GetUtcNow();
 
         task.Delete(command.RequestedByUserId, now);
@@ -65,5 +69,24 @@ internal sealed class DeleteTaskHandler(
         {
             throw new ConcurrencyException(nameof(ProjectTask), command.TaskId, ex);
         }
+    }
+}
+
+// Validator
+/// <summary>
+/// Validates <see cref="DeleteTask"/> commands.
+/// </summary>
+/// <remarks>
+/// Only the <see cref="DeleteTask.IfMatch"/> concurrency token is validated here - the IDs
+/// are guaranteed non-empty by route binding and authentication middleware, matching this
+/// command's original no-validator design.
+/// </remarks>
+internal sealed class DeleteTaskValidator : AbstractValidator<DeleteTask>
+{
+    public DeleteTaskValidator()
+    {
+        RuleFor(t => t.IfMatch)
+            .NotNull()
+            .WithMessage("If-Match header is required.");
     }
 }

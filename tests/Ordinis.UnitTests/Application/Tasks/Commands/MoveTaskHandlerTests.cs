@@ -30,7 +30,7 @@ public class MoveTaskHandlerTests
         var handler = new MoveTaskHandler(db, new FakeTimeProvider(Now));
 
         await handler.HandleAsync(
-            new MoveTask(TaskId: task.Id, NewStatus: ProjectTaskStatus.ToDo, RequestedByUserId: requestedBy),
+            new MoveTask(TaskId: task.Id, NewStatus: ProjectTaskStatus.ToDo, RequestedByUserId: requestedBy, IfMatch: task.RowVersion),
             CancellationToken.None);
 
         ProjectTask reloaded = await db.Tasks.SingleAsync(t => t.Id == task.Id);
@@ -52,7 +52,7 @@ public class MoveTaskHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.HandleAsync(
-                new MoveTask(TaskId: Guid.CreateVersion7(), NewStatus: ProjectTaskStatus.InProgress, RequestedByUserId: Guid.CreateVersion7()),
+                new MoveTask(TaskId: Guid.CreateVersion7(), NewStatus: ProjectTaskStatus.InProgress, RequestedByUserId: Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 
@@ -70,7 +70,7 @@ public class MoveTaskHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(() =>
             handler.HandleAsync(
-                new MoveTask(TaskId: task.Id, NewStatus: ProjectTaskStatus.Done, RequestedByUserId: requestedBy),
+                new MoveTask(TaskId: task.Id, NewStatus: ProjectTaskStatus.Done, RequestedByUserId: requestedBy, IfMatch: task.RowVersion),
                 CancellationToken.None));
     }
 
@@ -90,7 +90,7 @@ public class MoveTaskHandlerTests
 
         await Assert.ThrowsAsync<ConcurrencyException>(() =>
             handler.HandleAsync(
-                new MoveTask(TaskId: task.Id, NewStatus: ProjectTaskStatus.ToDo, RequestedByUserId: Guid.CreateVersion7()),
+                new MoveTask(TaskId: task.Id, NewStatus: ProjectTaskStatus.ToDo, RequestedByUserId: Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 }

@@ -231,6 +231,21 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     }
 
     [Fact]
+    public async Task GetById_ExistingProject_ReturnsETagHeaderMatchingConcurrencyToken()
+    {
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+
+        HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/projects/{projectId}");
+
+        ProjectDto? fetchedDto = await getResponse.Content.ReadFromJsonAsync<ProjectDto>();
+        Assert.NotNull(fetchedDto);
+        Assert.NotNull(getResponse.Headers.ETag);
+        Assert.Equal($"\"{fetchedDto!.ConcurrencyToken}\"", getResponse.Headers.ETag!.Tag);
+    }
+
+    [Fact]
     public async Task GetById_ExistingProject_LinksIncludeSelfTasksBoardsMembersAndDelete()
     {
         Guid organizationId = await SeedOrganizationAsync();
@@ -341,8 +356,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         var request = new UpdateProjectRequest("Updated Name", "Updated Description");
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         ProjectDto? project = await Client.GetFromJsonAsync<ProjectDto>($"/api/v1/projects/{projectId}");
@@ -360,10 +376,11 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 1", "Description 1")),
-            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 2", "Description 2")));
+            () => SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", ifMatch, new UpdateProjectRequest("Name from request 1", "Description 1")),
+            () => SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", ifMatch, new UpdateProjectRequest("Name from request 2", "Description 2")));
     }
 
     [Fact]
@@ -371,9 +388,35 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     {
         var request = new UpdateProjectRequest("Updated Name", null);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/projects/{Guid.CreateVersion7()}", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{Guid.CreateVersion7()}", PlaceholderIfMatch, request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Update_MissingIfMatch_Returns422()
+    {
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+        var request = new UpdateProjectRequest("Updated Name", null);
+
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", null, request);
+
+        await AssertValidationProblemAsync(response, "IfMatch");
+    }
+
+    [Fact]
+    public async Task Update_StaleIfMatch_Returns409()
+    {
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        Guid projectId = await SeedProjectAsync(organizationId, userId);
+        var request = new UpdateProjectRequest("Updated Name", null);
+
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", PlaceholderIfMatch, request);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     [Fact]
@@ -382,10 +425,12 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
-        await Client.PostAsync($"/api/v1/projects/{projectId}/archive", null);
+        byte[]? ifMatchForArchive = await GetProjectRowVersionAsync(projectId);
+        await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", ifMatchForArchive);
         var request = new UpdateProjectRequest("Updated Name", null);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -397,8 +442,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         var request = new UpdateProjectRequest(string.Empty, null);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -411,8 +457,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         string longDescription = new string('A', 1001);
         var request = new UpdateProjectRequest("Valid Name", longDescription);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", ifMatch, request);
 
         await AssertValidationProblemAsync(response, "NewDescription");
     }
@@ -423,8 +470,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/projects/{projectId}");
+        HttpResponseMessage response = await SendAsync(HttpMethod.Delete, $"/api/v1/projects/{projectId}", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/projects/{projectId}");
@@ -440,16 +488,17 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.DeleteAsync($"/api/v1/projects/{projectId}"),
-            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 2", "Description 2")));
+            () => SendAsync(HttpMethod.Delete, $"/api/v1/projects/{projectId}", ifMatch),
+            () => SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", ifMatch, new UpdateProjectRequest("Name from request 2", "Description 2")));
     }
 
     [Fact]
     public async Task Delete_NonexistentProject_Returns404()
     {
-        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/projects/{Guid.CreateVersion7()}");
+        HttpResponseMessage response = await SendAsync(HttpMethod.Delete, $"/api/v1/projects/{Guid.CreateVersion7()}", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -460,8 +509,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/projects/{projectId}/archive", null);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         ProjectDto? project = await Client.GetFromJsonAsync<ProjectDto>($"/api/v1/projects/{projectId}");
@@ -477,16 +527,17 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PostAsync($"/api/v1/projects/{projectId}/archive", null),
-            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 2", "Description 2")));
+            () => SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", ifMatch),
+            () => SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", ifMatch, new UpdateProjectRequest("Name from request 2", "Description 2")));
     }
 
     [Fact]
     public async Task Archive_NonexistentProject_Returns404()
     {
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/projects/{Guid.CreateVersion7()}/archive", null);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{Guid.CreateVersion7()}/archive", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -497,9 +548,11 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
-        await Client.PostAsync($"/api/v1/projects/{projectId}/archive", null);
+        byte[]? ifMatchForFirstArchive = await GetProjectRowVersionAsync(projectId);
+        await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", ifMatchForFirstArchive);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/projects/{projectId}/archive", null);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", ifMatch);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -510,9 +563,11 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
-        await Client.PostAsync($"/api/v1/projects/{projectId}/archive", null);
+        byte[]? ifMatchForArchive = await GetProjectRowVersionAsync(projectId);
+        await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", ifMatchForArchive);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/projects/{projectId}/unarchive", null);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/unarchive", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         ProjectDto? project = await Client.GetFromJsonAsync<ProjectDto>($"/api/v1/projects/{projectId}");
@@ -531,17 +586,19 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
-        await Client.PostAsync($"/api/v1/projects/{projectId}/archive", null);
+        byte[]? ifMatchForArchive = await GetProjectRowVersionAsync(projectId);
+        await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", ifMatchForArchive);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PostAsync($"/api/v1/projects/{projectId}/unarchive", null),
-            () => Client.DeleteAsync($"/api/v1/projects/{projectId}"));
+            () => SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/unarchive", ifMatch),
+            () => SendAsync(HttpMethod.Delete, $"/api/v1/projects/{projectId}", ifMatch));
     }
 
     [Fact]
     public async Task Unarchive_NonexistentProject_Returns404()
     {
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/projects/{Guid.CreateVersion7()}/unarchive", null);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{Guid.CreateVersion7()}/unarchive", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -552,8 +609,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/projects/{projectId}/unarchive", null);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/unarchive", ifMatch);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -566,8 +624,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         Guid newMemberId = await SeedUserAsync(organizationId);
         var request = new AddProjectMemberRequest(newMemberId, Role.Member);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/members", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/members", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         ProjectMemberDto? member = await response.Content.ReadFromJsonAsync<ProjectMemberDto>();
@@ -586,10 +645,11 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         Guid newMemberId = await SeedUserAsync(organizationId);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/members", new AddProjectMemberRequest(newMemberId, Role.Member)),
-            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 2", "Description 2")));
+            () => SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/members", ifMatch, new AddProjectMemberRequest(newMemberId, Role.Member)),
+            () => SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", ifMatch, new UpdateProjectRequest("Name from request 2", "Description 2")));
     }
 
     [Fact]
@@ -602,7 +662,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid userId = await SeedUserAsync(organizationId);
         var request = new AddProjectMemberRequest(userId, Role.Member);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{Guid.CreateVersion7()}/members", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{Guid.CreateVersion7()}/members", PlaceholderIfMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -614,8 +674,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         var request = new AddProjectMemberRequest(Guid.CreateVersion7(), Role.Member);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/members", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/members", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -628,8 +689,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         // userId is already a member - it was auto-added as Admin by Project.Create.
         var request = new AddProjectMemberRequest(userId, Role.Member);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/members", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/members", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -642,8 +704,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         Guid newMemberId = await SeedUserAsync(organizationId);
         var request = new AddProjectMemberRequest(newMemberId, (Role)9999);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/members", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/members", ifMatch, request);
 
         await AssertValidationProblemAsync(response, "Role");
     }
@@ -657,8 +720,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid memberId = await SeedUserAsync(organizationId);
         await SeedProjectMemberAsync(projectId, memberId, Role.Member);
         var request = new ChangeMemberRoleRequest(Role.Viewer);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/projects/{projectId}/members/{memberId}/role", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}/members/{memberId}/role", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         List<ProjectMemberDto>? members = await Client.GetFromJsonAsync<List<ProjectMemberDto>>($"/api/v1/projects/{projectId}/members");
@@ -675,10 +739,11 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         Guid memberId = await SeedUserAsync(organizationId);
         await SeedProjectMemberAsync(projectId, memberId, Role.Member);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}/members/{memberId}/role", new ChangeMemberRoleRequest(Role.Viewer)),
-            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 2", "Description 2")));
+            () => SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}/members/{memberId}/role", ifMatch, new ChangeMemberRoleRequest(Role.Viewer)),
+            () => SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", ifMatch, new UpdateProjectRequest("Name from request 2", "Description 2")));
     }
 
     [Fact]
@@ -686,8 +751,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     {
         var request = new ChangeMemberRoleRequest(Role.Viewer);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync(
-            $"/api/v1/projects/{Guid.CreateVersion7()}/members/{Guid.CreateVersion7()}/role", request);
+        HttpResponseMessage response = await SendAsync(
+            HttpMethod.Put, $"/api/v1/projects/{Guid.CreateVersion7()}/members/{Guid.CreateVersion7()}/role", PlaceholderIfMatch, request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -700,8 +765,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         Guid nonMemberId = await SeedUserAsync(organizationId);
         var request = new ChangeMemberRoleRequest(Role.Viewer);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/projects/{projectId}/members/{nonMemberId}/role", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}/members/{nonMemberId}/role", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -715,8 +781,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid memberId = await SeedUserAsync(organizationId);
         await SeedProjectMemberAsync(projectId, memberId, Role.Member);
         var request = new ChangeMemberRoleRequest((Role)9999);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/projects/{projectId}/members/{memberId}/role", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}/members/{memberId}/role", ifMatch, request);
 
         await AssertValidationProblemAsync(response, "NewRole");
     }
@@ -729,8 +796,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         // userId is the sole Admin - auto-added as Admin by Project.Create.
         var request = new ChangeMemberRoleRequest(Role.Member);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/projects/{projectId}/members/{userId}/role", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}/members/{userId}/role", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -743,8 +811,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         Guid memberId = await SeedUserAsync(organizationId);
         await SeedProjectMemberAsync(projectId, memberId, Role.Member);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/projects/{projectId}/members/{memberId}");
+        HttpResponseMessage response = await SendAsync(HttpMethod.Delete, $"/api/v1/projects/{projectId}/members/{memberId}", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         List<ProjectMemberDto>? members = await Client.GetFromJsonAsync<List<ProjectMemberDto>>($"/api/v1/projects/{projectId}/members");
@@ -761,16 +830,18 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         Guid memberId = await SeedUserAsync(organizationId);
         await SeedProjectMemberAsync(projectId, memberId, Role.Member);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.DeleteAsync($"/api/v1/projects/{projectId}/members/{memberId}"),
-            () => Client.PutAsJsonAsync($"/api/v1/projects/{projectId}", new UpdateProjectRequest("Name from request 2", "Description 2")));
+            () => SendAsync(HttpMethod.Delete, $"/api/v1/projects/{projectId}/members/{memberId}", ifMatch),
+            () => SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", ifMatch, new UpdateProjectRequest("Name from request 2", "Description 2")));
     }
 
     [Fact]
     public async Task RemoveMember_NonexistentProject_Returns404()
     {
-        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/projects/{Guid.CreateVersion7()}/members/{Guid.CreateVersion7()}");
+        HttpResponseMessage response = await SendAsync(
+            HttpMethod.Delete, $"/api/v1/projects/{Guid.CreateVersion7()}/members/{Guid.CreateVersion7()}", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -782,8 +853,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         Guid nonMemberId = await SeedUserAsync(organizationId);
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/projects/{projectId}/members/{nonMemberId}");
+        HttpResponseMessage response = await SendAsync(HttpMethod.Delete, $"/api/v1/projects/{projectId}/members/{nonMemberId}", ifMatch);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -795,8 +867,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
         // userId is the sole Admin - auto-added as Admin by Project.Create.
+        byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
-        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/projects/{projectId}/members/{userId}");
+        HttpResponseMessage response = await SendAsync(HttpMethod.Delete, $"/api/v1/projects/{projectId}/members/{userId}", ifMatch);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }

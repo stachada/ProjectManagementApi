@@ -139,7 +139,8 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId, "Abandoned task");
-        await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/move", new MoveTaskRequest(ProjectTaskStatus.Cancelled, userId));
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
+        await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, new MoveTaskRequest(ProjectTaskStatus.Cancelled, userId));
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks/{taskId}");
 
@@ -148,6 +149,20 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         Assert.Equal(ProjectTaskStatus.Cancelled, task!.Status);
         Assert.DoesNotContain(task.Links, l => l.Rel == "move" || l.Rel.StartsWith("move:", StringComparison.Ordinal));
         Assert.Contains(task.Links, l => l.Rel == "self");
+    }
+
+    [Fact]
+    public async Task GetById_ExistingTask_ReturnsETagHeaderMatchingConcurrencyToken()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+
+        HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks/{taskId}");
+
+        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>();
+        Assert.NotNull(task);
+        Assert.NotNull(response.Headers.ETag);
+        Assert.Equal($"\"{task!.ConcurrencyToken}\"", response.Headers.ETag!.Tag);
     }
 
     [Fact]
@@ -185,8 +200,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId, "Original title");
         var request = new UpdateTaskRequest("Updated title", "New description", Priority.Critical, null, userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
@@ -203,10 +219,11 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         // and docs/INTEGRATION_TESTS.md for the deterministic mechanism.
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId, "Original title");
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}", new UpdateTaskRequest("Title from request 1", null, Priority.Medium, null, userId)),
-            () => Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}", new UpdateTaskRequest("Title from request 2", null, Priority.Medium, null, userId)));
+            () => SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, new UpdateTaskRequest("Title from request 1", null, Priority.Medium, null, userId)),
+            () => SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, new UpdateTaskRequest("Title from request 2", null, Priority.Medium, null, userId)));
     }
 
     [Fact]
@@ -214,9 +231,33 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         var request = new UpdateTaskRequest("Title", null, Priority.Medium, null, Guid.CreateVersion7());
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{Guid.CreateVersion7()}", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{Guid.CreateVersion7()}", PlaceholderIfMatch, request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Update_MissingIfMatch_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        var request = new UpdateTaskRequest("Valid title", null, Priority.Medium, null, userId);
+
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", null, request);
+
+        await AssertValidationProblemAsync(response, "IfMatch");
+    }
+
+    [Fact]
+    public async Task Update_StaleIfMatch_Returns409()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        var request = new UpdateTaskRequest("Valid title", null, Priority.Medium, null, userId);
+
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", PlaceholderIfMatch, request);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     [Fact]
@@ -225,8 +266,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         var request = new UpdateTaskRequest(string.Empty, null, Priority.Medium, null, userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -237,8 +279,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         var request = new UpdateTaskRequest(new string('A', 201), null, Priority.Medium, null, userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, request);
 
         await AssertValidationProblemAsync(response, "Title");
     }
@@ -249,8 +292,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         var request = new UpdateTaskRequest("Valid title", null, (Priority)9999, null, userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, request);
 
         await AssertValidationProblemAsync(response, "Priority");
     }
@@ -260,8 +304,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/tasks/{taskId}?requestedByUserId={userId}");
+        HttpResponseMessage response = await SendAsync(HttpMethod.Delete, $"/api/v1/tasks/{taskId}?requestedByUserId={userId}", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/tasks/{taskId}");
@@ -271,7 +316,8 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     [Fact]
     public async Task Delete_NonexistentTask_Returns404()
     {
-        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/tasks/{Guid.CreateVersion7()}?requestedByUserId={Guid.CreateVersion7()}");
+        HttpResponseMessage response = await SendAsync(
+            HttpMethod.Delete, $"/api/v1/tasks/{Guid.CreateVersion7()}?requestedByUserId={Guid.CreateVersion7()}", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -284,10 +330,11 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         // see IntegrationTestBase.AssertConcurrentRequestsConflictAsync.
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId, "Original title");
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.DeleteAsync($"/api/v1/tasks/{taskId}?requestedByUserId={userId}"),
-            () => Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}", new UpdateTaskRequest("Title from request 2", null, Priority.Medium, null, userId)));
+            () => SendAsync(HttpMethod.Delete, $"/api/v1/tasks/{taskId}?requestedByUserId={userId}", ifMatch),
+            () => SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, new UpdateTaskRequest("Title from request 2", null, Priority.Medium, null, userId)));
     }
 
     [Fact]
@@ -296,8 +343,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         var request = new MoveTaskRequest(ProjectTaskStatus.ToDo, userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/move", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
@@ -311,8 +359,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         var request = new MoveTaskRequest(ProjectTaskStatus.Done, userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/move", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -322,9 +371,33 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         var request = new MoveTaskRequest(ProjectTaskStatus.ToDo, Guid.CreateVersion7());
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/move", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{Guid.CreateVersion7()}/move", PlaceholderIfMatch, request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Move_MissingIfMatch_Returns422()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        var request = new MoveTaskRequest(ProjectTaskStatus.ToDo, userId);
+
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", null, request);
+
+        await AssertValidationProblemAsync(response, "IfMatch");
+    }
+
+    [Fact]
+    public async Task Move_StaleIfMatch_Returns409()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        var request = new MoveTaskRequest(ProjectTaskStatus.ToDo, userId);
+
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", PlaceholderIfMatch, request);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     [Fact]
@@ -332,10 +405,11 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/move", new MoveTaskRequest(ProjectTaskStatus.ToDo, userId)),
-            () => Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/move", new MoveTaskRequest(ProjectTaskStatus.Cancelled, userId)));
+            () => SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, new MoveTaskRequest(ProjectTaskStatus.ToDo, userId)),
+            () => SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, new MoveTaskRequest(ProjectTaskStatus.Cancelled, userId)));
     }
 
     [Fact]
@@ -344,8 +418,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         var request = new AssignTaskRequest(userId, userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/assign", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/assign", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
@@ -358,8 +433,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         var request = new AssignTaskRequest(Guid.CreateVersion7(), userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/assign", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/assign", ifMatch, request);
 
         await AssertValidationProblemAsync(response, "AssigneeId");
     }
@@ -370,7 +446,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, _) = await SeedBoardAsync();
         var request = new AssignTaskRequest(userId, userId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/assign", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{Guid.CreateVersion7()}/assign", PlaceholderIfMatch, request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -380,10 +456,12 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/assign", new AssignTaskRequest(userId, userId));
+        byte[]? ifMatchBeforeAssign = await GetTaskRowVersionAsync(taskId);
+        await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/assign", ifMatchBeforeAssign, new AssignTaskRequest(userId, userId));
         var request = new UnassignTaskRequest(userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/unassign", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/unassign", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
@@ -396,8 +474,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         var request = new UnassignTaskRequest(userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/unassign", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/unassign", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -407,7 +486,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         var request = new UnassignTaskRequest(Guid.CreateVersion7());
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/unassign", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{Guid.CreateVersion7()}/unassign", PlaceholderIfMatch, request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -419,8 +498,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         Guid taskId = await SeedTaskAsync(boardId, userId);
         await MoveTaskAsync(taskId, userId, ProjectTaskStatus.ToDo, ProjectTaskStatus.InProgress, ProjectTaskStatus.InReview);
         var request = new CloseTaskRequest(userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/close", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/close", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
@@ -434,8 +514,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         var request = new CloseTaskRequest(userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/close", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/close", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -445,7 +526,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         var request = new CloseTaskRequest(Guid.CreateVersion7());
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/close", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{Guid.CreateVersion7()}/close", PlaceholderIfMatch, request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -457,8 +538,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         Guid taskId = await SeedTaskAsync(boardId, userId);
         await MoveTaskAsync(taskId, userId, ProjectTaskStatus.ToDo, ProjectTaskStatus.InProgress, ProjectTaskStatus.InReview, ProjectTaskStatus.Done);
         var request = new ReopenTaskRequest(userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/reopen", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/reopen", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
@@ -475,8 +557,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         Guid taskId = await SeedTaskAsync(boardId, userId);
         await MoveTaskAsync(taskId, userId, ProjectTaskStatus.ToDo, ProjectTaskStatus.InProgress, ProjectTaskStatus.InReview);
         var request = new ReopenTaskRequest(userId);
+        byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/reopen", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/reopen", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -486,7 +569,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         var request = new ReopenTaskRequest(Guid.CreateVersion7());
 
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/reopen", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{Guid.CreateVersion7()}/reopen", PlaceholderIfMatch, request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }

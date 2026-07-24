@@ -35,7 +35,8 @@ public class UpdateProjectHandlerTests
         var command = new UpdateProject(
             ProjectId: project.Id,
             NewName: "New Name",
-            NewDescription: "New description");
+            NewDescription: "New description",
+            IfMatch: project.RowVersion);
 
         // Act
         await handler.HandleAsync(command);
@@ -57,7 +58,7 @@ public class UpdateProjectHandlerTests
         await db.SaveChangesAsync();
 
         await new UpdateProjectHandler(db).HandleAsync(
-            new UpdateProject(project.Id, "New Name", NewDescription: null));
+            new UpdateProject(project.Id, "New Name", NewDescription: null, IfMatch: project.RowVersion));
 
         Project reloaded = await db.Projects.SingleAsync(p => p.Id == project.Id);
         Assert.Null(reloaded.Description);
@@ -72,7 +73,7 @@ public class UpdateProjectHandlerTests
         await db.SaveChangesAsync();
 
         await new UpdateProjectHandler(db).HandleAsync(
-            new UpdateProject(project.Id, "New Name", NewDescription: ""));
+            new UpdateProject(project.Id, "New Name", NewDescription: "", IfMatch: project.RowVersion));
 
         Project reloaded = await db.Projects.SingleAsync(p => p.Id == project.Id);
         Assert.Null(reloaded.Description);
@@ -89,7 +90,8 @@ public class UpdateProjectHandlerTests
         var command = new UpdateProject(
             ProjectId: Guid.CreateVersion7(), // Non-existent project ID
             NewName: "New Name",
-            NewDescription: "New description");
+            NewDescription: "New description",
+            IfMatch: null);
 
         // Act & Assert
         await Assert.ThrowsAsync<NotFoundException>(() => handler.HandleAsync(command));
@@ -116,7 +118,8 @@ public class UpdateProjectHandlerTests
         var command = new UpdateProject(
             ProjectId: project.Id,
             NewName: "", // Empty name
-            NewDescription: "New description");
+            NewDescription: "New description",
+            IfMatch: project.RowVersion);
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command));
@@ -145,7 +148,8 @@ public class UpdateProjectHandlerTests
         var command = new UpdateProject(
             ProjectId: project.Id,
             NewName: "New Name",
-            NewDescription: "New description");
+            NewDescription: "New description",
+            IfMatch: project.RowVersion);
 
         // Act & Assert
         await Assert.ThrowsAsync<DomainException>(() => handler.HandleAsync(command));
@@ -174,7 +178,7 @@ public class UpdateProjectHandlerTests
 
         await Assert.ThrowsAsync<ConcurrencyException>(() =>
             handler.HandleAsync(
-                new UpdateProject(project.Id, "Lost the race", "New description"),
+                new UpdateProject(project.Id, "Lost the race", "New description", IfMatch: null),
                 CancellationToken.None));
     }
 }

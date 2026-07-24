@@ -99,6 +99,9 @@ public static class ProjectMapper
             Members = members,
             CreatedAt = project.CreatedAt,
             UpdatedAt = project.UpdatedAt,
+            ConcurrencyToken = project.RowVersion is { Length: > 0 }
+                ? Convert.ToBase64String(project.RowVersion)
+                : string.Empty,
             Links = BuildLinks(project.Id)
         };
     }
@@ -182,6 +185,9 @@ public static class ProjectMapper
             TaskCount = taskCount,
             Tasks = tasks,
             CreatedAt = board.CreatedAt,
-            UpdatedAt = board.UpdatedAt
+            UpdatedAt = board.UpdatedAt,
+            ConcurrencyToken = board.RowVersion is { Length: > 0 }
+                ? Convert.ToBase64String(board.RowVersion)
+                : string.Empty
         };
 }

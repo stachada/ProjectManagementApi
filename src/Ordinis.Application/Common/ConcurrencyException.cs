@@ -31,4 +31,18 @@ public class ConcurrencyException : Exception
         EntityType = entityType;
         EntityId = entityId;
     }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ConcurrencyException"/> class for a
+    /// proactive <c>If-Match</c> mismatch detected by <see cref="ConcurrencyGuard"/>, before
+    /// any database write is attempted (i.e. there is no wrapped EF Core exception).
+    /// </summary>
+    /// <param name="entityType">The type of the entity that caused the concurrency conflict.</param>
+    /// <param name="entityId">The ID of the entity that caused the concurrency conflict.</param>
+    public ConcurrencyException(string entityType, Guid entityId)
+        : base($"A concurrency conflict occurred on {entityType} '{entityId}'.")
+    {
+        EntityType = entityType;
+        EntityId = entityId;
+    }
 }

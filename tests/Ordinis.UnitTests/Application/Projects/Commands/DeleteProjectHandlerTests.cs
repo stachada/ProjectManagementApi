@@ -29,7 +29,7 @@ public class DeleteProjectHandlerTests
 
         var handler = new DeleteProjectHandler(db, new FakeTimeProvider(Now));
 
-        var command = new DeleteProject(ProjectId: project.Id);
+        var command = new DeleteProject(ProjectId: project.Id, IfMatch: project.RowVersion);
 
         // Act
         await handler.HandleAsync(command);
@@ -47,7 +47,7 @@ public class DeleteProjectHandlerTests
         using TestAppDbContext db = TestDbContextFactory.Create();
 
         var handler = new DeleteProjectHandler(db, new FakeTimeProvider(Now));
-        var command = new DeleteProject(ProjectId: Guid.CreateVersion7());
+        var command = new DeleteProject(ProjectId: Guid.CreateVersion7(), IfMatch: null);
 
         // Act & Assert
         await Assert.ThrowsAsync<NotFoundException>(() => handler.HandleAsync(command));

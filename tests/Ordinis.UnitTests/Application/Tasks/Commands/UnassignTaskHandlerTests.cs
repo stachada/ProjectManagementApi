@@ -31,7 +31,7 @@ public class UnassignTaskHandlerTests
         var handler = new UnassignTaskHandler(db, new FakeTimeProvider(Now));
 
         await handler.HandleAsync(
-            new UnassignTask(TaskId: task.Id, RequestedByUserId: requestedBy),
+            new UnassignTask(TaskId: task.Id, RequestedByUserId: requestedBy, IfMatch: task.RowVersion),
             CancellationToken.None);
 
         ProjectTask reloaded = await db.Tasks.SingleAsync(t => t.Id == task.Id);
@@ -52,7 +52,7 @@ public class UnassignTaskHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.HandleAsync(
-                new UnassignTask(TaskId: Guid.CreateVersion7(), RequestedByUserId: Guid.CreateVersion7()),
+                new UnassignTask(TaskId: Guid.CreateVersion7(), RequestedByUserId: Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 
@@ -70,7 +70,7 @@ public class UnassignTaskHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(() =>
             handler.HandleAsync(
-                new UnassignTask(TaskId: task.Id, RequestedByUserId: requestedBy),
+                new UnassignTask(TaskId: task.Id, RequestedByUserId: requestedBy, IfMatch: task.RowVersion),
                 CancellationToken.None));
     }
 
@@ -91,7 +91,7 @@ public class UnassignTaskHandlerTests
 
         await Assert.ThrowsAsync<ConcurrencyException>(() =>
             handler.HandleAsync(
-                new UnassignTask(TaskId: task.Id, RequestedByUserId: Guid.CreateVersion7()),
+                new UnassignTask(TaskId: task.Id, RequestedByUserId: Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 }

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Ordinis.Api.Common;
 using Ordinis.Api.Common.DataShaping;
 using Ordinis.Api.Projects.Requests;
 using Ordinis.Application.Common;
@@ -33,6 +34,12 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
     public async Task<ActionResult<BoardDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
         BoardDto dto = await _dispatcher.QueryAsync<GetBoardById, BoardDto>(new GetBoardById(id), cancellationToken);
+
+        if (!string.IsNullOrEmpty(dto.ConcurrencyToken))
+        {
+            Response.Headers.ETag = $"\"{dto.ConcurrencyToken}\"";
+        }
+
         return Ok(dto);
     }
 
@@ -141,7 +148,8 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
         [FromBody] RenameBoardRequest request,
         CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new RenameBoard(id, request.NewName), cancellationToken);
+        var command = new RenameBoard(id, request.NewName, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        await _dispatcher.SendAsync(command, cancellationToken);
 
         return NoContent();
     }
@@ -162,7 +170,8 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> ArchiveBoard(Guid id, CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new ArchiveBoard(id), cancellationToken);
+        var command = new ArchiveBoard(id, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        await _dispatcher.SendAsync(command, cancellationToken);
 
         return NoContent();
     }
@@ -183,7 +192,8 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> UnarchiveBoard(Guid id, CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new UnarchiveBoard(id), cancellationToken);
+        var command = new UnarchiveBoard(id, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        await _dispatcher.SendAsync(command, cancellationToken);
 
         return NoContent();
     }

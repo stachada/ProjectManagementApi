@@ -13,7 +13,8 @@ public sealed class MoveTaskValidatorTests
         => new(
             TaskId: taskId,
             NewStatus: ProjectTaskStatus.InProgress,
-            RequestedByUserId: Guid.CreateVersion7());
+            RequestedByUserId: Guid.CreateVersion7(),
+            IfMatch: [1, 2, 3, 4]);
 
     [Fact]
     public async Task TestValidateAsync_ValidCommand_HasNoValidationErrors()
@@ -45,5 +46,17 @@ public sealed class MoveTaskValidatorTests
 
         result.ShouldHaveValidationErrorFor(x => x.NewStatus)
             .WithErrorMessage("NewStatus must be a valid ProjectTaskStatus value.");
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_NullIfMatch_HasValidationErrorForIfMatch()
+    {
+        var validator = new MoveTaskValidator();
+        MoveTask command = ValidCommand(Guid.CreateVersion7()) with { IfMatch = null };
+
+        TestValidationResult<MoveTask> result = await validator.TestValidateAsync(command);
+
+        result.ShouldHaveValidationErrorFor(x => x.IfMatch)
+            .WithErrorMessage("If-Match header is required.");
     }
 }

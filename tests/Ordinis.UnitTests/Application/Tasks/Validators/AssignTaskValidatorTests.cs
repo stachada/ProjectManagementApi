@@ -16,7 +16,8 @@ public sealed class AssignTaskValidatorTests
         => new(
             TaskId: taskId,
             AssigneeId: assigneeId,
-            RequestedByUserId: requestedByUserId);
+            RequestedByUserId: requestedByUserId,
+            IfMatch: [1, 2, 3, 4]);
 
     [Fact]
     public async Task TestValidateAsync_ValidCommand_HasNoValidationErrors()
@@ -95,5 +96,18 @@ public sealed class AssignTaskValidatorTests
                 Guid.Empty));
 
         result.ShouldHaveValidationErrorFor(x => x.RequestedByUserId);
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_NullIfMatch_HasValidationErrorForIfMatch()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var validator = new AssignTaskValidator(db);
+        AssignTask command = ValidCommand(Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7()) with { IfMatch = null };
+
+        TestValidationResult<AssignTask> result = await validator.TestValidateAsync(command);
+
+        result.ShouldHaveValidationErrorFor(x => x.IfMatch)
+            .WithErrorMessage("If-Match header is required.");
     }
 }

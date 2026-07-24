@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Ordinis.Api.Common;
 using Ordinis.Api.Common.DataShaping;
 using Ordinis.Api.Tasks.Requests;
 using Ordinis.Application.Common;
@@ -92,6 +93,11 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     {
         var query = new GetTaskById(id);
         TaskDto task = await _dispatcher.QueryAsync<GetTaskById, TaskDto>(query, cancellationToken);
+
+        if (!string.IsNullOrEmpty(task.ConcurrencyToken))
+        {
+            Response.Headers.ETag = $"\"{task.ConcurrencyToken}\"";
+        }
 
         return Ok(task);
     }
@@ -196,7 +202,8 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
             Description: request.Description,
             Priority: request.Priority,
             DueDate: request.DueDate,
-            RequestedByUserId: request.RequestedByUserId);
+            RequestedByUserId: request.RequestedByUserId,
+            IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 
@@ -212,16 +219,19 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <response code="204">The task was deleted.</response>
     /// <response code="404">No task exists with the given ID.</response>
     /// <response code="409">The task was concurrently modified (stale <c>RowVersion</c>).</response>
+    /// <response code="422">The <c>If-Match</c> header is missing.</response>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Delete(
         Guid id,
         [FromQuery] Guid requestedByUserId,
         CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new DeleteTask(id, requestedByUserId), cancellationToken);
+        var command = new DeleteTask(id, requestedByUserId, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        await _dispatcher.SendAsync(command, cancellationToken);
         return NoContent();
     }
 
@@ -248,7 +258,8 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
         var command = new MoveTask(
             TaskId: id,
             NewStatus: request.Status,
-            RequestedByUserId: request.RequestedByUserId);
+            RequestedByUserId: request.RequestedByUserId,
+            IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 
@@ -278,7 +289,8 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
         var command = new AssignTask(
             TaskId: id,
             AssigneeId: request.AssigneeId,
-            RequestedByUserId: request.RequestedByUserId);
+            RequestedByUserId: request.RequestedByUserId,
+            IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 
@@ -305,7 +317,8 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
         [FromBody] UnassignTaskRequest request,
         CancellationToken cancellationToken = default)
     {
-        await _dispatcher.SendAsync(new UnassignTask(id, request.RequestedByUserId), cancellationToken);
+        var command = new UnassignTask(id, request.RequestedByUserId, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        await _dispatcher.SendAsync(command, cancellationToken);
 
         return NoContent();
     }
@@ -337,7 +350,8 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
         var command = new MoveTask(
             TaskId: id,
             NewStatus: ProjectTaskStatus.Done,
-            RequestedByUserId: request.RequestedByUserId);
+            RequestedByUserId: request.RequestedByUserId,
+            IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 
@@ -372,7 +386,8 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
         var command = new MoveTask(
             TaskId: id,
             NewStatus: ProjectTaskStatus.ToDo,
-            RequestedByUserId: request.RequestedByUserId);
+            RequestedByUserId: request.RequestedByUserId,
+            IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 

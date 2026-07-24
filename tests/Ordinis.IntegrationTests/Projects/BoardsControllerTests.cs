@@ -47,7 +47,8 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     public async Task Create_ArchivedProject_Returns422()
     {
         (Guid userId, Guid projectId) = await SeedProjectAsync();
-        await Client.PostAsync($"/api/v1/projects/{projectId}/archive", null);
+        byte[]? projectIfMatch = await GetProjectRowVersionAsync(projectId);
+        await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", projectIfMatch);
         var request = new CreateBoardRequest(userId, "Sprint Board");
 
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/boards", request);
@@ -106,6 +107,20 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     }
 
     [Fact]
+    public async Task GetById_ExistingBoard_ReturnsETagHeaderMatchingConcurrencyToken()
+    {
+        (Guid userId, Guid projectId) = await SeedProjectAsync();
+        Guid boardId = await SeedBoardAsync(projectId, userId);
+
+        HttpResponseMessage response = await Client.GetAsync($"/api/v1/boards/{boardId}");
+
+        BoardDto? board = await response.Content.ReadFromJsonAsync<BoardDto>();
+        Assert.NotNull(board);
+        Assert.NotNull(response.Headers.ETag);
+        Assert.Equal($"\"{board!.ConcurrencyToken}\"", response.Headers.ETag!.Tag);
+    }
+
+    [Fact]
     public async Task GetById_NonexistentBoard_Returns404()
     {
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/boards/{Guid.CreateVersion7()}");
@@ -147,8 +162,9 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         Guid boardId = await SeedBoardAsync(projectId, userId, "Original Name");
         var request = new RenameBoardRequest("Renamed Board");
+        byte[]? ifMatch = await GetBoardRowVersionAsync(boardId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/boards/{boardId}/name", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/boards/{boardId}/name", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         BoardDto? board = await Client.GetFromJsonAsync<BoardDto>($"/api/v1/boards/{boardId}");
@@ -164,10 +180,11 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         // distinct names so neither trips RenameBoardValidator's duplicate-name 422 instead.
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         Guid boardId = await SeedBoardAsync(projectId, userId, "Original Name");
+        byte[]? ifMatch = await GetBoardRowVersionAsync(boardId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PutAsJsonAsync($"/api/v1/boards/{boardId}/name", new RenameBoardRequest("Name from request 1")),
-            () => Client.PutAsJsonAsync($"/api/v1/boards/{boardId}/name", new RenameBoardRequest("Name from request 2")));
+            () => SendAsync(HttpMethod.Put, $"/api/v1/boards/{boardId}/name", ifMatch, new RenameBoardRequest("Name from request 1")),
+            () => SendAsync(HttpMethod.Put, $"/api/v1/boards/{boardId}/name", ifMatch, new RenameBoardRequest("Name from request 2")));
     }
 
     [Fact]
@@ -175,9 +192,33 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     {
         var request = new RenameBoardRequest("Renamed Board");
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/boards/{Guid.CreateVersion7()}/name", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/boards/{Guid.CreateVersion7()}/name", PlaceholderIfMatch, request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RenameBoard_MissingIfMatch_Returns422()
+    {
+        (Guid userId, Guid projectId) = await SeedProjectAsync();
+        Guid boardId = await SeedBoardAsync(projectId, userId, "Original Name");
+        var request = new RenameBoardRequest("Renamed Board");
+
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/boards/{boardId}/name", null, request);
+
+        await AssertValidationProblemAsync(response, "IfMatch");
+    }
+
+    [Fact]
+    public async Task RenameBoard_StaleIfMatch_Returns409()
+    {
+        (Guid userId, Guid projectId) = await SeedProjectAsync();
+        Guid boardId = await SeedBoardAsync(projectId, userId, "Original Name");
+        var request = new RenameBoardRequest("Renamed Board");
+
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/boards/{boardId}/name", PlaceholderIfMatch, request);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     [Fact]
@@ -187,8 +228,9 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         await SeedBoardAsync(projectId, userId, "Taken Name");
         Guid boardId = await SeedBoardAsync(projectId, userId, "Original Name");
         var request = new RenameBoardRequest("Taken Name");
+        byte[]? ifMatch = await GetBoardRowVersionAsync(boardId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/boards/{boardId}/name", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/boards/{boardId}/name", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -199,8 +241,9 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         Guid boardId = await SeedBoardAsync(projectId, userId, "Original Name");
         var request = new RenameBoardRequest(string.Empty);
+        byte[]? ifMatch = await GetBoardRowVersionAsync(boardId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/boards/{boardId}/name", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/boards/{boardId}/name", ifMatch, request);
 
         await AssertValidationProblemAsync(response, "NewName");
     }
@@ -211,8 +254,9 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         Guid boardId = await SeedBoardAsync(projectId, userId, "Original Name");
         var request = new RenameBoardRequest(new string('A', 101));
+        byte[]? ifMatch = await GetBoardRowVersionAsync(boardId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/boards/{boardId}/name", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/boards/{boardId}/name", ifMatch, request);
 
         await AssertValidationProblemAsync(response, "NewName");
     }
@@ -222,10 +266,12 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     {
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         Guid boardId = await SeedBoardAsync(projectId, userId);
-        await Client.PostAsync($"/api/v1/boards/{boardId}/archive", null);
+        byte[]? ifMatchForArchive = await GetBoardRowVersionAsync(boardId);
+        await SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/archive", ifMatchForArchive);
         var request = new RenameBoardRequest("Renamed Board");
+        byte[]? ifMatch = await GetBoardRowVersionAsync(boardId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/boards/{boardId}/name", request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/boards/{boardId}/name", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -235,8 +281,9 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     {
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         Guid boardId = await SeedBoardAsync(projectId, userId);
+        byte[]? ifMatch = await GetBoardRowVersionAsync(boardId);
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/boards/{boardId}/archive", null);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/archive", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         BoardDto? board = await Client.GetFromJsonAsync<BoardDto>($"/api/v1/boards/{boardId}");
@@ -252,16 +299,17 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         // IntegrationTestBase.AssertConcurrentRequestsConflictAsync.
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         Guid boardId = await SeedBoardAsync(projectId, userId);
+        byte[]? ifMatch = await GetBoardRowVersionAsync(boardId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PostAsync($"/api/v1/boards/{boardId}/archive", null),
-            () => Client.PostAsync($"/api/v1/boards/{boardId}/archive", null));
+            () => SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/archive", ifMatch),
+            () => SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/archive", ifMatch));
     }
 
     [Fact]
     public async Task ArchiveBoard_NonexistentBoard_Returns404()
     {
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/boards/{Guid.CreateVersion7()}/archive", null);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/boards/{Guid.CreateVersion7()}/archive", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -271,9 +319,11 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     {
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         Guid boardId = await SeedBoardAsync(projectId, userId);
-        await Client.PostAsync($"/api/v1/boards/{boardId}/archive", null);
+        byte[]? ifMatchForFirstArchive = await GetBoardRowVersionAsync(boardId);
+        await SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/archive", ifMatchForFirstArchive);
+        byte[]? ifMatch = await GetBoardRowVersionAsync(boardId);
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/boards/{boardId}/archive", null);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/archive", ifMatch);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -283,9 +333,11 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     {
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         Guid boardId = await SeedBoardAsync(projectId, userId);
-        await Client.PostAsync($"/api/v1/boards/{boardId}/archive", null);
+        byte[]? ifMatchForArchive = await GetBoardRowVersionAsync(boardId);
+        await SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/archive", ifMatchForArchive);
+        byte[]? ifMatch = await GetBoardRowVersionAsync(boardId);
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/boards/{boardId}/unarchive", null);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/unarchive", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         BoardDto? board = await Client.GetFromJsonAsync<BoardDto>($"/api/v1/boards/{boardId}");
@@ -298,17 +350,19 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         // Two identical Unarchive calls race, same pattern as ArchiveBoard_ConcurrentModification_Returns409.
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         Guid boardId = await SeedBoardAsync(projectId, userId);
-        await Client.PostAsync($"/api/v1/boards/{boardId}/archive", null);
+        byte[]? ifMatchForArchive = await GetBoardRowVersionAsync(boardId);
+        await SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/archive", ifMatchForArchive);
+        byte[]? ifMatch = await GetBoardRowVersionAsync(boardId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PostAsync($"/api/v1/boards/{boardId}/unarchive", null),
-            () => Client.PostAsync($"/api/v1/boards/{boardId}/unarchive", null));
+            () => SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/unarchive", ifMatch),
+            () => SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/unarchive", ifMatch));
     }
 
     [Fact]
     public async Task UnarchiveBoard_NonexistentBoard_Returns404()
     {
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/boards/{Guid.CreateVersion7()}/unarchive", null);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/boards/{Guid.CreateVersion7()}/unarchive", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -318,8 +372,9 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     {
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         Guid boardId = await SeedBoardAsync(projectId, userId);
+        byte[]? ifMatch = await GetBoardRowVersionAsync(boardId);
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/boards/{boardId}/unarchive", null);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/unarchive", ifMatch);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }

@@ -22,13 +22,17 @@ namespace Ordinis.Application.Tasks.Commands;
 /// <param name="Priority">New priority level.</param>
 /// <param name="DueDate">New due date, or <see langword="null"/> to clear it.</param>
 /// <param name="RequestedByUserId">ID of the user issuing this command.</param>
+/// <param name="IfMatch">
+/// The task's expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// </param>
 public sealed record UpdateTask(
     Guid TaskId,
     string Title,
     string? Description,
     Priority Priority,
     DateTimeOffset? DueDate,
-    Guid RequestedByUserId
+    Guid RequestedByUserId,
+    byte[]? IfMatch
 ) : ICommand;
 
 // Handler
@@ -60,6 +64,8 @@ internal sealed class UpdateTaskHandler(
         ProjectTask task = await db.Tasks
             .FirstOrDefaultAsync(t => t.Id == command.TaskId, cancellationToken)
                 ?? throw new NotFoundException(nameof(ProjectTask), command.TaskId);
+
+        ConcurrencyGuard.EnsureMatch(task.RowVersion, command.IfMatch, "Task", command.TaskId);
 
         DateTimeOffset now = timeProvider.GetUtcNow();
 
@@ -102,5 +108,9 @@ internal sealed class UpdateTaskValidator : AbstractValidator<UpdateTask>
 
         RuleFor(t => t.RequestedByUserId)
             .NotEmpty();
+
+        RuleFor(t => t.IfMatch)
+            .NotNull()
+            .WithMessage("If-Match header is required.");
     }
 }

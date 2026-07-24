@@ -18,7 +18,7 @@ public class ArchiveProjectHandlerTests
         db.Projects.Add(project);
         await db.SaveChangesAsync();
 
-        await new ArchiveProjectHandler(db).HandleAsync(new ArchiveProject(project.Id));
+        await new ArchiveProjectHandler(db).HandleAsync(new ArchiveProject(project.Id, project.RowVersion));
 
         Project reloaded = await db.Projects.SingleAsync(p => p.Id == project.Id);
         Assert.True(reloaded.IsArchived);
@@ -30,7 +30,7 @@ public class ArchiveProjectHandlerTests
         using TestAppDbContext db = TestDbContextFactory.Create();
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            new ArchiveProjectHandler(db).HandleAsync(new ArchiveProject(Guid.CreateVersion7())));
+            new ArchiveProjectHandler(db).HandleAsync(new ArchiveProject(Guid.CreateVersion7(), null)));
     }
 
     [Fact]
@@ -43,6 +43,6 @@ public class ArchiveProjectHandlerTests
         await db.SaveChangesAsync();
 
         await Assert.ThrowsAsync<DomainException>(() =>
-            new ArchiveProjectHandler(db).HandleAsync(new ArchiveProject(project.Id)));
+            new ArchiveProjectHandler(db).HandleAsync(new ArchiveProject(project.Id, project.RowVersion)));
     }
 }

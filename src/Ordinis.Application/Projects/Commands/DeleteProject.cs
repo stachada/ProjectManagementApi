@@ -1,3 +1,4 @@
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Ordinis.Application.Common;
 using Ordinis.Domain.Projects;
@@ -12,7 +13,10 @@ namespace Ordinis.Application.Projects.Commands;
 /// projects with existing task history.
 /// </summary>
 /// <param name="ProjectId">The project to soft-delete.</param>
-public sealed record DeleteProject(Guid ProjectId) : ICommand;
+/// <param name="IfMatch">
+/// The project's expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// </param>
+public sealed record DeleteProject(Guid ProjectId, byte[]? IfMatch) : ICommand;
 
 // Handler
 /// <summary>
@@ -26,6 +30,8 @@ public sealed class DeleteProjectHandler(IAppDbContext db, TimeProvider timeProv
             .SingleOrDefaultAsync(p => p.Id == command.ProjectId, cancellationToken)
                 ?? throw new NotFoundException(nameof(Project), command.ProjectId);
 
+        ConcurrencyGuard.EnsureMatch(project.RowVersion, command.IfMatch, nameof(Project), command.ProjectId);
+
         DateTimeOffset now = timeProvider.GetUtcNow();
         project.SoftDelete(now);
 
@@ -37,5 +43,19 @@ public sealed class DeleteProjectHandler(IAppDbContext db, TimeProvider timeProv
         {
             throw new ConcurrencyException(nameof(Project), command.ProjectId, ex);
         }
+    }
+}
+
+// Validator
+/// <summary>
+/// Validates <see cref="DeleteProject"/> commands.
+/// </summary>
+public sealed class DeleteProjectValidator : AbstractValidator<DeleteProject>
+{
+    public DeleteProjectValidator()
+    {
+        RuleFor(x => x.IfMatch)
+            .NotNull()
+            .WithMessage("If-Match header is required.");
     }
 }

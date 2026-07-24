@@ -30,7 +30,7 @@ public class AssignTaskHandlerTests
         var handler = new AssignTaskHandler(db, new FakeTimeProvider(Now));
 
         await handler.HandleAsync(
-            new AssignTask(TaskId: task.Id, AssigneeId: assignee, RequestedByUserId: requestedBy),
+            new AssignTask(TaskId: task.Id, AssigneeId: assignee, RequestedByUserId: requestedBy, IfMatch: task.RowVersion),
             CancellationToken.None);
 
         ProjectTask reloaded = await db.Tasks.SingleAsync(t => t.Id == task.Id);
@@ -51,7 +51,7 @@ public class AssignTaskHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.HandleAsync(
-                new AssignTask(TaskId: Guid.CreateVersion7(), AssigneeId: Guid.CreateVersion7(), RequestedByUserId: Guid.CreateVersion7()),
+                new AssignTask(TaskId: Guid.CreateVersion7(), AssigneeId: Guid.CreateVersion7(), RequestedByUserId: Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 
@@ -67,7 +67,7 @@ public class AssignTaskHandlerTests
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             handler.HandleAsync(
-                new AssignTask(TaskId: task.Id, AssigneeId: Guid.Empty, RequestedByUserId: Guid.CreateVersion7()),
+                new AssignTask(TaskId: task.Id, AssigneeId: Guid.Empty, RequestedByUserId: Guid.CreateVersion7(), IfMatch: task.RowVersion),
                 CancellationToken.None));
     }
 
@@ -87,7 +87,7 @@ public class AssignTaskHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(() =>
             handler.HandleAsync(
-                new AssignTask(TaskId: task.Id, AssigneeId: assignee, RequestedByUserId: requestedBy),
+                new AssignTask(TaskId: task.Id, AssigneeId: assignee, RequestedByUserId: requestedBy, IfMatch: task.RowVersion),
                 CancellationToken.None));
     }
 
@@ -107,7 +107,7 @@ public class AssignTaskHandlerTests
 
         await Assert.ThrowsAsync<ConcurrencyException>(() =>
             handler.HandleAsync(
-                new AssignTask(TaskId: task.Id, AssigneeId: Guid.CreateVersion7(), RequestedByUserId: Guid.CreateVersion7()),
+                new AssignTask(TaskId: task.Id, AssigneeId: Guid.CreateVersion7(), RequestedByUserId: Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 }
