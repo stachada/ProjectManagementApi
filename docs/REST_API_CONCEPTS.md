@@ -212,7 +212,7 @@ Full pipeline placement and design notes: [API_INFRASTRUCTURE.md](API_INFRASTRUC
 
 ---
 
-## Response caching ⏳
+## Response caching
 
 **Idea:** a `GET` whose result rarely changes (or is explicitly allowed to be briefly
 stale) shouldn't force a full round trip to the database on every request. `Cache-Control`
@@ -220,11 +220,30 @@ response headers tell HTTP-aware clients and intermediary caches (browsers, CDNs
 proxies) how long a response may be reused without re-asking the server, trading a small
 staleness window for a large reduction in server load.
 
-**Current state:** the ASP.NET Core Response Caching *service* is registered
+**How Ordinis does it:** the ASP.NET Core Response Caching *service*
 (`services.AddResponseCaching()` in `ApiServiceExtensions`, `app.UseResponseCaching()` in
-`Program.cs`), but no controller action yet opts in with a `[ResponseCache]` attribute or
-explicit `Cache-Control`/`Vary` headers. Infrastructure is present; no endpoint uses it
-yet.
+`Program.cs`) pairs with the built-in `[ResponseCache]` action attribute — no custom
+middleware needed, since this is exactly the scenario that middleware exists for. Every
+single-resource `GetById` action (`TasksController`, `TasksV2Controller`, `ProjectsController`,
+`BoardsController`, `OrganizationsController`, `UsersController`) carries
+`[ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any, VaryByHeader = "Accept-Encoding,Authorization")]`,
+producing `Cache-Control: public, max-age=30` and `Vary: Accept-Encoding, Authorization` on a
+`200` response.
+
+**Scope: single-resource GETs only, not list/collection endpoints.** The `GetById` actions are
+also the ones carrying `ConcurrencyToken` → `ETag` (see "Optimistic concurrency" above), so a
+short cache window pairs naturally with a resource that already has its own
+staleness signal. List/collection endpoints (`GET /tasks`, `GET /projects/{id}/tasks`, etc.)
+deliberately stay uncached: there's no cache-invalidation mechanism in this codebase yet, and a
+stale cached list is a more visible correctness problem — a task that just moved boards still
+showing in the old board's list — than a stale single resource for 30 seconds.
+
+**`Vary: ... Authorization`, ahead of auth existing.** Phase 8 (JWT auth) isn't implemented yet,
+so every request today is anonymous and this header currently has no observable effect. It's
+included now because the built-in `[ResponseCache]` attribute makes it free to declare
+up front, and once `[Authorize]` lands, per-user responses served from the same route won't get
+cross-contaminated by a shared cache entry — the header's job is done at declaration time, not
+retrofitted later.
 
 ---
 
