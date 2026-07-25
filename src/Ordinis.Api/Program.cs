@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Ordinis.Api.Common;
 using Ordinis.Api.MinimalApis;
 using Ordinis.Application.Common;
@@ -18,7 +19,7 @@ builder.Host.UseSerilog((context, services, loggerConfig) =>
 builder.Services.AddOpenApi();
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
-builder.Services.AddApiServices();
+builder.Services.AddApiServices(builder.Configuration);
 
 WebApplication app = builder.Build();
 
@@ -54,9 +55,13 @@ app.UseStatusCodePages(async statusCodeContext =>
         _ => "Request failed",
     };
 
-    context.Response.ContentType = "application/problem+json";
+    // contentType must be passed explicitly - WriteAsJsonAsync always sets Content-Type itself
+    // (defaulting to "application/json"), overwriting any prior assignment to
+    // context.Response.ContentType.
     await context.Response.WriteAsJsonAsync(
-        ProblemDetailsFactory.Create(context, context.Response.StatusCode, title));
+        ProblemDetailsFactory.Create(context, context.Response.StatusCode, title),
+        options: null,
+        contentType: "application/problem+json");
 });
 
 app.UseHttpsRedirection();
@@ -66,7 +71,9 @@ app.UseCors();
 app.UseRateLimiter();
 app.UseResponseCaching();
 
-app.MapHealthChecks("/health");
+// Liveness/readiness probes are polled frequently by orchestrators - exempt from rate limiting
+// so a busy probe interval doesn't trip the same limiter guarding real traffic.
+app.MapHealthChecks("/health").DisableRateLimiting();
 app.MapControllers();
 
 app.MapSearchEndpoints();
