@@ -179,20 +179,36 @@ building it, in [API_INFRASTRUCTURE.md](API_INFRASTRUCTURE.md#datashaper).
 
 ---
 
-## Rate limiting 🚧
+## Rate limiting ✅
 
 **Idea:** an API with no request cap is one slow client, one runaway retry loop, or one
 malicious actor away from degrading service for everyone else. Rate limiting rejects
 excess requests (`429 Too Many Requests`, with a `Retry-After` header telling the client
 when to try again) before they consume real backend resources.
 
-**Current state:** a global fixed-window limiter — 100 requests/minute, partitioned per
-client IP address so one noisy caller only throttles itself — is wired up in
+**How Ordinis does it:** a single global limiter, wired up in
 `ApiServiceExtensions.AddApiServices()` (`services.AddRateLimiter(...)`) and applied via
-`app.UseRateLimiter()` in `Program.cs`. This predates the Phase 7 checklist item and
-covers the "reject excess requests" baseline. **Not yet built:** a second, more generous
-sliding-window policy for *authenticated* users (500 req/min per the plan), and an
-explicit `Retry-After` header on the `429` response.
+`app.UseRateLimiter()` in `Program.cs`, picks one of two policies per request via
+`RateLimitPartitioner.CreatePartition` (`src/Ordinis.Api/Common/RateLimitPartitioner.cs`):
+
+- **Anonymous requests** (`HttpContext.User.Identity?.IsAuthenticated == false`) — a fixed
+  window, 100 requests/minute, partitioned per client IP so one noisy caller only throttles
+  itself.
+- **Authenticated requests** — a sliding window, 500 requests/minute, partitioned per user
+  ID (`ClaimTypes.NameIdentifier`). This branch is dormant today: Phase 8 (JWT auth) hasn't
+  landed yet, so `HttpContext.User` is never authenticated and every request currently takes
+  the anonymous branch. It activates automatically once Phase 8 wires up JWT auth, with no
+  further changes to the limiter itself.
+
+Both limits are config-driven (`RateLimiting` section of `appsettings.json`) rather than
+hardcoded. Rejected requests get a real `429 Too Many Requests`: the limiter's `OnRejected`
+callback reads the algorithm's own `Retry-After` metadata and sets it as a response header,
+then writes a body through the same `ProblemDetailsFactory` every other error response uses
+— RFC 9457 shape, `correlationId` included — instead of the default plain-text rejection.
+`GET /health` is exempted via `.DisableRateLimiting()`, since orchestrator liveness/readiness
+probes poll frequently and shouldn't compete with real traffic for the same budget.
+
+Full pipeline placement and design notes: [API_INFRASTRUCTURE.md](API_INFRASTRUCTURE.md#apiserviceextensions).
 
 ---
 
