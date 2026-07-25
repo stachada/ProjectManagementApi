@@ -56,18 +56,22 @@ tests/
 
 ## REST features
 
-- Full CRUD on all resources
-- Resource relationship endpoints (`GET /projects/{id}/tasks`, `GET /tasks/{id}/comments`)
-- Filtering, sorting, pagination, sparse fields, search
-- State transition endpoints (`POST /tasks/{id}/move`, `/assign`, `/close`, `/reopen`)
-- HATEOAS (`_links` on task and project responses)
-- Optimistic concurrency via ETags and `If-Match` (see [docs/CONCURRENCY.md](docs/CONCURRENCY.md))
-- Idempotency keys on POST endpoints (`Idempotency-Key` header)
-- API versioning (`/api/v1`, `/api/v2`)
-- Problem Details error responses (RFC 9457)
-- Rate limiting and response caching headers
-- Webhooks fired on task events
-- Audit log endpoints
+See [docs/REST_API_CONCEPTS.md](docs/REST_API_CONCEPTS.md) for what each of these means
+and why it's here — this list just tracks what's actually built vs. still planned.
+
+- ✅ Full CRUD on all resources
+- ✅ Resource relationship endpoints (`GET /projects/{id}/tasks`, `GET /tasks/{id}/comments`)
+- ✅ Filtering, sorting, pagination, sparse fields, search
+- ✅ State transition endpoints (`POST /tasks/{id}/move`, `/assign`, `/close`, `/reopen`)
+- ✅ HATEOAS (`_links` on task and project responses)
+- ✅ Optimistic concurrency via ETags and `If-Match` (see [docs/CONCURRENCY.md](docs/CONCURRENCY.md))
+- ✅ Idempotency keys on POST endpoints (`Idempotency-Key` header, see [docs/IDEMPOTENCY.md](docs/IDEMPOTENCY.md))
+- ✅ Problem Details error responses (RFC 9457)
+- 🚧 Rate limiting — global fixed-window limiter live; per-authenticated-user sliding window and `Retry-After` still pending
+- 🚧 Response caching — service registered, not yet applied to any endpoint
+- ⏳ API versioning — routes carry a literal `/api/v1` prefix; no actual `/api/v2` or version-negotiation mechanism yet
+- ⏳ Webhooks
+- ⏳ Audit log endpoints
 
 ## Getting started
 
@@ -194,7 +198,7 @@ decisions behind each phase.
 | 4 — Application layer: features | ✅ Complete |
 | 5 — Infrastructure layer | ✅ Complete |
 | 6 — API layer: core endpoints (all 5 controllers, `SearchEndpoints`, and placeholder auth endpoints done — only the cross-cutting-concerns checklist remains) | 🚧 In progress |
-| 7 — API layer: advanced REST features | ⏳ Not started |
+| 7 — API layer: advanced REST features (state transitions, HATEOAS, optimistic concurrency, and idempotency done — versioning, rate limiting, response caching, webhooks, and audit log remain) | 🚧 In progress |
 | 8 — Security | ⏳ Not started |
 | 9 — Testing & benchmarking | 🚧 In progress |
 | 10 — Developer experience & docs | ⏳ Not started |

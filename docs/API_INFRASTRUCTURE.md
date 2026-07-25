@@ -5,10 +5,12 @@ runs. This doc explains what each piece is for and why it sits where it does in
 [Program.cs](../src/Ordinis.Api/Program.cs):
 
 ```
-correlation ID → request logging → global exception → concurrency token extraction → status code pages → routing → auth (Phase 8) → endpoints
+correlation ID → request logging → global exception → concurrency token extraction → idempotency key replay → status code pages → routing → auth (Phase 8) → endpoints
 ```
 
-All of it lives in [src/Ordinis.Api/Common/](../src/Ordinis.Api/Common/).
+All of it lives in [src/Ordinis.Api/Common/](../src/Ordinis.Api/Common/). For the
+higher-level "what is this REST concept and why does the API have it" framing, see
+[REST_API_CONCEPTS.md](REST_API_CONCEPTS.md) — this doc stays focused on implementation.
 
 ---
 
@@ -75,6 +77,7 @@ never need a `try/catch` for these cases
 | `ValidationException` | `422` | Thrown by the `Dispatcher` when FluentValidation fails; field errors flow into a `ValidationProblemDetails` body |
 | `NotFoundException` | `404` | Thrown by query/command handlers when a resource doesn't exist (or is soft-deleted) |
 | `ConcurrencyException` | `409` | Thrown when EF Core detects a `RowVersion` mismatch — an optimistic concurrency conflict |
+| `IdempotencyKeyConflictException` | `409` | Thrown by `IdempotencyMiddleware` when an `Idempotency-Key` is reused with a request body different from the one originally cached under that key |
 | `DomainException` | `422` | Thrown by aggregate methods when a business rule is violated (e.g. suspending an already-suspended organization); `ex.ErrorCode` flows into the response's `type` as `urn:ordinis:error:{ErrorCode}`, so clients can distinguish error causes that share the same status code |
 | `BadHttpRequestException` | `ex.StatusCode` (typically `400`) | Thrown by Minimal API endpoints when a route/query parameter fails to bind (e.g. `GET /search?page=abc`) — caught in its own clause, *before* the catch-all, so it doesn't get flattened into a `500` |
 | anything else | `500` | Logged with the full exception, but the client only ever sees a generic message — never the raw exception detail |
@@ -125,6 +128,61 @@ It's registered **after** `GlobalExceptionMiddleware` (no exception-worthy work 
 here, but keeping the exception handler as far upstream as practical is the established
 convention in this pipeline) and **before** routing/endpoints, so the decoded token is
 already sitting on `HttpContext.Items` by the time any controller action runs.
+
+---
+
+## IdempotencyMiddleware
+
+Lets a client safely retry a `POST` that timed out or dropped its connection without risking a
+duplicate resource (a double-submitted task, a duplicate organization, ...). ETags/`If-Match`
+solve the equivalent problem for concurrent *updates*; this solves it for *creates*
+([IdempotencyMiddleware.cs](../src/Ordinis.Api/Common/IdempotencyMiddleware.cs)). See
+[IDEMPOTENCY.md](IDEMPOTENCY.md) for the full `Idempotency-Key` mechanism this middleware is
+one link in — request/response caching, conflict detection, and the guarded/not-guarded route
+table — the same way [CONCURRENCY.md](CONCURRENCY.md) documents the full ETag/If-Match round trip.
+
+Applied only to the eight create-style actions named in the Phase 7 build plan, each marked with
+`[Idempotent]` ([IdempotentAttribute.cs](../src/Ordinis.Api/Common/IdempotentAttribute.cs)):
+`TasksController.Create`/`AddComment`/`AddAttachment`, `ProjectsController.CreateProject`/`AddMember`,
+`BoardsController.Create`, `OrganizationsController.Create`, `UsersController.CreateUser`. A marker
+attribute was chosen over a hardcoded path allowlist in the middleware itself — self-documenting at
+the call site (same idiom as `[Consumes]`/`[ProducesResponseType]`), and it survives route changes
+without touching middleware code.
+
+What it does, in order:
+
+1. Passes through untouched if the request isn't a `POST`, the matched endpoint has no
+   `[Idempotent]` attribute, or there's no `Idempotency-Key` header — the same "dumb,
+   endpoint-agnostic" behavior `ConcurrencyTokenMiddleware` already established for `If-Match`.
+2. Builds a cache key from `{method}:{path}:{Idempotency-Key}` — scoped per route, so the same key
+   value accidentally reused on two different endpoints can't collide — and hashes the raw request
+   body bytes (SHA-256, not decoded as text, since `AddAttachment`'s body is multipart/binary).
+3. On a cache hit with a matching body hash: replays the stored status code, `Content-Type`,
+   `Location` header, and body verbatim, **without** calling the rest of the pipeline — the
+   handler never runs a second time.
+4. On a cache hit with a *different* body hash: throws `IdempotencyKeyConflictException` →
+   `409 Conflict` — the key was reused for what looks like a different request, which is a client
+   bug, not a safe replay.
+5. On a cache miss: buffers the response, runs the rest of the pipeline, and — only if the
+   resulting status is `2xx` — caches `(status, Content-Type, Location, body)` for 24 hours via
+   `IIdempotencyStore`. Non-2xx responses (a `422` validation failure, `404`, `500`, ...) are
+   deliberately **not** cached, so a client can fix the request and retry under the same key. This
+   also sidesteps a subtler problem: `ProblemDetailsFactory` stamps the *originating* request's
+   `correlationId` into every error body, so replaying a cached error verbatim would show a stale,
+   misleading correlation ID on the retry.
+
+**Storage**: `IIdempotencyStore` lives in `Ordinis.Application/Common` — a pure contract, no
+caching technology leaks into the Application or Api layers. The only implementation today,
+`InMemoryIdempotencyStore` (`Ordinis.Infrastructure/Common/`), wraps `IMemoryCache`. This mirrors
+the existing `IFileStorageService` swap-friendly pattern: a future multi-instance deployment can
+introduce a Redis-backed store in `Ordinis.Infrastructure` without touching the middleware, the
+attribute, or any controller.
+
+It's registered **after** `ConcurrencyTokenMiddleware` and relies on `context.GetEndpoint()` to
+read the `[Idempotent]` metadata — the endpoint is already resolved by the time any of this
+project's `app.UseMiddleware<>()` calls run, since WebApplication's minimal hosting model
+auto-inserts `UseRouting()` as the very first pipeline entry whenever any endpoints are mapped,
+ahead of every custom middleware registered in `Program.cs`.
 
 ---
 
