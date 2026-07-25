@@ -251,9 +251,33 @@ change independently.
   `Cache-Control` header handling on endpoints added in later phases.
 - **CORS** — a permissive default policy (any origin/method/header). Fine for a portfolio project
   with no browser-based first-party client yet; would need tightening before fronting a real SPA.
-- **Rate limiting** — a global fixed-window limiter (100 requests/minute), partitioned per client
-  IP address so one noisy caller only throttles itself, not everyone else. Rejected requests get
-  `429 Too Many Requests`.
+- **Rate limiting** — a global limiter whose partition (key + algorithm) is chosen per request by
+  `RateLimitPartitioner.CreatePartition` (`RateLimitPartitioner.cs`): anonymous requests get a
+  fixed window (100/minute) keyed by client IP; authenticated requests get a sliding window
+  (500/minute) keyed by user ID. The authenticated branch is dormant until Phase 8 (JWT auth)
+  makes `HttpContext.User` an authenticated principal — every request takes the anonymous branch
+  today. Limits are bound from `RateLimitingOptions` (`RateLimiting` section of
+  `appsettings.json`) rather than hardcoded. Rejected requests get `429 Too Many Requests` via
+  `options.OnRejected`, which reads the limiter's own `Retry-After` metadata onto the response
+  header and writes a `ProblemDetailsFactory`-shaped body — the same RFC 9457 shape every other
+  error response uses — instead of `AddRateLimiter`'s default plain-text rejection.
+  `GET /health` opts out via `.DisableRateLimiting()` in `Program.cs`, so orchestrator
+  liveness/readiness probes don't compete with real traffic for the same budget. Extracting the
+  partition-selection logic into a pure function (`RateLimitPartitioner`, no `AddRateLimiter`
+  coupling) is what makes the authenticated-vs-anonymous branching unit-testable today against a
+  fabricated `ClaimsPrincipal`, without needing Phase 8's real JWT pipeline to exist yet — see
+  `tests/Ordinis.IntegrationTests/Common/RateLimitPartitionerTests.cs`.
+
+  **Gotcha found while wiring up the `429` body:** `HttpResponse.WriteAsJsonAsync(...)` always
+  sets `Content-Type` itself (defaulting to `application/json`) unless the media type is passed
+  as its own `contentType` argument — assigning `context.Response.ContentType` beforehand and
+  then calling the parameterless overload gets silently overwritten. This turned out to be a
+  pre-existing bug in `GlobalExceptionMiddleware` and `Program.cs`'s `UseStatusCodePages`
+  callback too (both set `ContentType = "application/problem+json"` and then called
+  `WriteAsJsonAsync` without a `contentType` argument), meaning every error response in this API
+  was actually served as `application/json` despite being documented as
+  `application/problem+json` — no existing test asserted on `Content-Type`, so it went unnoticed.
+  Fixed in all three call sites by passing `contentType: "application/problem+json"` explicitly.
 
 Keeping this in one extension method (rather than scattering `AddX()` calls across `Program.cs`)
 matches the pattern already used for `AddApplicationServices` and `AddInfrastructureServices` —
