@@ -212,7 +212,7 @@ yet.
 
 ---
 
-## API versioning ⏳
+## API versioning ✅
 
 **Idea:** a REST API that will ever need a breaking change needs a way to serve both the
 old and new contract simultaneously, so existing clients don't break the moment a new
@@ -220,13 +220,24 @@ version ships. URL-segment versioning (`/api/v1/...` vs `/api/v2/...`) is the si
 most explicit strategy — a client's chosen version is visible in every request URL, no
 custom header or content-negotiation parsing required.
 
-**Current state:** every route already carries a literal `api/v1/` prefix
-(`[Route("api/v1/tasks")]` and so on) — but that's a hardcoded string, not an actual
-versioning *mechanism*. There is no `/api/v2` variant of any endpoint, no version
-negotiation, and no `Asp.Versioning` package reference. This is worth calling out
-explicitly: the `v1` prefix reads as if versioning is "done," but the feature this phase
-actually asks for — a second, coexisting API version demonstrating how a breaking change
-would be introduced — doesn't exist yet.
+**How Ordinis does it:** every route carries a literal `api/v1/` prefix
+(`[Route("api/v1/tasks")]` and so on), and `TasksV2Controller` (`[Route("api/v2/tasks")]`)
+adds a `GET /api/v2/tasks/{id}` endpoint alongside it to demonstrate a second, coexisting
+API version. v2 dispatches the same `GetTaskById` query and reuses `TaskDto`/`TaskMapper`
+unchanged, then appends one extra `board` `HateoasLink` to the response's `_links` —
+`TaskDto` carries `BoardId` but v1 never exposed a direct hyperlink to the parent board
+despite already linking `self`/`assign`/`delete`/`move`, so this is a genuine, useful
+v1/v2 difference rather than a contrived one.
+
+**Deliberately not done:** no `Asp.Versioning` (or similar) NuGet package is installed —
+versioning stays a hardcoded route-string convention, the same one every v1 controller
+already used, rather than a formal `[ApiVersion]`-attribute mechanism. That's a reasonable
+trade for a single demonstration endpoint on top of a codebase that already avoids
+framework abstraction elsewhere (no MediatR, no AutoMapper). Worth revisiting if this
+API ever grows a real v3, needs version negotiation beyond the URL segment (e.g. an
+`Accept` header or query string), or needs to advertise per-endpoint deprecation —
+`Asp.Versioning.Mvc` covers all three out of the box and would replace the hardcoded
+prefixes with `[ApiVersion]` attributes at that point.
 
 ---
 
