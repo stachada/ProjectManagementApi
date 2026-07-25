@@ -88,12 +88,19 @@ public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Glob
 
     private static async Task WriteAsync(HttpContext context, ProblemDetails problemDetails)
     {
-        context.Response.ContentType = "application/problem+json";
         context.Response.StatusCode = problemDetails.Status ?? StatusCodes.Status500InternalServerError;
 
         // Serialize by the runtime type, not the ProblemDetails-typed parameter — WriteAsJsonAsync's
         // generic overload would otherwise infer TValue as ProblemDetails and silently slice off
         // derived-only members, e.g. ValidationProblemDetails.Errors.
-        await context.Response.WriteAsJsonAsync(problemDetails, problemDetails.GetType());
+        // contentType must be passed here explicitly - WriteAsJsonAsync always sets
+        // Content-Type itself (defaulting to "application/json") and overwrites any prior
+        // assignment to context.Response.ContentType, silently discarding the "problem+json"
+        // media type this API's error responses are documented to use.
+        await context.Response.WriteAsJsonAsync(
+            problemDetails,
+            problemDetails.GetType(),
+            options: null,
+            contentType: "application/problem+json");
     }
 }
