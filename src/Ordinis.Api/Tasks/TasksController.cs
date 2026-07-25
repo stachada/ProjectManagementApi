@@ -150,6 +150,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <response code="201">The task was created. The <c>Location</c> header points at <see cref="GetById"/>.</response>
     /// <response code="422">The request failed validation (e.g. board does not exist or is archived, assignee not found).</response>
     [HttpPost]
+    [Idempotent]
     [ProducesResponseType(typeof(TaskDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<TaskDto>> Create(
@@ -404,6 +405,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <response code="404">No task exists with the given ID.</response>
     /// <response code="422">The request failed validation (e.g. empty content).</response>
     [HttpPost("{id:guid}/comments")]
+    [Idempotent]
     [ProducesResponseType(typeof(CommentDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -493,6 +495,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <response code="422">The request failed validation (e.g. empty file).</response>
     [HttpPost("{id:guid}/attachments")]
     [Consumes("multipart/form-data")]
+    [Idempotent]
     [ProducesResponseType(typeof(AttachmentDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]

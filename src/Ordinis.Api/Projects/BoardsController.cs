@@ -113,6 +113,7 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="201">The board was created. The <c>Location</c> header points at <see cref="GetById"/>.</response>
     /// <response code="422">The request failed validation (e.g. project does not exist or is archived, duplicate board name).</response>
     [HttpPost("/api/v1/projects/{projectId:guid}/boards")]
+    [Idempotent]
     [ProducesResponseType(typeof(BoardDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<BoardDto>> Create(

@@ -29,11 +29,17 @@ if (app.Environment.IsDevelopment())
 }
 
 // Middleware order: correlation ID -> request logging -> global exception -> concurrency token
-// extraction -> routing -> auth (Phase 8) -> endpoints.
+// extraction -> idempotency key replay -> routing -> auth (Phase 8) -> endpoints.
+// IdempotencyMiddleware relies on context.GetEndpoint() to read the [Idempotent] attribute;
+// WebApplication's minimal hosting model auto-inserts UseRouting() as the very first pipeline
+// entry whenever any endpoints are mapped (before any app.UseMiddleware<> call here), so the
+// endpoint is already resolved by the time this runs despite being registered ahead of
+// MapControllers().
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseMiddleware<ConcurrencyTokenMiddleware>();
+app.UseMiddleware<IdempotencyMiddleware>();
 
 // Gives a Problem Details body to error status codes that reach the client without an
 // exception ever being thrown - an unmatched route (404) or a disallowed HTTP method (405) -

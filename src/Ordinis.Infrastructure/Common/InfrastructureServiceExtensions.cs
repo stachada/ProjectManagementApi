@@ -37,6 +37,12 @@ public static class InfrastructureServiceExtensions
         services.Configure<LocalStorageOptions>(configuration.GetSection(LocalStorageOptions.SectionName));
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
 
+        // MemoryCacheOptions has no TimeProvider-based clock override in the referenced package
+        // version, so cache expiry runs on the wall clock rather than the app's TimeProvider
+        // singleton — the only clock dependency in this codebase not routed through TimeProvider.
+        services.AddMemoryCache();
+        services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
+
         services.AddHealthChecks()
             .AddDbContextCheck<AppDbContext>("database");
 

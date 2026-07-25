@@ -8,7 +8,9 @@ namespace Ordinis.Api.Common;
 /// Catches exceptions thrown by command/query handlers (via the dispatcher) or by controller
 /// actions and translates them into RFC 9457 Problem Details responses:
 /// <see cref="ValidationException"/> → <c>422</c>, <see cref="NotFoundException"/> → <c>404</c>,
-/// <see cref="ConcurrencyException"/> → <c>409</c>, <see cref="DomainException"/> → <c>422</c>,
+/// <see cref="ConcurrencyException"/> → <c>409</c>,
+/// <see cref="IdempotencyKeyConflictException"/> → <c>409</c>,
+/// <see cref="DomainException"/> → <c>422</c>,
 /// <see cref="BadHttpRequestException"/> (Minimal API route/query parameter binding failure,
 /// e.g. <c>?page=abc</c>) → its own <see cref="BadHttpRequestException.StatusCode"/> (typically
 /// <c>400</c>), anything else → <c>500</c>.
@@ -49,6 +51,12 @@ public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Glob
             _logger.LogWarning(ex, "Concurrency conflict for {Method} {Path}", context.Request.Method, context.Request.Path);
             await WriteAsync(context, ProblemDetailsFactory.Create(
                 context, StatusCodes.Status409Conflict, "Concurrency conflict", ex.Message));
+        }
+        catch (IdempotencyKeyConflictException ex)
+        {
+            _logger.LogWarning(ex, "Idempotency key conflict for {Method} {Path}", context.Request.Method, context.Request.Path);
+            await WriteAsync(context, ProblemDetailsFactory.Create(
+                context, StatusCodes.Status409Conflict, "Idempotency key conflict", ex.Message));
         }
         catch (DomainException ex)
         {
