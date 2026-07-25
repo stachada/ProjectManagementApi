@@ -210,6 +210,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="201">The project was created. The <c>Location</c> header points at <see cref="GetById"/>.</response>
     /// <response code="422">The request failed validation (e.g. duplicate name in the organization).</response>
     [HttpPost]
+    [Idempotent]
     [ProducesResponseType(typeof(ProjectDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<ProjectDto>> CreateProject(
@@ -326,6 +327,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The request failed validation (e.g. project does not exist, user not found, already a member).</response>
     [HttpPost("{id:guid}/members")]
+    [Idempotent]
     [ProducesResponseType(typeof(ProjectMemberDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Ordinis.Api.Common;
 using Ordinis.Api.Common.DataShaping;
 using Ordinis.Api.Organizations.Requests;
 using Ordinis.Application.Common;
@@ -98,6 +99,7 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
     /// <response code="201">The organization was created. The <c>Location</c> header points at <see cref="GetById"/>.</response>
     /// <response code="422">The request failed validation (e.g. duplicate name).</response>
     [HttpPost]
+    [Idempotent]
     [ProducesResponseType(typeof(OrganizationDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<OrganizationDto>> Create(
