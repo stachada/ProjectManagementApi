@@ -81,9 +81,13 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// </summary>
     /// <param name="id">The project's unique identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <response code="200">The project was found and is returned.</response>
+    /// <response code="200">
+    /// The project was found and is returned. Cacheable for 30 seconds
+    /// (<c>Cache-Control: public, max-age=30</c>).
+    /// </response>
     /// <response code="404">No project exists with the given ID.</response>
     [HttpGet("{id:guid}")]
+    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any, VaryByHeader = "Accept-Encoding,Authorization")]
     [ProducesResponseType(typeof(ProjectDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ProjectDto>> GetById(Guid id, CancellationToken cancellationToken)

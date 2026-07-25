@@ -26,9 +26,13 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
     /// </summary>
     /// <param name="id">The organization's unique identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <response code="200">The organization was found and is returned.</response>
+    /// <response code="200">
+    /// The organization was found and is returned. Cacheable for 30 seconds
+    /// (<c>Cache-Control: public, max-age=30</c>).
+    /// </response>
     /// <response code="404">No organization exists with the given ID.</response>
     [HttpGet("{id:guid}")]
+    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any, VaryByHeader = "Accept-Encoding,Authorization")]
     [ProducesResponseType(typeof(OrganizationDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<OrganizationDto>> GetById(Guid id, CancellationToken cancellationToken)

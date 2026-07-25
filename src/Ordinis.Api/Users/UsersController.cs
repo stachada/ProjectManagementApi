@@ -27,9 +27,13 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
     /// </summary>
     /// <param name="id">The ID of the user to retrieve.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <response code="200">The user was found and is returned.</response>
+    /// <response code="200">
+    /// The user was found and is returned. Cacheable for 30 seconds
+    /// (<c>Cache-Control: public, max-age=30</c>).
+    /// </response>
     /// <response code="404">No user exists with the given ID.</response>
     [HttpGet("{id:guid}")]
+    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any, VaryByHeader = "Accept-Encoding,Authorization")]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<UserDto>> GetById(
