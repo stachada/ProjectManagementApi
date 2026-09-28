@@ -1,9 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Ordinis.Application.Common;
+using Ordinis.Domain.Tasks;
 using Ordinis.Infrastructure.FileStorage;
 using Ordinis.Infrastructure.Persistence;
+using Ordinis.Infrastructure.Webhooks;
 
 namespace Ordinis.Infrastructure.Common;
 
@@ -47,6 +50,24 @@ public static class InfrastructureServiceExtensions
             .AddDbContextCheck<AppDbContext>("database");
 
         services.AddHostedService<OutboxDispatcherJob>();
+
+        services.Configure<WebhookDeliveryOptions>(configuration.GetSection(WebhookDeliveryOptions.SectionName));
+        services.AddHttpClient("WebhookDelivery")
+            .ConfigureHttpClient((sp, client) =>
+                client.Timeout = sp.GetRequiredService<IOptions<WebhookDeliveryOptions>>().Value.HttpTimeout);
+
+        // Stateless — same singleton treatment as ISlugGenerator.
+        services.AddSingleton<IWebhookUrlGuard, WebhookUrlGuard>();
+
+        // One WebhookDomainEventHandler instance implements all four closed IDomainEventHandler<T>
+        // interfaces — OutboxDispatcherJob resolves handlers per event type via DI, so each
+        // registration below is required even though they share an implementation type.
+        services.AddScoped<IDomainEventHandler<TaskCreated>, WebhookDomainEventHandler>();
+        services.AddScoped<IDomainEventHandler<TaskMoved>, WebhookDomainEventHandler>();
+        services.AddScoped<IDomainEventHandler<TaskAssigned>, WebhookDomainEventHandler>();
+        services.AddScoped<IDomainEventHandler<CommentAdded>, WebhookDomainEventHandler>();
+
+        services.AddHostedService<WebhookDeliveryDispatcherService>();
 
         return services;
     }

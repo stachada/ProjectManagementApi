@@ -1,0 +1,185 @@
+@Ordinis.Api_HostAddress = http://localhost:5084
+@contentType = application/json
+@webhookCallbackUrl = https://webhook.site/0accb52a-4c3f-415d-ba16-7b9e34a8636e
+
+# Webhook test sequence for project task events.
+#
+# Prerequisites:
+# - Replace @webhookCallbackUrl with a reachable HTTPS endpoint or request catcher.
+# - Run the setup requests below in order and copy response values into the
+#   placeholder variables after each create call.
+
+### Create an organization
+POST {{Ordinis.Api_HostAddress}}/api/v1/organizations
+Content-Type: {{contentType}}
+
+{
+  "name": "Webhook Test Org 1",
+  "description": "Organization for webhook scratch-file testing"
+}
+
+###
+@organizationId = 01a0edc1-fafe-7872-8db2-b5a7c32b16b5
+
+### Create a user that will create and register the webhook
+POST {{Ordinis.Api_HostAddress}}/api/v1/users
+Content-Type: {{contentType}}
+
+{
+  "organizationId": "{{organizationId}}",
+  "displayName": "Webhook Admin",
+  "email": "webhook.admin@example.com",
+  "password": "SuperSecret123",
+  "orgRole": 2
+}
+
+###
+@createdByUserId = 01a0edc2-4e04-70b3-aca4-17117d6fb7ce
+
+### Create a second user to use as a task assignee
+POST {{Ordinis.Api_HostAddress}}/api/v1/users
+Content-Type: {{contentType}}
+
+{
+  "organizationId": "{{organizationId}}",
+  "displayName": "Webhook Member",
+  "email": "webhook.member@example.com",
+  "password": "SuperSecret123",
+  "orgRole": 1
+}
+
+###
+@memberUserId =01a0edc2-b448-7c53-b8f5-26a8c9cf93a6
+
+### Create a project
+# @name createProject
+POST {{Ordinis.Api_HostAddress}}/api/v1/projects
+Content-Type: {{contentType}}
+
+{
+  "organizationId": "{{organizationId}}",
+  "createdByUserId": "{{createdByUserId}}",
+  "name": "Webhook Test Project 5",
+  "description": "Project used to trigger webhook deliveries"
+}
+
+###
+@projectId = 01a0eead-e750-7bff-8623-d82511bf6d5d
+
+### Capture the project's ETag before registering the webhook
+@projectEtagBeforeWebhook = {{createProject.response.body.$.concurrencyToken}}
+
+### Register a webhook for all supported task events
+POST {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/webhooks
+Content-Type: {{contentType}}
+If-Match: {{projectEtagBeforeWebhook}}
+
+{
+  "url": "{{webhookCallbackUrl}}",
+  "eventTypes": [
+    "task.created",
+    "task.moved",
+    "task.assigned",
+    "comment.added"
+  ],
+  "registeredByUserId": "{{createdByUserId}}"
+}
+
+###
+@webhookId = 01a0eeae-18e7-7f7d-acd0-01dd5610d0fc
+
+# @name getProjectAfterWebhookRegistration
+### Refresh the project ETag after registration
+GET {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}
+
+###
+@projectEtagAfterWebhookRegistration = {{getProjectAfterWebhookRegistration.response.body.$.concurrencyToken}}
+
+### Create a board
+POST {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/boards
+Content-Type: {{contentType}}
+
+{
+  "createdByUserId": "{{createdByUserId}}",
+  "name": "Webhook Board"
+}
+
+###
+@boardId = 01a0eeae-b9a9-7b95-96e4-d7e38058b2fa
+
+### Create a task in Backlog; task.created should be delivered
+POST {{Ordinis.Api_HostAddress}}/api/v1/tasks
+Content-Type: {{contentType}}
+
+{
+  "boardId": "{{boardId}}",
+  "title": "Webhook test task",
+  "description": "Generated to trigger task webhooks",
+  "priority": 1,
+  "assigneeId": null,
+  "dueDate": null,
+  "requestedByUserId": "{{createdByUserId}}"
+}
+
+###
+@taskId = 01a0eeae-ee7d-737b-add8-19bb6537795e
+
+# @name getTaskBeforeWebhookActions
+### Capture the task ETag before guarded task actions
+GET {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}
+
+###
+@taskEtagBeforeAssign = {{getTaskBeforeWebhookActions.response.body.$.concurrencyToken}}
+
+### Assign the task; task.assigned should be delivered
+POST {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/assign
+Content-Type: {{contentType}}
+If-Match: {{taskEtagBeforeAssign}}
+
+{
+  "assigneeId": "{{memberUserId}}",
+  "requestedByUserId": "{{createdByUserId}}"
+}
+
+# @name getTaskAfterAssignment
+### Refresh the task ETag after assignment
+GET {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}
+
+###
+@taskEtagBeforeMove = {{getTaskAfterAssignment.response.body.$.concurrencyToken}}
+
+### Move the task to ToDo; task.moved should be delivered
+POST {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/move
+Content-Type: {{contentType}}
+If-Match: {{taskEtagBeforeMove}}
+
+{
+  "status": 1,
+  "requestedByUserId": "{{createdByUserId}}"
+}
+
+# @name getTaskAfterMove
+### Refresh the task ETag after the move
+GET {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}
+
+###
+@taskEtagAfterMove = {{getTaskAfterMove.response.body.$.concurrencyToken}}
+
+### Add a comment; comment.added should be delivered
+POST {{Ordinis.Api_HostAddress}}/api/v1/tasks/{{taskId}}/comments
+Content-Type: {{contentType}}
+
+{
+  "authorId": "{{createdByUserId}}",
+  "content": "Webhook test comment"
+}
+
+### List the registered webhooks
+GET {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/webhooks
+
+### Unregister the webhook
+DELETE {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/webhooks/{{webhookId}}
+If-Match: {{projectEtagAfterWebhookRegistration}}
+
+### Confirm the webhook list is now empty
+GET {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}/webhooks

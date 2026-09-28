@@ -30,6 +30,10 @@ public static class ProjectServiceExtensions
         services.AddScoped<ICommandHandler<RemoveProjectMember>, RemoveProjectMemberHandler>();
         services.AddScoped<ICommandHandler<ChangeMemberRole>, ChangeMemberRoleHandler>();
 
+        // Webhook commands
+        services.AddScoped<ICommandHandler<RegisterWebhook, Guid>, RegisterWebhookHandler>();
+        services.AddScoped<ICommandHandler<UnregisterWebhook>, UnregisterWebhookHandler>();
+
         // Board commands
         services.AddScoped<ICommandHandler<CreateBoard, Guid>, CreateBoardHandler>();
         services.AddScoped<ICommandHandler<ArchiveBoard>, ArchiveBoardHandler>();
@@ -41,6 +45,7 @@ public static class ProjectServiceExtensions
         services.AddScoped<IQueryHandler<GetProjectsFiltered, PagedResult<ProjectSummaryDto>>, GetProjectsFilteredHandler>();
         services.AddScoped<IQueryHandler<GetProjectMembers, IReadOnlyList<ProjectMemberDto>>, GetProjectMembersHandler>();
         services.AddScoped<IQueryHandler<GetProjectTasks, PagedResult<TaskSummaryDto>>, GetProjectTasksHandler>();
+        services.AddScoped<IQueryHandler<GetProjectWebhooks, IReadOnlyList<WebhookDto>>, GetProjectWebhooksHandler>();
 
         // Board queries
         services.AddScoped<IQueryHandler<GetBoardById, BoardDto>, GetBoardByIdHandler>();

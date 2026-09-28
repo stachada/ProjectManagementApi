@@ -40,7 +40,14 @@ public class Project : AggregateRoot
 {
     #region Private backing fields
     private readonly List<ProjectMember> _members = [];
+    private readonly List<Webhook> _webhooks = [];
     #endregion
+
+    /// <summary>
+    /// Maximum number of webhooks a single project may have registered at once.
+    /// Prevents unbounded growth of outbound delivery targets per project.
+    /// </summary>
+    public const int MaxWebhooks = 20;
 
     #region Properties
     /// <summary>
@@ -97,6 +104,12 @@ public class Project : AggregateRoot
     /// <see cref="RemoveMember"/>, and <see cref="ChangeMemberRole"/>.
     /// </summary>
     public IReadOnlyCollection<ProjectMember> Members => _members.AsReadOnly();
+
+    /// <summary>
+    /// All webhooks registered on this project. Managed via
+    /// <see cref="RegisterWebhook"/> and <see cref="UnregisterWebhook"/>.
+    /// </summary>
+    public IReadOnlyCollection<Webhook> Webhooks => _webhooks.AsReadOnly();
     #endregion
 
     #region Constructors
@@ -314,6 +327,70 @@ public class Project : AggregateRoot
         }
 
         member.Role = newRole;
+    }
+    #endregion
+
+    #region Webhook management
+    /// <summary>
+    /// Registers a new webhook URL on this project.
+    /// </summary>
+    /// <param name="url">The absolute URL to POST event deliveries to. Must not be empty.</param>
+    /// <param name="eventTypes">
+    /// Event names to subscribe to. Empty means all supported event types.
+    /// </param>
+    /// <param name="registeredByUserId">The user registering the webhook. Must not be empty.</param>
+    /// <param name="now">The current time.</param>
+    /// <returns>The newly created <see cref="Webhook"/>.</returns>
+    /// <exception cref="DomainException">
+    /// Thrown if the project is archived, or if it already has <see cref="MaxWebhooks"/>
+    /// webhooks registered.
+    /// </exception>
+    public Webhook RegisterWebhook(
+        string url,
+        IReadOnlyList<string> eventTypes,
+        Guid registeredByUserId,
+        DateTimeOffset now)
+    {
+        EnsureNotArchived();
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(url);
+
+        if (registeredByUserId == Guid.Empty)
+        {
+            throw new ArgumentException("RegisteredByUserId cannot be empty", nameof(registeredByUserId));
+        }
+
+        if (_webhooks.Count >= MaxWebhooks)
+        {
+            throw new DomainException(
+                $"Project already has the maximum of {MaxWebhooks} webhooks registered.",
+                "project.webhook-limit-reached"
+            );
+        }
+
+        var webhook = Webhook.Create(Id, url, eventTypes, registeredByUserId, now);
+        _webhooks.Add(webhook);
+        return webhook;
+    }
+
+    /// <summary>
+    /// Removes a registered webhook from this project.
+    /// </summary>
+    /// <param name="webhookId">The webhook to remove.</param>
+    /// <exception cref="DomainException">
+    /// Thrown if the project is archived or the webhook is not registered on it.
+    /// </exception>
+    public void UnregisterWebhook(Guid webhookId)
+    {
+        EnsureNotArchived();
+
+        Webhook webhook = _webhooks.FirstOrDefault(w => w.Id == webhookId)
+            ?? throw new DomainException(
+                "Webhook is not registered on this project.",
+                "project.webhook-not-found"
+            );
+
+        _webhooks.Remove(webhook);
     }
     #endregion
 

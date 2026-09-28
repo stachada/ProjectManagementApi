@@ -78,6 +78,7 @@ app.MapControllers();
 
 app.MapSearchEndpoints();
 app.MapAuthEndpoints();
+app.MapWebhookEndpoints();
 
 app.Run();
 

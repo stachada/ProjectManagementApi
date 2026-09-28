@@ -113,6 +113,77 @@ public sealed class ProjectTests
     }
     #endregion
 
+    #region RegisterWebhook / UnregisterWebhook
+    [Fact]
+    public void RegisterWebhook_ValidUrl_AddsWebhook()
+    {
+        Project project = ProjectBuilder.Create(now: Now);
+        var registeredByUserId = Guid.CreateVersion7();
+
+        Webhook webhook = project.RegisterWebhook("https://example.com/hook", [], registeredByUserId, Now);
+
+        Assert.Contains(project.Webhooks, w => w.Id == webhook.Id && w.Url == "https://example.com/hook");
+        Assert.Equal(Now, webhook.RegisteredAt);
+    }
+
+    [Fact]
+    public void RegisterWebhook_ArchivedProject_ThrowsDomainException()
+    {
+        Project project = ProjectBuilder.Create(now: Now);
+        project.Archive();
+
+        Assert.Throws<DomainException>(() =>
+            project.RegisterWebhook("https://example.com/hook", [], Guid.CreateVersion7(), Now));
+    }
+
+    [Fact]
+    public void RegisterWebhook_AtMaxWebhooks_ThrowsDomainException()
+    {
+        Project project = ProjectBuilder.Create(now: Now);
+        for (var i = 0; i < Project.MaxWebhooks; i++)
+        {
+            project.RegisterWebhook($"https://example.com/hook{i}", [], Guid.CreateVersion7(), Now);
+        }
+
+        DomainException ex = Assert.Throws<DomainException>(() =>
+            project.RegisterWebhook("https://example.com/one-too-many", [], Guid.CreateVersion7(), Now));
+
+        Assert.Equal("project.webhook-limit-reached", ex.ErrorCode);
+    }
+
+    [Fact]
+    public void UnregisterWebhook_RegisteredWebhook_RemovesWebhook()
+    {
+        Project project = ProjectBuilder.Create(now: Now);
+        Webhook webhook = project.RegisterWebhook("https://example.com/hook", [], Guid.CreateVersion7(), Now);
+
+        project.UnregisterWebhook(webhook.Id);
+
+        Assert.DoesNotContain(project.Webhooks, w => w.Id == webhook.Id);
+    }
+
+    [Fact]
+    public void UnregisterWebhook_NotRegistered_ThrowsDomainException()
+    {
+        Project project = ProjectBuilder.Create(now: Now);
+
+        DomainException ex = Assert.Throws<DomainException>(() =>
+            project.UnregisterWebhook(Guid.CreateVersion7()));
+
+        Assert.Equal("project.webhook-not-found", ex.ErrorCode);
+    }
+
+    [Fact]
+    public void UnregisterWebhook_ArchivedProject_ThrowsDomainException()
+    {
+        Project project = ProjectBuilder.Create(now: Now);
+        Webhook webhook = project.RegisterWebhook("https://example.com/hook", [], Guid.CreateVersion7(), Now);
+        project.Archive();
+
+        Assert.Throws<DomainException>(() => project.UnregisterWebhook(webhook.Id));
+    }
+    #endregion
+
     #region Archive / Unarchive
     [Fact]
     public void Archive_ActiveProject_SetsIsArchivedTrue()
