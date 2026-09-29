@@ -67,6 +67,13 @@ public interface IAppDbContext
     DbSet<ProjectMember> ProjectMembers { get; }
 
     /// <summary>
+    /// Registered project webhooks - queried directly by FK, without loading the full
+    /// <see cref="Project"/> aggregate, by <c>GetProjectWebhooksHandler</c> and
+    /// <c>WebhookDomainEventHandler</c>.
+    /// </summary>
+    DbSet<Webhook> Webhooks { get; }
+
+    /// <summary>
     /// Persists all pending changes to the database within the current transaction.
     /// </summary>
     /// <param name="cancellationToken">Token to cancel the operation.</param>

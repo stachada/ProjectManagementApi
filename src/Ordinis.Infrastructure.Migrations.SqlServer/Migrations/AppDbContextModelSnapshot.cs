@@ -202,6 +202,36 @@ namespace Ordinis.Infrastructure.Migrations.SqlServer.Migrations
                     b.ToTable("ProjectMembers", (string)null);
                 });
 
+            modelBuilder.Entity("Ordinis.Domain.Projects.Webhook", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EventTypes")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RegisteredAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("RegisteredByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("Webhooks", (string)null);
+                });
+
             modelBuilder.Entity("Ordinis.Domain.Tasks.Attachment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -447,6 +477,50 @@ namespace Ordinis.Infrastructure.Migrations.SqlServer.Migrations
                     b.ToTable("OutboxMessages", (string)null);
                 });
 
+            modelBuilder.Entity("Ordinis.Infrastructure.Webhooks.WebhookDelivery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTimeOffset?>("DeliveredAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("WebhookId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status", "NextAttemptAt");
+
+                    b.ToTable("WebhookDeliveries", (string)null);
+                });
+
             modelBuilder.Entity("Ordinis.Domain.Projects.Board", b =>
                 {
                     b.HasOne("Ordinis.Domain.Users.User", "CreatedByUser")
@@ -502,6 +576,17 @@ namespace Ordinis.Infrastructure.Migrations.SqlServer.Migrations
                     b.Navigation("Project");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Ordinis.Domain.Projects.Webhook", b =>
+                {
+                    b.HasOne("Ordinis.Domain.Projects.Project", "Project")
+                        .WithMany("Webhooks")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
                 });
 
             modelBuilder.Entity("Ordinis.Domain.Tasks.Attachment", b =>
@@ -582,6 +667,8 @@ namespace Ordinis.Infrastructure.Migrations.SqlServer.Migrations
             modelBuilder.Entity("Ordinis.Domain.Projects.Project", b =>
                 {
                     b.Navigation("Members");
+
+                    b.Navigation("Webhooks");
                 });
 
             modelBuilder.Entity("Ordinis.Domain.Tasks.ProjectTask", b =>

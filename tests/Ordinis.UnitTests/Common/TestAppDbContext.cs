@@ -32,6 +32,8 @@ internal sealed class TestAppDbContext(DbContextOptions<TestAppDbContext> option
 
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
 
+    public DbSet<Webhook> Webhooks => Set<Webhook>();
+
     /// <summary>
     /// EF Core InMemory has no ADO.NET connection to hand out. No handler under unit test
     /// exercises Dapper today (Dapper wiring lands with the audit log query in Phase 7); this

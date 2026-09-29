@@ -142,6 +142,20 @@ public static class ProjectMapper
         };
 
     /// <summary>
+    /// Maps a <see cref="Webhook"/> to a <see cref="WebhookDto"/>.
+    /// </summary>
+    /// <param name="webhook">The webhook registration to map.</param>
+    public static WebhookDto ToWebhookDto(this Webhook webhook)
+        => new()
+        {
+            Id = webhook.Id,
+            Url = webhook.Url,
+            EventTypes = webhook.EventTypes,
+            RegisteredByUserId = webhook.RegisteredByUserId,
+            RegisteredAt = webhook.RegisteredAt
+        };
+
+    /// <summary>
     /// Maps a <see cref="Board"/> to a <see cref="BoardSummaryDto"/>.
     /// <see cref="Board"/> carries no task navigation collection, so the
     /// task count is always supplied explicitly by the calling handler.

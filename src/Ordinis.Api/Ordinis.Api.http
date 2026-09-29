@@ -250,9 +250,6 @@ Idempotency-Key: {{idempotencyKey}}
 ###
 @projectId = 00000000-0000-0000-0000-000000000000
 
-### Get a project by ID
-GET {{Ordinis.Api_HostAddress}}/api/v1/projects/{{projectId}}
-
 ### Get a project by ID - not found (random GUID)
 GET {{Ordinis.Api_HostAddress}}/api/v1/projects/11111111-1111-1111-1111-111111111111
 

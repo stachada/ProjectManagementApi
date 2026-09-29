@@ -8,6 +8,7 @@ using Ordinis.Domain.Organizations;
 using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
 using Ordinis.Domain.Users;
+using Ordinis.Infrastructure.Webhooks;
 
 namespace Ordinis.Infrastructure.Persistence;
 
@@ -69,12 +70,22 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     /// <inheritdoc/>
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
 
+    /// <inheritdoc/>
+    public DbSet<Webhook> Webhooks => Set<Webhook>();
+
     /// <summary>
     /// Outbox messages — written by this context; read by <c>OutboxDispatcherJob</c>.
     /// Not exposed on <see cref="IAppDbContext"/> because Application handlers never write
     /// directly to the Outbox; that responsibility belongs here.
     /// </summary>
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+
+    /// <summary>
+    /// Webhook delivery attempts — written by <c>WebhookDomainEventHandler</c>; processed by
+    /// <c>WebhookDeliveryDispatcherService</c>. Not exposed on <see cref="IAppDbContext"/> for
+    /// the same reason as <see cref="OutboxMessages"/>: Application handlers never write to it.
+    /// </summary>
+    public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
 
     /// <inheritdoc/>
     public IDbConnection GetDbConnection() => Database.GetDbConnection();
