@@ -70,7 +70,7 @@ and why it's here — this list just tracks what's actually built vs. still plan
 - 🚧 Rate limiting — global fixed-window limiter live; per-authenticated-user sliding window and `Retry-After` still pending
 - 🚧 Response caching — service registered, not yet applied to any endpoint
 - ⏳ API versioning — routes carry a literal `/api/v1` prefix; no actual `/api/v2` or version-negotiation mechanism yet
-- ⏳ Webhooks
+- ✅ Webhooks (see [docs/WEBHOOKS.md](docs/WEBHOOKS.md))
 - ⏳ Audit log endpoints
 
 ## Getting started

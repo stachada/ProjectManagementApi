@@ -147,11 +147,51 @@ dotnet ef database update \
   --connection "Host=localhost;Port=5432;Database=Ordinis;Username=ordinis;Password=<POSTGRES_PASSWORD from .env>;"
 ```
 
+**Shortcut:** `scripts/ef-migrate.sh` (Bash) / `scripts/ef-migrate.ps1` (PowerShell) wrap
+this pattern — they build the same `localhost` connection string from `.env`'s
+`SA_PASSWORD`/`POSTGRES_PASSWORD` so you don't have to retype it every time you want to
+check or apply migrations against whichever provider you're *not* currently pointed at via
+User Secrets:
+
+```sh
+scripts/ef-migrate.sh sqlserver migrations list
+scripts/ef-migrate.sh postgres  migrations list
+scripts/ef-migrate.sh postgres  database update
+scripts/ef-migrate.sh sqlserver migrations add AddSomething
+scripts/ef-migrate.sh postgres  migrations script --idempotent
+```
+
+```powershell
+scripts/ef-migrate.ps1 sqlserver migrations list
+scripts/ef-migrate.ps1 postgres  migrations list
+scripts/ef-migrate.ps1 postgres  database update
+scripts/ef-migrate.ps1 sqlserver migrations add AddSomething
+scripts/ef-migrate.ps1 postgres  migrations script --idempotent
+```
+
+It assumes the corresponding `docker-compose` database is already up and reachable at
+`localhost` — same "API on host, DB in Docker" scenario as the manual commands above, not
+the in-container hostnames the full-stack-in-Docker profile uses.
+
 Both were verified end to end this way: 10 tables created on each provider
 (`Organizations`, `Projects`, `Boards`, `Tasks`, `Comments`, `Attachments`, `Users`,
 `ProjectMembers`, `OutboxMessages`, `__EFMigrationsHistory`), with `RowVersion` landing as a plain
 persisted column — `varbinary` on SQL Server, `bytea` on PostgreSQL — confirming the app-managed
 concurrency token (not a DB-generated one) on both.
+
+**Since then:** the `AddWebhooks` migration (Phase 7 — Webhooks) added `Webhooks` and
+`WebhookDeliveries`, generated for both providers the same way, bringing the current baseline to
+12 tables. `Webhooks` carries a normal FK to `Projects` (`ON DELETE CASCADE`) the same way
+`ProjectMembers` does; `WebhookDeliveries` deliberately carries no FK back to `Webhooks` (a
+delivery snapshots its target `Url` at enqueue time and must survive the webhook registration
+being deleted mid-retry — see [docs/WEBHOOKS.md](WEBHOOKS.md)), so it's an unrelated table as far
+as migration ordering/cascade behavior goes. Generated for both providers and reviewed per
+[Reviewing a generated migration before committing](#reviewing-a-generated-migration-before-committing)
+above; applied and manually verified end to end against a live SQL Server instance (task/comment
+events correctly reaching a registered webhook URL). Not separately re-verified against a live
+PostgreSQL instance beyond migration generation succeeding cleanly for that provider too — same
+caveat as any other migration that's only been dry-run on one provider; worth an explicit
+`database update` pass against Postgres before this ships to an environment that uses it.
 
 > **Docker healthcheck gotcha hit while doing this:** `docker-compose.yml`'s SQL Server
 > healthcheck originally pointed at `/opt/mssql-tools18/bin/sqlcmd`, but the
