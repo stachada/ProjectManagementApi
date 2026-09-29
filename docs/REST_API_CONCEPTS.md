@@ -4,7 +4,7 @@ This project exists to demonstrate REST API design patterns beyond basic CRUD. T
 is a guided tour of *why* each pattern exists as a general HTTP/REST concept, and a
 short pointer to *how* Ordinis implements it — full implementation detail lives in a
 dedicated doc per feature where one exists (`CONCURRENCY.md`, `IDEMPOTENCY.md`,
-`API_INFRASTRUCTURE.md`); this doc doesn't repeat that detail, it links to it.
+`WEBHOOKS.md`, `API_INFRASTRUCTURE.md`); this doc doesn't repeat that detail, it links to it.
 
 Status markers below reflect the actual state of `BUILD_PLAN.md`'s Phase 7 checklist,
 not aspiration — some of these are fully built, some partially, some not yet started.
@@ -276,7 +276,7 @@ prefixes with `[ApiVersion]` attributes at that point.
 
 ---
 
-## Webhooks ⏳
+## Webhooks ✅
 
 **Idea:** polling an API for changes ("did anything happen since I last checked?") wastes
 requests when nothing changed and adds latency when something did. Webhooks invert the
@@ -284,13 +284,16 @@ relationship — the server proactively `POST`s an event payload to a URL the cl
 registered in advance, the moment something happens, so integrations react in near
 real-time without polling at all.
 
-**Current state:** not started. The plan calls for `POST/DELETE
-/projects/{id}/webhooks` registration endpoints (Minimal API, not a controller — matching
-this project's "Minimal APIs for non-resource routes" convention) and a
-`WebhookDispatcherService` subscribing to the existing `OutboxMessage` events
-(`TaskCreated`, `TaskMoved`, `TaskAssigned`, `CommentAdded`) to fire outbound HTTP calls
-with basic retry. The Outbox infrastructure this would build on (Phase 5) already exists;
-the webhook-specific layer on top of it doesn't yet.
+**Current state:** implemented. `POST`/`GET`/`DELETE /projects/{id}/webhooks`
+(`WebhookEndpoints.cs`, Minimal API — matching this project's "Minimal APIs for
+non-resource routes" convention) register/list/unregister a webhook URL, subscribed to any
+of `task.created`, `task.moved`, `task.assigned`, `comment.added`. Delivery builds on the
+existing Outbox infrastructure (Phase 5) but isn't a single dispatcher: a
+`WebhookDomainEventHandler` cheaply enqueues delivery rows from inside
+`OutboxDispatcherJob`'s own transaction, and a separate `WebhookDeliveryDispatcherService`
+performs the actual HTTP delivery (3-attempt exponential backoff) outside any DB
+transaction — see [WEBHOOKS.md](WEBHOOKS.md) for the full mechanism and the reasoning
+behind the split.
 
 ---
 
@@ -314,6 +317,7 @@ straightforward single-table EF Core LINQ.
 
 - [CONCURRENCY.md](CONCURRENCY.md) — ETag/If-Match, full mechanism
 - [IDEMPOTENCY.md](IDEMPOTENCY.md) — `Idempotency-Key`, full mechanism
+- [WEBHOOKS.md](WEBHOOKS.md) — webhook registration and delivery, full mechanism
 - [API_INFRASTRUCTURE.md](API_INFRASTRUCTURE.md) — middleware pipeline, Problem Details,
   sparse fieldsets, and everything else cross-cutting
 - [BUILD_PLAN.md](../BUILD_PLAN.md) — Phase 7 checklist and the design decisions behind
