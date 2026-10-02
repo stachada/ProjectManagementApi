@@ -100,5 +100,5 @@ public interface IAppDbContext
     /// <c>Ordinis.Infrastructure.Persistence.OutboxOptions</c>, derived idependently here from EF
     /// Core's own <c>Database.ProviderName</c> so Application never references an Infrastructure type.
     /// </summary>
-    string DatabaseProvider { get;}
+    string DatabaseProvider { get; }
 }

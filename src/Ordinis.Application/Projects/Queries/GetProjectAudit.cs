@@ -1,9 +1,9 @@
+using System.Data;
+using Dapper;
 using Microsoft.EntityFrameworkCore;
 using Ordinis.Application.Common;
 using Ordinis.Application.Projects.Dtos;
 using Ordinis.Domain.Projects;
-using System.Data;
-using Dapper;
 
 namespace Ordinis.Application.Projects.Queries;
 
