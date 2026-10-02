@@ -111,6 +111,32 @@ Required keys:
 | `POSTGRES_PASSWORD` | PostgreSQL superuser password |
 | `JWT_SIGNING_KEY` | Same value as the `Jwt:SigningKey` User Secret |
 
+## Checking and stopping the API (host, `dotnet run`)
+
+When the API runs on the host rather than in Docker (see the "Recommended for local dev" scenario
+below), there's no `docker-compose ps` to check status — use the process or the port instead.
+
+**Check if it's running:**
+
+```powershell
+Get-Process -Name Ordinis.Api -ErrorAction SilentlyContinue
+```
+
+Or check the port from `launchSettings.json`:
+
+```powershell
+Get-NetTCPConnection -LocalPort <port> -ErrorAction SilentlyContinue
+```
+
+**Stop it:**
+
+If it's running in a foreground terminal, **Ctrl+C** in that terminal is the clean shutdown path.
+Otherwise:
+
+```powershell
+Get-Process -Name Ordinis.Api -ErrorAction SilentlyContinue | Stop-Process
+```
+
 ## Docker commands
 
 All commands run from the repo root.
