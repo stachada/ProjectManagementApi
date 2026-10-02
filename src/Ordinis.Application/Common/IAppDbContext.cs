@@ -93,4 +93,12 @@ public interface IAppDbContext
     /// it is currently closed.
     /// </remarks>
     IDbConnection GetDbConnection();
+
+    /// <summary>
+    /// Normalized database provider identifier ("SqlServer" or "PostgreSQL"), for handlers that
+    /// must branch raw SQL by provider (e.g. paging syntax). Mirrors the canonical strings used by
+    /// <c>Ordinis.Infrastructure.Persistence.OutboxOptions</c>, derived idependently here from EF
+    /// Core's own <c>Database.ProviderName</c> so Application never references an Infrastructure type.
+    /// </summary>
+    string DatabaseProvider { get; }
 }

@@ -46,6 +46,7 @@ public static class ProjectServiceExtensions
         services.AddScoped<IQueryHandler<GetProjectMembers, IReadOnlyList<ProjectMemberDto>>, GetProjectMembersHandler>();
         services.AddScoped<IQueryHandler<GetProjectTasks, PagedResult<TaskSummaryDto>>, GetProjectTasksHandler>();
         services.AddScoped<IQueryHandler<GetProjectWebhooks, IReadOnlyList<WebhookDto>>, GetProjectWebhooksHandler>();
+        services.AddScoped<IQueryHandler<GetProjectAudit, PagedResult<AuditEntryDto>>, GetProjectAuditHandler>();
 
         // Board queries
         services.AddScoped<IQueryHandler<GetBoardById, BoardDto>, GetBoardByIdHandler>();

@@ -91,6 +91,14 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public IDbConnection GetDbConnection() => Database.GetDbConnection();
 
     /// <inheritdoc/>
+    public string DatabaseProvider => Database.ProviderName switch
+    {
+        { } n when n.Contains("SqlServer") => "SqlServer",
+        { } n when n.Contains("Npgsql") => "PostgreSQL",
+        var n => throw new InvalidOperationException($"Unsupported database provider: {n}"),
+    };
+
+    /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

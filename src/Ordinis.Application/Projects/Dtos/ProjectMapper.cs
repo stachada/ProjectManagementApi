@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Ordinis.Application.Common;
 using Ordinis.Application.Tasks.Dtos;
 using Ordinis.Domain.Projects;
@@ -108,7 +109,7 @@ public static class ProjectMapper
 
     /// <summary>
     /// Builds the <c>_links</c> set for a <see cref="ProjectDto"/>: <c>self</c>, <c>tasks</c>,
-    /// <c>boards</c>, <c>members</c>, and <c>delete</c>.
+    /// <c>boards</c>, <c>members</c>, <c>audit</c>, and <c>delete</c>.
     /// </summary>
     private static IReadOnlyList<HateoasLink> BuildLinks(Guid projectId)
     {
@@ -120,6 +121,7 @@ public static class ProjectMapper
             new HateoasLink("tasks", $"{basePath}/tasks", "GET"),
             new HateoasLink("boards", $"{basePath}/boards", "GET"),
             new HateoasLink("members", $"{basePath}/members", "GET"),
+            new HateoasLink("audit", $"{basePath}/audit", "GET"),
             new HateoasLink("delete", basePath, "DELETE"),
         ];
     }
@@ -204,4 +206,39 @@ public static class ProjectMapper
                 ? Convert.ToBase64String(board.RowVersion)
                 : string.Empty
         };
+
+    internal static AuditEntryDto ToAuditEntryDto(this AuditRow row)
+    {
+        var eventType = row.Type[(row.Type.LastIndexOf('.') + 1)..];
+
+        using var doc = JsonDocument.Parse(row.Payload);
+        var actorProperty = eventType switch
+        {
+            "TaskCreated" => "ReporterId",
+            "TaskMoved" => "MovedByUserId",
+            "TaskAssigned" => "AssignedByUserId",
+            "TaskUnassigned" => "UnassignedByUserId",
+            "CommentAdded" => "AuthorId",
+            "CommentRemoved" => "RemovedByUserId",
+            "AttachmentAdded" => "UploadedByUserId",
+            "AttachmentRemoved" => "RemovedByUserId",
+            "TaskDeleted" => "DeletedByUserId",
+            "TaskUpdated" => "UpdatedByUserId",
+            _ => throw new InvalidOperationException($"Unknown audit event type: {eventType}")
+        };
+
+        return new AuditEntryDto
+        {
+            Id = row.Id,
+            EventType = eventType,
+            OccurredAt = row.OccurredAt,
+            ActorId = doc.RootElement.GetProperty(actorProperty).GetGuid(),
+
+            // .Clone() is required here: `doc` is disposed at the end of this method (the `using`
+            // above), and an un-cloned JsonElement is only valid for the lifetime of its parent
+            // JsonDocument — returning it directly would throw ObjectDisposedException the moment
+            // ASP.NET Core's JSON serializer tried to read it later in the response pipeline.
+            Payload = doc.RootElement.Clone()
+        };
+    }
 }
