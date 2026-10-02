@@ -21,10 +21,10 @@ namespace Ordinis.IntegrationTests.Infrastructure;
 /// </summary>
 public sealed class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private readonly MsSqlContainer _sqlContainer =
-        new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+    private readonly MsSqlContainer _sqlContainer = BuildContainer();
 
     private Respawner? _respawner;
+    private string _connectionString = string.Empty; // set in InitializeAsync, points at OrdinisTest, not master
 
     /// <summary>
     /// Wipes all table data (but not schema) between tests via Respawn, so each test starts
@@ -34,7 +34,7 @@ public sealed class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLi
     /// </summary>
     public async Task ResetDatabaseAsync()
     {
-        await using SqlConnection connection = new(_sqlContainer.GetConnectionString());
+        await using SqlConnection connection = new(_connectionString);
         await connection.OpenAsync();
 
         // Respawn examines the SQL metadata intelligently to build a deterministic order of tables to delete
@@ -56,6 +56,23 @@ public sealed class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLi
     {
         await _sqlContainer.StartAsync();
 
+        // MsSqlBuilder has no .WithDatabase(...) - unlike the Postgres Testcontainers module,
+        // it can't provision a named database via connection-string params alone, so
+        // GetConnectionString() always targets "master" directly. Create a dedicated database
+        // explicitly rather than legging migrations create every app table inside the system "master"
+        // database.
+        await using (var masterConnection = new SqlConnection(_sqlContainer.GetConnectionString()))
+        {
+            await masterConnection.OpenAsync();
+            await using var createDatabaseCommand = new SqlCommand("CREATE DATABASE [OrdinisTest]", masterConnection);
+            await createDatabaseCommand.ExecuteNonQueryAsync();
+        }
+
+        _connectionString = new SqlConnectionStringBuilder(_sqlContainer.GetConnectionString())
+        {
+            InitialCatalog = "OrdinisTest"
+        }.ConnectionString;
+
         // Program.cs calls AddInfrastructureServices(builder.Configuration) — which reads
         // DatabaseProvider/ConnectionStrings:DefaultConnection synchronously — BEFORE
         // builder.Build() runs. WebApplicationFactory's ConfigureWebHost hooks (including
@@ -66,7 +83,7 @@ public sealed class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLi
         // built (i.e. before Services/CreateClient is first touched) reaches Program.cs in time.
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
         Environment.SetEnvironmentVariable("DatabaseProvider", "SqlServer");
-        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", _sqlContainer.GetConnectionString());
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", _connectionString);
 
         // Force host creation now (rather than lazily on first client request) so migrations
         // are applied before any test issues an HTTP call.
@@ -98,6 +115,23 @@ public sealed class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLi
             services.AddDbContext<AppDbContext>((sp, options) =>
                 options.AddInterceptors(sp.GetRequiredService<ConcurrencyRaceInterceptor>()));
         });
+    }
+
+    private static MsSqlContainer BuildContainer()
+    {
+        var builder = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest");
+
+        // GITHUB_ACTIONS is set automatically by every GitHub Actions job - no workflow change
+        // needed. Fixed port binding is only safe when a single test run owns its container at
+        // a time (two concurrent local runs or CI's parallel matrix legs, would otherwise
+        // collide trying to bind the same host port 14330), os it' local-only
+        var isRunningInCi = Environment.GetEnvironmentVariable("GITHUB_ACTIONS") is not null;
+        if (!isRunningInCi)
+        {
+            builder = builder.WithPortBinding(14330, 1433);
+        }
+
+        return builder.Build();
     }
 
     async Task IAsyncLifetime.DisposeAsync()

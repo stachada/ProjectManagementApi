@@ -207,6 +207,37 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     }
 
     /// <summary>
+    /// Lists a project's audit entries, with optional pagination. Each entry represents a single action performed on a task in the project.
+    /// </summary>
+    /// <param name="id">The ID of the project.</param>
+    /// <param name="page">Page number for pagination.</param>
+    /// <param name="pageSize">Number of items per page.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A paginated list of audit entries for the project.</returns>
+    /// <response code="200">
+    /// Returns the page of audit entries. Sets the <c>X-Total-Count</c> response header to the total number of matching entries across all pages.
+    /// </response>
+    /// <response code="404">No project exists with the given ID.</response>
+    [HttpGet("{id:guid}/audit")]
+    [ProducesResponseType(typeof(IReadOnlyList<AuditEntryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetAudit(
+        Guid id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new GetProjectAudit(id, new AuditFilter(page, pageSize));
+
+        PagedResult<AuditEntryDto> result = await _dispatcher.QueryAsync<GetProjectAudit, PagedResult<AuditEntryDto>>(
+            query, cancellationToken);
+
+        Response.Headers.Append("X-Total-Count", result.TotalCount.ToString());
+
+        return Ok(result.Items);
+    }
+
+    /// <summary>
     /// Creates a new project under the specified organization.
     /// </summary>
     /// <param name="request">The owning organization, creator, name, and optional description.</param>

@@ -45,6 +45,15 @@ internal sealed class TestAppDbContext(DbContextOptions<TestAppDbContext> option
             "Use an integration test against a real provider for handlers that query via IAppDbContext.GetDbConnection().");
 
     /// <summary>
+    /// EF Core InMemory has no database provider. No handler under unit test today branches by provider; this
+    /// throws rather than silently returning a null/empty string that would fail at call time.
+    /// </summary>
+    public string DatabaseProvider =>
+        throw new NotSupportedException(
+            "TestAppDbContext (EF Core InMemory) has no database provider. " +
+            "Use an integration test against a real provider for handlers that branch by IAppDbContext.DatabaseProvider.");
+
+    /// <summary>
     /// Every aggregate/entity in this domain generates its <c>Id</c> client-side
     /// (<c>Guid.CreateVersion7()</c>) rather than relying on the database. Without this,
     /// EF Core's default convention marks Guid keys <c>ValueGenerated.OnAdd</c>, and an entity
