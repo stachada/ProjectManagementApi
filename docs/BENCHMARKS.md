@@ -53,6 +53,8 @@ Where it lives:
   `WithReuse(true)`. BenchmarkDotNet runs every case in its own process, and reuse lets all of
   them attach to one container that was seeded once (about 2 minutes on first use). The
   container is left running afterwards. Remove it with `docker rm -f ordinis-benchmarks-mssql`.
+  Its connection uses `Packet Size=32767` to sidestep a Docker Desktop proxy stall on large
+  requests, explained under the results.
 - **Override.** Set `ORDINIS_BENCHMARK_CONNECTION` to any SQL Server connection string, for
   example the docker-compose `db-sqlserver` service, to benchmark a specific environment.
 
@@ -69,7 +71,8 @@ compares produce the same output, and throws if they don't. That way no variant 
 doing less work:
 
 - **Queries:** identical `TotalCount`, page membership and order across all three variants,
-  and DTOs that match field for field (see the known defect below for the one exemption).
+  and DTOs that match field for field. This check is what exposed the list-count defect
+  described under the results.
 - **Mapping:** Mapster and `TaskMapper` must serialize to identical JSON, `_links` included.
   Mapster reuses `TaskMapper.BuildLinks`, which is `internal` for this reason and exposed via
   `InternalsVisibleTo`.
@@ -121,9 +124,10 @@ Scenarios:
 
 The three variants:
 
-- **EF Core (production handler):** the real `GetTasksFilteredHandler`. It loads tracked
-  aggregates with `Include(Comments)` and `Include(Assignee)`, counts comments in memory, and
-  then makes a second round-trip for display names.
+- **EF Core (production handler):** the real `GetTasksFilteredHandler`. In this baseline it
+  loaded tracked aggregates with `Include(Comments)` and `Include(Assignee)`, counted comments
+  in memory, and then made a second round-trip for display names. That shape is what the
+  defect below came from.
 - **EF Core (projection):** the same filters and ordering, but it does a `Select` into
   `TaskSummaryDto` with SQL `COUNT` subqueries, uses no tracking, and finishes in two
   round-trips.
@@ -148,12 +152,44 @@ What this shows:
   only for those 100 rows brought it down to 19 ms. That's a useful lesson for any future
   Dapper query here.
 
-**Known defect, found by the parity check.** The production handler never loads
-`Attachments`, so `TaskSummaryDto.AttachmentCount` is always `0` in `GET /api/v1/tasks`.
-`GetBoardTasks`, `GetProjectTasks`, `GetUserTasks` and `GetBoardById` load neither
-collection, so their `CommentCount` is also always `0`. The projection variant is the fix and
-also the faster query. Because of this defect, the handler is exempt from the field-level
-check on those two count fields only.
+#### A defect the parity check found, and its fix
+
+The table above is the original baseline, and the production handler in it was wrong.
+`GetTasksFiltered` included `Comments` but never `Attachments`, so `AttachmentCount` was
+always `0` in `GET /api/v1/tasks`. `GetBoardTasks`, `GetProjectTasks`, `GetUserTasks` and
+`GetBoardById` included neither, so their `CommentCount` was always `0` too. No test noticed,
+because each unit test queried the same `DbContext` that had just seeded the comments and
+attachments, so EF's change tracker filled in the collections the handler never loaded.
+
+The fix is `TaskSummaryQueries.ToSummaryDtosAsync`, shared by all five handlers. It runs one
+query over the page's task IDs and returns `COUNT` subqueries plus the assignee display name.
+That query replaces the handlers' previous display-name lookup, so the fix adds no
+round-trips. `GetTasksFiltered` also stops `Include`-ing every comment row just to count it.
+After the fix, the parity check requires the handler to match Dapper field for field, counts
+included:
+
+| Production handler | Median before → after | P99 before → after | Allocated before → after |
+| --- | ---: | ---: | ---: |
+| FirstPage | 19.03 → 18.26 ms | 24.75 → 21.19 ms | 439 → 262 KB |
+| SearchAndFilter | 22.34 → 22.46 ms | 26.99 → 25.38 ms | 464 → 298 KB |
+| DeepPage | 33.19 → 31.12 ms | 45.57 → 36.21 ms | 1,265 → 516 KB |
+
+The counts are now correct, the latency is unchanged or better, the tail is tighter, and
+allocations are down 36–59%. Two details from getting there:
+
+- **The page IDs travel as one JSON parameter.** The query uses `EF.Parameter(ids)`, which
+  SQL Server expands with `OPENJSON`, instead of EF 10's default of one scalar parameter per
+  ID. For 100 IDs that's about 2 ms server-side against about 8 ms, and one cached plan
+  regardless of page size.
+- **Docker Desktop's port proxy stalls large requests.** The first run of the fix measured
+  DeepPage at 79 ms, but SQL Server reported only about 6 ms for the new query. The rest was a
+  fixed ~40 ms stall on any request larger than one 8 KB TDS packet, which a 100-ID lookup is.
+  The stall comes from Docker Desktop's port proxy (Nagle/delayed-ACK style), not from SQL
+  Server or the query. The benchmark's Testcontainer connection now sets
+  `Packet Size=32767`, so the proxy isn't what gets measured. The projection and Dapper rows
+  are unchanged by that setting, because neither sends a request that large. The same stall
+  will make deep pages look slower than they are when you run the API locally against a
+  Dockerized SQL Server.
 
 ### Manual mapping vs Mapster: `TaskMapper.ToDto()`
 
