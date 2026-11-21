@@ -919,20 +919,57 @@ See [docs/REST_API_CONCEPTS.md#hateoas](docs/REST_API_CONCEPTS.md#hateoas) for t
 > ⚠️ Requires Phase 4.
 > ✅ Can run in parallel with Phase 6 and 7; wire `[Authorize]` into controllers during Phase 6.
 
-- [ ] Install `Microsoft.AspNetCore.Authentication.JwtBearer`
-- [ ] Implement `POST /auth/login` (Minimal API) — validates credentials, issues JWT access token + refresh token; stores refresh token hash in `User` entity
-- [ ] Implement `POST /auth/refresh` (Minimal API) — validates refresh token, issues new access token + rotated refresh token
-- [ ] Implement `POST /auth/logout` (Minimal API) — revokes refresh token
-- [ ] JWT configuration: issuer, audience, signing key from `appsettings` / User Secrets; token expiry 15 min (access), 7 days (refresh)
-- [ ] Add `RefreshToken` field to `User` entity (hashed); add `RefreshTokenExpiresAt` — update `UserConfiguration` accordingly
-- [ ] Role-based authorization: `Admin`, `Member`, `Viewer` roles encoded in JWT claims
-- [ ] Policy-based authorization:
+- [x] Install `Microsoft.AspNetCore.Authentication.JwtBearer` (done — `Ordinis.Api.csproj`; token issuance uses `System.IdentityModel.Tokens.Jwt` in `Ordinis.Infrastructure`. `MapInboundClaims` is off so claim types stay exactly as issued (`sub`, `org_id`, …), and both the `OnChallenge` (401) and `OnForbidden` (403) events write Problem Details bodies, matching every other error response in the API)
+- [x] Implement `POST /auth/login` (Minimal API) — validates credentials, issues JWT access token + refresh token; stores refresh token hash in `User` entity (done — `AuthEndpoints.cs` → `Login` command, which takes the organization slug (case-insensitive) plus email and password, since an email is only unique within an organization. Every failure path — unknown organization slug, unknown email, wrong password, deactivated user — throws the same `AuthenticationException` (401) so the endpoint can't be used to enumerate accounts. Passwords are hashed with BCrypt (`BCrypt.Net-Next`); `PasswordHasher` moved from `Ordinis.Application/Common` to `Ordinis.Infrastructure/Security`, behind the existing `IPasswordHasher` abstraction, since it is a concrete crypto dependency)
+- [x] Implement `POST /auth/refresh` (Minimal API) — validates refresh token, issues new access token + rotated refresh token (done — `RefreshToken` command. The presented token is SHA-256 hashed and looked up by hash; expired, unknown, or deactivated-user tokens all fail with the same 401. Rotation replaces the stored hash, so a used refresh token can never be replayed)
+- [x] Implement `POST /auth/logout` (Minimal API) — revokes refresh token (done — `Logout` command, clears the stored hash and expiry. **Requires a valid access token** (`.RequireAuthorization()`), unlike login/refresh — logout acts on the caller's own session, so it needs to know who the caller is)
+- [x] JWT configuration: issuer, audience, signing key from `appsettings` / User Secrets; token expiry 15 min (access), 7 days (refresh) (done — `JwtOptions` bound from the `Jwt` section; `Issuer`/`Audience`/expiries live in `appsettings.json`, the `SigningKey` deliberately does not — User Secrets locally, `JWT_SIGNING_KEY` in CI/prod, per the secrets strategy in Phase 11. HMAC-SHA256 signing)
+- [x] Add `RefreshToken` field to `User` entity (hashed); add `RefreshTokenExpiresAt` — update `UserConfiguration` accordingly (done — both columns were already in the `InitialCreate` migrations and model snapshots for both providers, so no new migration was needed; `UserConfiguration` now maps `RefreshTokenExpiresAt` explicitly. Refresh tokens are 32 bytes from `RandomNumberGenerator`; only the SHA-256 hash is persisted)
+- [x] Role-based authorization: `Admin`, `Member`, `Viewer` roles encoded in JWT claims (done, **with one deliberate deviation**: only the **org-level** role (`User.OrgRole`) is encoded, as a `ClaimTypes.Role` claim, alongside `sub` and `org_id`. Project-level roles are *not* put in the token — a user holds a different `ProjectMember.Role` in each project, so there is no single value to encode, and a role baked into a 15-minute token would go stale the moment an Admin changed it. Project roles are resolved from the database per request by the authorization handlers below)
+- [x] Policy-based authorization (done — see the policy table below for the full set, which grew beyond these three):
   - `ProjectMemberPolicy` — user must be a member of the project to access its resources
   - `ProjectAdminPolicy` — user must be `Admin` role or project owner to delete/archive
   - `TaskOwnerPolicy` — user must be assignee or project member to edit task
-- [ ] Apply `[Authorize]` to all controllers; apply specific policies per action
-- [ ] `AuthorizationHandlers` — custom `IAuthorizationHandler` implementations for each policy; inject `AppDbContext` to check membership
-- [ ] Public endpoints (no auth): `GET /health`, `POST /auth/login`, `POST /auth/refresh`
+- [x] Apply `[Authorize]` to all controllers; apply specific policies per action (done — every controller carries `[Authorize]`, and a **fallback policy** (`RequireAuthenticatedUser`) additionally covers every endpoint that declares nothing, so a newly added endpoint is protected by default rather than open by default. The webhook Minimal APIs, which originally had no policy at all beyond "authenticated", were found during review and now require `ProjectAdmin`)
+- [x] `AuthorizationHandlers` — custom `IAuthorizationHandler` implementations for each policy; inject `AppDbContext` to check membership (done — three handlers in `Ordinis.Infrastructure/Security/Authorization/`, each injecting `IAppDbContext`: `ProjectScopeAuthorizationHandler` (one parameterized `ProjectScopeRequirement` — resource type Project/Board/Task, route key, optional minimum role — backs eight policies instead of eight near-identical handlers), `TaskOwnerAuthorizationHandler`, and `OrganizationScopeAuthorizationHandler` (added during review, see below). Role comparisons are done in C# after loading: `Role` is stored as a string column, so a `>=` in SQL would compare text (`'Admin' < 'Member' < 'Viewer'`), not enum order)
+- [x] Public endpoints (no auth): `GET /health`, `POST /auth/login`, `POST /auth/refresh` (done — exactly these three are `.AllowAnonymous()`; everything else falls under the fallback policy)
+
+**Policies as built:**
+
+| Policy | Requirement | Used by |
+|---|---|---|
+| `ProjectMember` / `ProjectAdmin` | Member (any role) / Admin of the project in route `{id}` | `ProjectsController` reads / writes, member management, all three webhook endpoints (`ProjectAdmin`) |
+| `BoardMember` / `BoardAdmin` | Same, resolved via the board's project | `BoardsController` reads / rename, archive, unarchive |
+| `BoardCreateMember` | Member+ of the project in route `{projectId}` | `POST /projects/{projectId}/boards` |
+| `TaskMember` / `TaskContributor` / `TaskProjectAdmin` | Any role / Member+ / Admin of the task's project | Task reads / comments and attachments / task delete |
+| `TaskOwner` | Task's assignee, or Member+ of its project | Task update and the move/assign/unassign/close/reopen transitions |
+| `OrganizationMember` / `OrganizationAdmin` | Route `{id}` is the caller's own organization / and caller is org Admin | `OrganizationsController` reads / update, suspend, reactivate |
+| `UserInOrganization` / `UserOrgAdmin` / `UserSelfOrOrgAdmin` | Target user is in the caller's organization / and caller is org Admin / or is the target user | `UsersController` reads / org-role change, deactivate, reactivate / profile update |
+
+**Design decisions:**
+
+- **Hidden resources return `404`, not `403`.** A resource the caller can't see at all — another tenant's, or a project they aren't a member of — fails with `ResourceNotVisibleReason`, which `ResourceHidingAuthorizationResultHandler` (an `IAuthorizationMiddlewareResultHandler`) turns into the very same `NotFoundException` a genuinely missing resource produces, so the Problem Details bodies are identical and IDs can't be probed. `403` is reserved for "you can see it, but your role isn't high enough".
+- **The org Admin role passes every project-scoped policy, but only inside its own organization** (`ClaimsPrincipalExtensions.IsOrgAdminOf`, which checks the `org_id` claim). This matches `CurrentUserServiceExtensions.GetAllowedProjectIds`, which already lists every project of the organization for an org Admin — without it, an org Admin saw a project in `GET /projects` and then got `404` opening it.
+- **"Project owner" needs no separate rule.** `Project.Create` adds the creator as an Admin member, and the existing last-Admin invariant (`Project.RemoveMember`/`ChangeMemberRole`) keeps a project from ever losing its last Admin — so the owner clause of `ProjectAdminPolicy` is covered by membership.
+- **Unscoped list queries are filtered to what the caller can see** — `GET /tasks`, `GET /projects`, `GET /users/{id}/tasks`, and `GET /organizations/{id}/projects` all compose `GetAllowedProjectIds` into their query (every project in the organization for an org Admin, otherwise only the caller's memberships), via the new `ICurrentUserService` (Application abstraction over the token's claims, implemented by `CurrentUserService` in Infrastructure).
+
+**Security review fixes (found reviewing the first implementation, before merge — all in #128):**
+
+- **Caller impersonation.** The acting user came from the request — `RequestedByUserId`/`AuthorId`/`CreatedByUserId`/`RegisteredByUserId` in bodies, `requestedByUserId`/`removedByUserId` in query strings, `uploadedByUserId` in a form field. Any authenticated caller could act as anyone: a non-member could create tasks by naming a real member, comments could be posted under someone else's name, and the comment author check could be bypassed. Controllers now always fill the acting user from `ICurrentUserService.UserId`; those fields were removed from 11 request DTOs, and 5 DTOs that carried nothing else were deleted (`Close`/`Reopen`/`UnassignTaskRequest`, `Deactivate`/`ReactivateUserRequest` — those endpoints now take no body). The commands themselves keep their `RequestedByUserId` parameter, so they stay plain data and validators can still use it. `POST /users` likewise now always creates the user in the calling Admin's own organization. **Breaking request-shape change**, but backward compatible in practice: unknown JSON fields are ignored.
+- **Cross-tenant access.** `[Authorize(Roles = "Admin")]` alone let an Admin of *any* organization rename, suspend, or reactivate every other organization and change roles of or deactivate its users; any user could read any organization and its project list, and any user's profile. Fixed by the five organization-scoped policies above and `OrganizationScopeAuthorizationHandler`.
+- **`PUT /users/{id}` had no ownership check** — any authenticated caller could rename anyone. Now `UserSelfOrOrgAdmin`.
+- **Any project Member could remove anyone's comment.** `ProjectTask.RemoveComment` now enforces "author, or a moderator" itself (new `task.comment-not-author` domain error, `422`, consistent with `EditComment`'s author check); `RemoveCommentHandler` resolves the moderator half (project Admin, or org Admin of the project's organization) since project roles live on the separate `Project` aggregate.
+- **Webhook endpoints had no policy** beyond "authenticated" — any user could register, list, or delete webhooks on any project. Now `ProjectAdmin`.
+
+**Found during implementation, unrelated to auth:** `dotnet restore` started failing on `main` with `NU1902`/`NU1903` (warnings-as-errors) — `Microsoft.EntityFrameworkCore.SqlServer` 10.0.9 → `Microsoft.Data.SqlClient` 6.1.1 pulls `System.Security.Cryptography.Pkcs` 9.0.4, which now has published advisories. Fixed by pinning `System.Security.Cryptography.Pkcs` 10.0.15 directly in `Ordinis.Infrastructure.csproj` (the latest 10.0.x patch, matching the `net10.0` target, rather than the 11.0.0 `dotnet add` picks by default); every other project picks it up through its project reference. Remove the pin once a `Microsoft.Data.SqlClient` release references a patched version itself.
+
+**Tests:** `AuthEndpointsTests` (login, including a case-insensitive organization slug and an issued token being accepted by a protected endpoint; the identical-401 enumeration guard for a wrong password vs. an unknown organization; deactivated users; refresh rotation and replaying a rotated token; logout revocation, and logout without a token) and `AuthorizationTests` (401 without a token or with a wrongly signed/expired one, 401 on an unmatched route, 403 on insufficient role, the 404-identical-to-missing guarantee, assignee and org-Admin bypasses, cross-organization 404s on organization reads/writes, webhook `ProjectAdmin`) in `Ordinis.IntegrationTests/Auth/`; `ResourceHidingAuthorizationResultHandlerTests`; regression tests for every security review fix above, in each controller's own test file; domain tests for the new `RemoveComment` rule; visibility-filter unit tests for `GetUserTasksHandler`/`GetOrganizationProjectsHandler`. Existing integration tests were moved onto real access tokens via `IntegrationTestBase.AuthenticateAsUserAsync`. 661/661 unit tests, 304/304 integration tests.
+
+**Open follow-ups (not blocking the phase):**
+
+- Task assignment (`CreateTask.AssigneeId`, `AssignTask.AssigneeId`) only checks that the user *exists* — a task can be assigned to a user in a different organization. Should be restricted to the project's organization (or to project members).
+- Any org Admin can `POST /organizations` to create a new organization. Not a data-exposure issue (the creator gets no access to it), but likely wants a platform-level role rather than a tenant-level one.
+- `src/Ordinis.Api/Ordinis.Api.http` and `WebhookTests.http` still send the removed identity fields and carry no `Authorization` header, so every request in them returns `401`. Deferred to Phase 10's `requests.http` item, which needs a login step and token variables anyway.
 
 **Git tag:** `v0.8-phase8-security`
 
@@ -1259,7 +1296,7 @@ See [docs/REST_API_CONCEPTS.md#hateoas](docs/REST_API_CONCEPTS.md#hateoas) for t
     possible for either without bypassing normal HTTP semantics.
   - `dotnet build`: 0 warnings, 0 errors. `Ordinis.UnitTests`: 584/584 passing (575 + 9 new).
     `Ordinis.IntegrationTests`: 178/178 passing (152 + 26 new).
-- [ ] Auth tests — unauthenticated requests to protected endpoints return `401`; wrong role returns `403`
+- [x] Auth tests — unauthenticated requests to protected endpoints return `401`; wrong role returns `403` (done in Phase 8 — `tests/Ordinis.IntegrationTests/Auth/AuthorizationTests.cs` and `AuthEndpointsTests.cs`; see Phase 8's Tests note)
 - [ ] Rate limiting tests — exceed limit, assert `429 Too Many Requests` with `Retry-After` header
 - [ ] Idempotency tests — repeat `POST` with same `Idempotency-Key`, assert same response and no duplicate record
 
