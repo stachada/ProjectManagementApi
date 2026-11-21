@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- BenchmarkDotNet refuses to measure non-optimized code; these keep a Debug build honest
+         about it rather than silently producing meaningless numbers. -->
+    <Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
+    <!-- Exposes Ordinis.Api's public Program type too; give this project an explicit entry point
+         class instead of top-level statements so the two Program types never collide. -->
+    <StartupObject>Ordinis.Benchmarks.BenchmarkEntryPoint</StartupObject>
+    <!-- SSH.NET pulled in transitively by Testcontainers for remote-Docker-host support we don't use; no fixed Testcontainers release yet. -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ordinis.Api\Ordinis.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <!-- Benchmark-only: Mapster is the comparison target for TaskMapper, never a production dependency. -->
+    <PackageReference Include="Mapster" Version="10.0.14" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.9" />
+    <PackageReference Include="Testcontainers.MsSql" Version="4.13.0" />
+  </ItemGroup>
+
+</Project>

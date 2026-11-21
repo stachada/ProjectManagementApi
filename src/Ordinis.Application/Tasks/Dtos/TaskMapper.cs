@@ -107,7 +107,11 @@ public static class TaskMapper
     /// transitions (empty for <see cref="ProjectTaskStatus.Cancelled"/>) - no point advertising
     /// an action that would fail validation.
     /// </summary>
-    private static IReadOnlyList<HateoasLink> BuildLinks(Guid taskId, ProjectTaskStatus status)
+    /// <remarks>
+    /// <c>internal</c> rather than <c>private</c> only so <c>Ordinis.Benchmarks</c>' Mapster
+    /// configuration produces byte-identical links without duplicating this logic.
+    /// </remarks>
+    internal static IReadOnlyList<HateoasLink> BuildLinks(Guid taskId, ProjectTaskStatus status)
     {
         var basePath = $"/api/v1/tasks/{taskId}";
 
