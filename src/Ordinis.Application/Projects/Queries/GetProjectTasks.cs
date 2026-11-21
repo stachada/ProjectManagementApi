@@ -102,20 +102,8 @@ public sealed class GetProjectTasksHandler(IAppDbContext db)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        // Batch-resolve assignee display names for this page only.
-        var assigneeIds = tasks
-            .Where(t => t.AssigneeId.HasValue)
-            .Select(t => t.AssigneeId!.Value)
-            .ToHashSet();
-
-        Dictionary<Guid, string> userLookup = assigneeIds.Count > 0
-            ? await db.Users
-                .Where(u => assigneeIds.Contains(u.Id))
-                .Select(u => new { u.Id, u.DisplayName })
-                .ToDictionaryAsync(u => u.Id, u => u.DisplayName, cancellationToken)
-            : [];
-
-        var items = tasks.Select(t => t.ToSummaryDto(userLookup)).ToList();
+        // Assignee names and comment/attachment counts for this page only.
+        List<TaskSummaryDto> items = await tasks.ToSummaryDtosAsync(db, cancellationToken);
 
         return new PagedResult<TaskSummaryDto>(items, totalCount, page, pageSize);
     }

@@ -213,6 +213,56 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     }
 
     [Fact]
+    public async Task GetTasks_TaskWithCommentsAndAttachments_ReportsLiveCountsAndAssigneeName()
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        await SeedAsync(async db =>
+        {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            ProjectTask task = ProjectTask.Create(boardId, userId, "Has children", now);
+            task.Assign(userId, userId, now);
+            task.AddComment("Kept", userId, now);
+            Comment retracted = task.AddComment("Retracted", userId, now);
+            task.RemoveComment(retracted.Id, userId, requesterIsModerator: false, now);
+            task.AddAttachment("spec.pdf", "application/pdf", 1_024, "/attachments/spec.pdf", userId, now);
+            db.Tasks.Add(task);
+            await db.SaveChangesAsync();
+            return task.Id;
+        });
+        await AuthenticateAsUserAsync(userId);
+
+        HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks?boardId={boardId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        TaskSummaryDto only = Assert.Single(tasks!);
+        Assert.Equal(1, only.CommentCount); // soft-deleted comment excluded
+        Assert.Equal(1, only.AttachmentCount);
+        Assert.Equal(userId, only.AssigneeId);
+        Assert.False(string.IsNullOrEmpty(only.AssigneeDisplayName));
+    }
+
+    [Theory]
+    [InlineData(false, new[] { "Due first", "Due second", "Due third" })]
+    [InlineData(true, new[] { "Due third", "Due second", "Due first" })]
+    public async Task GetTasks_SortByDueDate_OrdersByDueDateNotCreation(bool descending, string[] expectedTitles)
+    {
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        // Created in an order that differs from due-date order in both directions.
+        await SeedTaskWithDueDateAsync(boardId, userId, "Due second", days: 20);
+        await SeedTaskWithDueDateAsync(boardId, userId, "Due third", days: 30);
+        await SeedTaskWithDueDateAsync(boardId, userId, "Due first", days: 10);
+        await AuthenticateAsUserAsync(userId);
+
+        HttpResponseMessage response = await Client.GetAsync(
+            $"/api/v1/tasks?boardId={boardId}&sortBy=dueDate&sortDescending={descending}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        Assert.Equal(expectedTitles, tasks!.Select(t => t.Title).ToArray());
+    }
+
+    [Fact]
     public async Task Update_ValidRequest_Returns204AndPersistsChanges()
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
@@ -1021,6 +1071,16 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     private Task<Guid> SeedTaskAsync(Guid boardId, Guid reporterId, string title = "Default task") => SeedAsync(async db =>
     {
         ProjectTask task = ProjectTask.Create(boardId, reporterId, title, DateTimeOffset.UtcNow);
+        db.Tasks.Add(task);
+        await db.SaveChangesAsync();
+
+        return task.Id;
+    });
+
+    private Task<Guid> SeedTaskWithDueDateAsync(Guid boardId, Guid reporterId, string title, int days) => SeedAsync(async db =>
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        ProjectTask task = ProjectTask.Create(boardId, reporterId, title, now, dueDate: now.AddDays(days));
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
 

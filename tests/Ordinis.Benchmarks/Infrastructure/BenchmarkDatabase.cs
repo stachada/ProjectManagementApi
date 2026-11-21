@@ -63,6 +63,11 @@ internal static class BenchmarkDatabase
         return new SqlConnectionStringBuilder(container.GetConnectionString())
         {
             InitialCatalog = DatabaseName,
+            // Docker Desktop's port proxy adds a fixed ~40 ms stall to any request spanning
+            // more than one TDS packet (default 8 000 bytes) - e.g. a 100-ID page lookup. A
+            // direct network path doesn't, so leaving it in would benchmark the proxy rather
+            // than the query. 32 767 is SQL Server's maximum packet size.
+            PacketSize = 32_767,
         }.ConnectionString;
     }
 

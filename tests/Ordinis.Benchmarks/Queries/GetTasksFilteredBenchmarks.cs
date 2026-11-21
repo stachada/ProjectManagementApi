@@ -36,10 +36,9 @@ public enum TaskQueryScenario
 /// <para>
 /// <see cref="GlobalSetup"/> cross-checks every variant against the others before anything is
 /// measured, so a variant can't "win" by returning less: total count and page membership/order
-/// must be identical across all three, and the projection and Dapper DTOs must match field for
-/// field. The production handler is exempt from the field-level check on
-/// <c>CommentCount</c>/<c>AttachmentCount</c> only - it never loads attachments, so its
-/// <c>AttachmentCount</c> is always 0 (a known defect, reported separately).
+/// must be identical across all three, and all three must produce field-for-field identical
+/// DTOs. (This check is what first exposed the production handler reporting
+/// <c>AttachmentCount = 0</c> for every task.)
 /// </para>
 /// </remarks>
 [Config(typeof(PerOperationLatencyConfig))]
@@ -133,32 +132,15 @@ public class GetTasksFilteredBenchmarks
             throw new InvalidOperationException($"Scenario {Scenario}: page membership or order differs between variants.");
         }
 
-        string projectionJson = JsonSerializer.Serialize(projection.Items);
-        string dapperJson = JsonSerializer.Serialize(dapper.Items);
-        if (projectionJson != dapperJson)
+        string handlerJson = JsonSerializer.Serialize(handler.Items);
+        if (handlerJson != JsonSerializer.Serialize(projection.Items))
         {
-            throw new InvalidOperationException($"Scenario {Scenario}: projection and Dapper DTOs differ.");
+            throw new InvalidOperationException($"Scenario {Scenario}: production handler and projection DTOs differ.");
         }
 
-        // Everything except the two count fields must match the production handler too.
-        static object WithoutCounts(TaskSummaryDto d) => new
+        if (handlerJson != JsonSerializer.Serialize(dapper.Items))
         {
-            d.Id,
-            d.BoardId,
-            d.Title,
-            d.Status,
-            d.Priority,
-            d.AssigneeId,
-            d.AssigneeDisplayName,
-            d.DueDate,
-            d.CreatedAt,
-            d.UpdatedAt,
-        };
-
-        if (JsonSerializer.Serialize(handler.Items.Select(WithoutCounts))
-            != JsonSerializer.Serialize(dapper.Items.Select(WithoutCounts)))
-        {
-            throw new InvalidOperationException($"Scenario {Scenario}: production handler DTOs differ from Dapper's.");
+            throw new InvalidOperationException($"Scenario {Scenario}: production handler and Dapper DTOs differ.");
         }
     }
 }

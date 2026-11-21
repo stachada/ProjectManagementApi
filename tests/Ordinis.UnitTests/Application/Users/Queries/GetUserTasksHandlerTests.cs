@@ -168,6 +168,28 @@ public class GetUserTasksHandlerTests
     /// Seeds a project in <see cref="TestOrganizationId"/> with one board - tasks must sit on a
     /// real board in a real project for the handler's caller-visibility filter to see them.
     /// </summary>
+    [Fact]
+    public async Task HandleAsync_TaskWithCommentsAndAttachments_ReportsLiveCountsAndAssigneeName()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        User user = UserBuilder.Create(displayName: "Alice");
+        db.Users.Add(user);
+        Guid boardId = SeedBoard(db);
+        ProjectTask task = TaskBuilder.Create(boardId: boardId, now: Now).WithCountableChildren();
+        task.Assign(user.Id, Guid.CreateVersion7(), Now);
+        db.Tasks.Add(task);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear(); // a real request starts untracked - see WithCountableChildren
+
+        PagedResult<TaskSummaryDto> result = await new GetUserTasksHandler(db, AdminCurrentUser)
+            .HandleAsync(new GetUserTasks(user.Id), CancellationToken.None);
+
+        TaskSummaryDto only = Assert.Single(result.Items);
+        Assert.Equal(TaskBuilder.ExpectedCommentCount, only.CommentCount);
+        Assert.Equal(TaskBuilder.ExpectedAttachmentCount, only.AttachmentCount);
+        Assert.Equal("Alice", only.AssigneeDisplayName);
+    }
+
     private static Guid SeedBoard(TestAppDbContext db)
     {
         Project project = ProjectBuilder.Create(organizationId: TestOrganizationId);

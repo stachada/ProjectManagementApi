@@ -26,9 +26,9 @@ public class TaskMapperTests
         task.Assign(assigneeId, Guid.CreateVersion7(), Now);
         task.CreatedAt = Now;
         task.UpdatedAt = Now.AddHours(1);
-        var userLookup = new Dictionary<Guid, string> { [assigneeId] = "Ada Lovelace" };
+        var details = new TaskSummaryDetails("Ada Lovelace", CommentCount: 4, AttachmentCount: 2);
 
-        TaskSummaryDto dto = task.ToSummaryDto(userLookup);
+        TaskSummaryDto dto = task.ToSummaryDto(details);
 
         Assert.Equal(task.Id, dto.Id);
         Assert.Equal(task.BoardId, dto.BoardId);
@@ -40,35 +40,44 @@ public class TaskMapperTests
         Assert.Equal(task.DueDate, dto.DueDate);
         Assert.Equal(Now, dto.CreatedAt);
         Assert.Equal(Now.AddHours(1), dto.UpdatedAt);
+        Assert.Equal(4, dto.CommentCount);
+        Assert.Equal(2, dto.AttachmentCount);
     }
 
     [Fact]
     public void ToSummaryDto_UnassignedTask_AssigneeIdAndDisplayNameAreNull()
     {
         ProjectTask task = TaskBuilder.Create(now: Now);
-        var userLookup = new Dictionary<Guid, string>();
 
-        TaskSummaryDto dto = task.ToSummaryDto(userLookup);
+        TaskSummaryDto dto = task.ToSummaryDto(TaskSummaryDetails.None);
 
         Assert.Null(dto.AssigneeId);
         Assert.Null(dto.AssigneeDisplayName);
     }
 
     [Fact]
-    public void ToSummaryDto_CountsExcludeSoftDeletedComments_AttachmentsHaveNoSoftDelete()
+    public void ToSummaryDto_UnassignedTask_IgnoresStrayDisplayName()
     {
+        // Defensive: a display name with no AssigneeId would contradict itself in the response.
         ProjectTask task = TaskBuilder.Create(now: Now);
-        Comment keptComment = task.AddComment("Looks good", Guid.CreateVersion7(), Now);
-        Comment removedComment = task.AddComment("Retracted", Guid.CreateVersion7(), Now);
-        task.RemoveComment(removedComment.Id, Guid.CreateVersion7(), requesterIsModerator: true, Now);
-        task.AddAttachment("a.png", "image/png", 100, "blob://a", Guid.CreateVersion7(), Now);
-        task.AddAttachment("b.png", "image/png", 200, "blob://b", Guid.CreateVersion7(), Now);
 
-        TaskSummaryDto dto = task.ToSummaryDto(new Dictionary<Guid, string>());
+        TaskSummaryDto dto = task.ToSummaryDto(new TaskSummaryDetails("Stale Name", 0, 0));
 
-        Assert.Equal(1, dto.CommentCount);
-        Assert.Equal(2, dto.AttachmentCount);
-        Assert.NotEqual(removedComment.Id, keptComment.Id);
+        Assert.Null(dto.AssigneeDisplayName);
+    }
+
+    [Fact]
+    public void ToSummaryDto_CountsComeFromDetails_NotFromLoadedCollections()
+    {
+        // List handlers don't load Comments/Attachments; the mapper must not fall back to
+        // counting whatever happens to be in the collections (0 when unloaded).
+        ProjectTask task = TaskBuilder.Create(now: Now);
+        task.AddComment("Loaded but not authoritative", Guid.CreateVersion7(), Now);
+
+        TaskSummaryDto dto = task.ToSummaryDto(new TaskSummaryDetails(null, CommentCount: 7, AttachmentCount: 3));
+
+        Assert.Equal(7, dto.CommentCount);
+        Assert.Equal(3, dto.AttachmentCount);
     }
     #endregion
 

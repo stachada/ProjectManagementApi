@@ -123,20 +123,8 @@ internal sealed class GetUserTasksHandler(IAppDbContext db, ICurrentUserService 
             .Take(pageSize)
             .ToListAsync(ct);
 
-        // Resolve assignee display names for the current page only.
-        var assigneeIds = tasks
-            .Where(t => t.AssigneeId.HasValue)
-            .Select(t => t.AssigneeId!.Value)
-            .ToHashSet();
-
-        Dictionary<Guid, string> userLookup = assigneeIds.Count > 0
-            ? await db.Users
-                .Where(u => assigneeIds.Contains(u.Id))
-                .Select(u => new { u.Id, u.DisplayName })
-                .ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct)
-            : [];
-
-        var items = tasks.Select(t => t.ToSummaryDto(userLookup)).ToList();
+        // Assignee names and comment/attachment counts for the current page only.
+        List<TaskSummaryDto> items = await tasks.ToSummaryDtosAsync(db, ct);
 
         return new PagedResult<TaskSummaryDto>(items, totalCount, page, pageSize);
     }
