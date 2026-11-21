@@ -219,19 +219,67 @@ public sealed class CreateTaskValidatorTests
     }
 
     [Fact]
-    public async Task TestValidateAsync_RequestedByUserIdExists_HasNoValidationErrorForRequestedByUserId()
+    public async Task TestValidateAsync_RequestedByUserIdIsProjectMember_HasNoValidationErrorForRequestedByUserId()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        Board board = BoardBuilder.Create();
-        User user = UserBuilder.Create();
-        db.Boards.Add(board);
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
+        (Guid boardId, Guid requesterId) = await SeedBoardWithRequesterAsync(db, Role.Member);
         var validator = new CreateTaskValidator(db);
-        CreateTask command = ValidCommand(board.Id) with { RequestedByUserId = user.Id };
+        CreateTask command = ValidCommand(boardId) with { RequestedByUserId = requesterId };
 
         TestValidationResult<CreateTask> result = await validator.TestValidateAsync(command);
 
         result.ShouldNotHaveValidationErrorFor(x => x.RequestedByUserId);
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_RequesterIsNotProjectMember_HasValidationErrorForRequestedByUserId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        (Guid boardId, Guid requesterId) = await SeedBoardWithRequesterAsync(db, requesterRole: null);
+        var validator = new CreateTaskValidator(db);
+        CreateTask command = ValidCommand(boardId) with { RequestedByUserId = requesterId };
+
+        TestValidationResult<CreateTask> result = await validator.TestValidateAsync(command);
+
+        result.ShouldHaveValidationErrorFor(x => x.RequestedByUserId)
+            .WithErrorMessage("You must be a Member or Admin of this task's project to create tasks on it.");
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_RequesterIsProjectViewer_HasValidationErrorForRequestedByUserId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        (Guid boardId, Guid requesterId) = await SeedBoardWithRequesterAsync(db, Role.Viewer);
+        var validator = new CreateTaskValidator(db);
+        CreateTask command = ValidCommand(boardId) with { RequestedByUserId = requesterId };
+
+        TestValidationResult<CreateTask> result = await validator.TestValidateAsync(command);
+
+        result.ShouldHaveValidationErrorFor(x => x.RequestedByUserId)
+            .WithErrorMessage("You must be a Member or Admin of this task's project to create tasks on it.");
+    }
+
+    /// <summary>
+    /// Seeds a project (created by another user) with a board, plus a requester who has
+    /// <paramref name="requesterRole"/> in that project, or no membership when null.
+    /// </summary>
+    private static async Task<(Guid BoardId, Guid RequesterId)> SeedBoardWithRequesterAsync(
+        TestAppDbContext db,
+        Role? requesterRole)
+    {
+        User requester = UserBuilder.Create();
+        Project project = ProjectBuilder.Create();
+        if (requesterRole.HasValue)
+        {
+            project.AddMember(requester.Id, requesterRole.Value, new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero));
+        }
+        Board board = BoardBuilder.Create(projectId: project.Id);
+
+        db.Users.Add(requester);
+        db.Projects.Add(project);
+        db.Boards.Add(board);
+        await db.SaveChangesAsync();
+
+        return (board.Id, requester.Id);
     }
 }

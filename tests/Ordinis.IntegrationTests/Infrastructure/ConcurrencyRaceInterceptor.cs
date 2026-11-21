@@ -31,7 +31,7 @@ public sealed class ConcurrencyRaceInterceptor : SaveChangesInterceptor
     public Task WaitForFirstArrivalAsync() => _firstArrived!.Task;
 
     /// <summary>Releases the paused save call so it can proceed to execute its UPDATE.</summary>
-    public void ReleaseFirst() => _releaseFirst!.SetResult(); // unblocks the first request so it can complete its save, which will now observe a stale RowVersion and throw a concurrency exception
+    public void ReleaseFirst() => _releaseFirst!.TrySetResult(); // unblocks the first request so it can complete its save, which will now observe a stale RowVersion and throw a concurrency exception
 
     public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
         DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
@@ -43,5 +43,16 @@ public sealed class ConcurrencyRaceInterceptor : SaveChangesInterceptor
         }
 
         return await base.SavingChangesAsync(eventData, result, cancellationToken);
+    }
+
+    /// <summary>
+    /// Returns the interceptor to its inert state and releases any save call still paused at the
+    /// barrier. Always called once a race completes or fails, so a race that never reached
+    /// <c>SaveChangesAsync</c> can't leave the barrier armed for the next test's first save.
+    /// </summary>
+    public void Disarm()
+    {
+        Volatile.Write(ref _state, 0);
+        _releaseFirst?.TrySetResult();
     }
 }

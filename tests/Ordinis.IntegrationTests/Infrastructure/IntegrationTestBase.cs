@@ -1,9 +1,11 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Ordinis.Application.Common;
 using Ordinis.Domain.Organizations;
 using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
@@ -60,12 +62,16 @@ public abstract class IntegrationTestBase : IAsyncLifetime
     /// colliding with another call even without its own random suffix.
     /// </summary>
     protected Task<(Guid OrganizationId, Guid UserId)> SeedOrganizationWithUserAsync(
-        string displayName = "Alice", string email = "alice@example.com") => SeedAsync(async db =>
+        string displayName = "Alice", string email = "alice@example.com", Role orgRole = Role.Member, bool isSuspended = false) => SeedAsync(async db =>
     {
         Organization org = CreateOrganization();
+        if (isSuspended)
+        {
+            org.Suspend();
+        }
         db.Organizations.Add(org);
 
-        User user = User.Create(org.Id, displayName, email, "hashed-password");
+        User user = User.Create(org.Id, displayName, email, "hashed-password", orgRole);
         db.Users.Add(user);
 
         await db.SaveChangesAsync();
@@ -143,19 +149,39 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         ConcurrencyRaceInterceptor interceptor = Factory.Services.GetRequiredService<ConcurrencyRaceInterceptor>();
         interceptor.Arm();
 
-        // fire and forget the first request, which will pause mid-save in the interceptor
-        Task<HttpResponseMessage> firstResponseTask = sendFirstRequest();
-        // Bounded wait rather than an unbounded await: if the interceptor mechanism ever
-        // regresses (e.g. stops being attached to AppDbContext), this fails fast with a clear
-        // timeout instead of hanging the test run forever.
-        await interceptor.WaitForFirstArrivalAsync().WaitAsync(TimeSpan.FromSeconds(15));
+        try
+        {
+            // fire and forget the first request, which will pause mid-save in the interceptor
+            Task<HttpResponseMessage> firstResponseTask = sendFirstRequest();
 
-        HttpResponseMessage secondResponse = await sendSecondRequest().WaitAsync(TimeSpan.FromSeconds(15));
-        interceptor.ReleaseFirst();
-        HttpResponseMessage firstResponse = await firstResponseTask.WaitAsync(TimeSpan.FromSeconds(15));
+            // Race the barrier arrival against the first request finishing outright. If the request
+            // completes first, it was rejected before SaveChangesAsync (401/403/404/422/...), so no
+            // race can happen. Fail immediately with its status instead of waiting out the timeout.
+            Task first = await Task.WhenAny(interceptor.WaitForFirstArrivalAsync(), firstResponseTask)
+                .WaitAsync(TimeSpan.FromSeconds(15));
 
-        Assert.Equal(HttpStatusCode.Conflict, firstResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, secondResponse.StatusCode);
+            if (first == firstResponseTask)
+            {
+                HttpResponseMessage early = await firstResponseTask;
+                Assert.Fail(
+                    $"First request completed with {(int)early.StatusCode} {early.StatusCode} before reaching " +
+                    "SaveChangesAsync. It was rejected earlier in the pipeline (authentication, authorization, " +
+                    "or validation), so no concurrency race could occur.");
+            }
+
+            HttpResponseMessage secondResponse = await sendSecondRequest().WaitAsync(TimeSpan.FromSeconds(15));
+            interceptor.ReleaseFirst();
+            HttpResponseMessage firstResponse = await firstResponseTask.WaitAsync(TimeSpan.FromSeconds(15));
+
+            Assert.Equal(HttpStatusCode.Conflict, firstResponse.StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, secondResponse.StatusCode);
+        }
+        finally
+        {
+            // Runs on success, assertion failure, and timeout alike: never leave the singleton
+            // barrier armed for the next test in the collection.
+            interceptor.Disarm();
+        }
     }
 
     /// <summary>
@@ -192,4 +218,60 @@ public abstract class IntegrationTestBase : IAsyncLifetime
     public Task InitializeAsync() => Task.CompletedTask;
 
     public Task DisposeAsync() => Factory.ResetDatabaseAsync();
+
+    /// <summary>
+    /// Issues a real access token for an already-seeded user via the app's own
+    /// <see cref="IJwtTokenService"/> - the same signing key, issuer and audience the JwtBearer
+    /// scheme validates against, so tests exercise the genuine authentication path. Returned as a
+    /// string so it can be attached to any client, including ones built via
+    /// <c>Factory.WithWebHostBuilder(...)</c>.
+    /// </summary>
+    protected async Task<string> CreateAccessTokenAsync(Guid userId)
+    {
+        using IServiceScope scope = CreateScope();
+        AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        User user = await db.Users.SingleAsync(u => u.Id == userId);
+
+        IJwtTokenService tokens = scope.ServiceProvider.GetRequiredService<IJwtTokenService>();
+        TimeProvider time = scope.ServiceProvider.GetRequiredService<TimeProvider>();
+        (string accessToken, _) = tokens.GenerateAccessToken(user, time.GetUtcNow());
+
+        return accessToken;
+    }
+
+    /// <summary>
+    /// Authenticates <see cref="Client"/> as an already-seeded user for the rest of the test.
+    /// xUnit creates a new test-client instance (and so a new <see cref="Client"/>) per test, so the
+    /// header never leaks between tests. Call again with another user ID to switch identity
+    /// mid-test; set <c>Client.DefaultRequestHeaders.Authorization = null</c> to go anonymous.
+    /// </summary>
+    protected async Task AuthenticateAsUserAsync(Guid userId)
+        => Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await CreateAccessTokenAsync(userId));
+
+    /// <summary>
+    /// Seeds a fresh organization with an org-level <see cref="Role.Admin"/> user and authenticates
+    /// <see cref="Client"/> as them - for tests of Admin-only endpoints (<c>OrganizationsController</c>,
+    /// <c>UsersController</c>) that don't otherwise need a user of their own.
+    /// </summary>
+    /// <returns></returns>
+    protected async Task<(Guid OrganizationId, Guid UserId)> AuthenticateAsOrgAdminAsync()
+    {
+        (Guid organizationId, Guid userId) = await SeedOrganizationWithUserAsync(
+            displayName: "Org Admin",
+            email: "admin@example.com",
+            orgRole: Role.Admin);
+        await AuthenticateAsUserAsync(userId);
+        return (organizationId, userId);
+    }
+
+    /// <summary>
+    /// Seeds an organization + plain Member user and authenticates <see cref="Client"/> as them, for
+    /// tests that only need *a* valid caller (e.g. "nonexistent resource returns 404").
+    /// </summary>
+    protected async Task<Guid> AuthenticateAsNewUserAsync()
+    {
+        (_, Guid userId) = await SeedOrganizationWithUserAsync();
+        await AuthenticateAsUserAsync(userId);
+        return userId;
+    }
 }

@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.RateLimiting;
 using Ordinis.Api.Common;
 using Ordinis.Api.MinimalApis;
 using Ordinis.Application.Common;
@@ -26,21 +25,24 @@ WebApplication app = builder.Build();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
 }
 
 // Middleware order: correlation ID -> request logging -> global exception -> concurrency token
-// extraction -> idempotency key replay -> routing -> auth (Phase 8) -> endpoints.
-// IdempotencyMiddleware relies on context.GetEndpoint() to read the [Idempotent] attribute;
+// extraction -> status code pages -> CORS -> authentication -> rate limiting -> authorization ->
+// static files -> idempotency replay -> response caching -> endpoints.
+// Rate limiting sits between authentication (so per-user partitions see the caller) and
+// authorization (so 401/403-rejected requests still consume quota). Static files, idempotency
+// replay and response caching all sit after authorization so nothing is ever served to a caller
+// who hasn't passed its policy (or the deny-by-default fallback policy).
 // WebApplication's minimal hosting model auto-inserts UseRouting() as the very first pipeline
-// entry whenever any endpoints are mapped (before any app.UseMiddleware<> call here), so the
-// endpoint is already resolved by the time this runs despite being registered ahead of
-// MapControllers().
+// entry whenever any endpoints are mapped, so context.GetEndpoint() is already resolved for
+// every middleware below (IdempotencyMiddleware relies on it for the [Idempotent] attribute).
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseMiddleware<ConcurrencyTokenMiddleware>();
-app.UseMiddleware<IdempotencyMiddleware>();
+
 
 // Gives a Problem Details body to error status codes that reach the client without an
 // exception ever being thrown - an unmatched route (404) or a disallowed HTTP method (405) -
@@ -50,6 +52,8 @@ app.UseStatusCodePages(async statusCodeContext =>
     HttpContext context = statusCodeContext.HttpContext;
     string title = context.Response.StatusCode switch
     {
+        StatusCodes.Status401Unauthorized => "Authentication required",
+        StatusCodes.Status403Forbidden => "Access denied",
         StatusCodes.Status404NotFound => "Resource not found",
         StatusCodes.Status405MethodNotAllowed => "Method not allowed",
         _ => "Request failed",
@@ -65,15 +69,19 @@ app.UseStatusCodePages(async statusCodeContext =>
 });
 
 app.UseHttpsRedirection();
-app.UseStaticFiles(); // serves wwwroot/attachents for LocalFileStorageService download URLs
 
 app.UseCors();
+app.UseAuthentication();
 app.UseRateLimiter();
+app.UseAuthorization();
+
+app.UseStaticFiles(); // serves wwwroot/attachents for LocalFileStorageService download URLs
+app.UseMiddleware<IdempotencyMiddleware>();
 app.UseResponseCaching();
 
 // Liveness/readiness probes are polled frequently by orchestrators - exempt from rate limiting
 // so a busy probe interval doesn't trip the same limiter guarding real traffic.
-app.MapHealthChecks("/health").DisableRateLimiting();
+app.MapHealthChecks("/health").DisableRateLimiting().AllowAnonymous();
 app.MapControllers();
 
 app.MapSearchEndpoints();

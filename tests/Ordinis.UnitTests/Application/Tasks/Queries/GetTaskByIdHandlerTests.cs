@@ -102,7 +102,7 @@ public class GetTaskByIdHandlerTests
         ProjectTask task = TaskBuilder.Create(now: Now);
         task.AddComment("Kept.", authorId, now: Now);
         Comment removed = task.AddComment("Removed.", authorId, now: Now);
-        task.RemoveComment(removed.Id, authorId, Now);
+        task.RemoveComment(removed.Id, authorId, requesterIsModerator: false, Now);
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
 

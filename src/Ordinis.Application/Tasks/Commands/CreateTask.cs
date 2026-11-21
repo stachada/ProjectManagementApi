@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Ordinis.Application.Common;
 using Ordinis.Domain.Tasks;
+using Ordinis.Domain.Users;
 
 namespace Ordinis.Application.Tasks.Commands;
 
@@ -115,8 +116,45 @@ internal sealed class CreateTaskValidator : AbstractValidator<CreateTask>
             .WithMessage("Assignee user does not exist.");
 
         RuleFor(x => x.RequestedByUserId)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty()
             .MustAsync(async (id, ct) => await db.Users.AnyAsync(u => u.Id == id, ct))
-            .WithMessage("User not found.");
+                .WithMessage("User not found.")
+            .MustAsync(async (command, requestedByUserId, ct) =>
+            {
+                var project = await db.Boards
+                    .Where(b => b.Id == command.BoardId)
+                    .Join(db.Projects, b => b.ProjectId, p => p.Id, (b, p) => new { p.Id, p.OrganizationId })
+                    .SingleOrDefaultAsync(ct);
+
+                if (project is null)
+                {
+                    return false;
+                }
+
+                // An org Admin of the project's own organization may create tasks in any of its
+                // projects - the same rule ProjectScopeAuthorizationHandler applies to every
+                // other project-scoped action.
+                bool isOrgAdmin = await db.Users.AnyAsync(
+                    u => u.Id == requestedByUserId
+                        && u.OrgRole == Role.Admin
+                        && u.OrganizationId == project.OrganizationId,
+                    ct);
+
+                if (isOrgAdmin)
+                {
+                    return true;
+                }
+
+                // Load the role, then compare in C#. Role is stored as a string, so ">=" inside the
+                // query would compare text ('Admin' < 'Member' < 'Viewer'), not enum order.
+                Role? role = await db.ProjectMembers
+                    .Where(m => m.ProjectId == project.Id && m.UserId == requestedByUserId)
+                    .Select(m => (Role?)m.Role)
+                    .SingleOrDefaultAsync(ct);
+
+                return role >= Role.Member;   // null >= Member is false, so non-members fail too
+            })
+            .WithMessage("You must be a Member or Admin of this task's project to create tasks on it.");
     }
 }

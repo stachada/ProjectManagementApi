@@ -15,7 +15,7 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     public async Task Create_ValidRequest_Returns201WithLocationAndPersistedBoard()
     {
         (Guid userId, Guid projectId) = await SeedProjectAsync();
-        var request = new CreateBoardRequest(userId, "Sprint Board");
+        var request = new CreateBoardRequest("Sprint Board");
 
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/boards", request);
 
@@ -30,17 +30,19 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     }
 
     [Fact]
-    public async Task Create_NonexistentProject_Returns422()
+    public async Task Create_NonexistentProject_Returns404()
     {
         // CreateBoardValidator's ProjectId rule does an existence+not-archived MustAsync check,
         // so a missing project fails validation (422) before the handler ever runs - it never
         // gets the chance to throw a NotFoundException (404). Same class of bug already found in
         // TasksController.Create.
-        var request = new CreateBoardRequest(Guid.CreateVersion7(), "Orphan Board");
+        var request = new CreateBoardRequest("Orphan Board");
+
+        await AuthenticateAsNewUserAsync();
 
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{Guid.CreateVersion7()}/boards", request);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -49,30 +51,20 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         byte[]? projectIfMatch = await GetProjectRowVersionAsync(projectId);
         await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", projectIfMatch);
-        var request = new CreateBoardRequest(userId, "Sprint Board");
+        var request = new CreateBoardRequest("Sprint Board");
 
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/boards", request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
 
-    [Fact]
-    public async Task Create_NonexistentCreatedByUser_Returns422()
-    {
-        (_, Guid projectId) = await SeedProjectAsync();
-        var request = new CreateBoardRequest(Guid.CreateVersion7(), "Sprint Board");
-
-        HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/boards", request);
-
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-    }
 
     [Fact]
     public async Task Create_DuplicateNameInSameProject_Returns422()
     {
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         await SeedBoardAsync(projectId, userId, "Sprint Board");
-        var request = new CreateBoardRequest(userId, "Sprint Board");
+        var request = new CreateBoardRequest("Sprint Board");
 
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/boards", request);
 
@@ -83,7 +75,7 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     public async Task Create_EmptyName_Returns422()
     {
         (Guid userId, Guid projectId) = await SeedProjectAsync();
-        var request = new CreateBoardRequest(userId, string.Empty);
+        var request = new CreateBoardRequest(string.Empty);
 
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/boards", request);
 
@@ -123,6 +115,8 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     [Fact]
     public async Task GetById_NonexistentBoard_Returns404()
     {
+        await AuthenticateAsNewUserAsync();
+
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/boards/{Guid.CreateVersion7()}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -134,9 +128,11 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         (Guid userId, Guid projectId) = await SeedProjectAsync();
         Guid boardId = await SeedBoardAsync(projectId, userId);
         (Guid otherUserId, Guid otherProjectId) = await SeedProjectAsync();
-        Guid otherBoardId = await SeedBoardAsync(otherProjectId, otherUserId);
+        Guid otherBoardId = await SeedBoardAsync(otherProjectId, otherUserId); // logs out the other user, so we don't see their tasks in the first board's list
         await SeedTaskAsync(boardId, userId, "In scope");
         await SeedTaskAsync(otherBoardId, otherUserId, "Out of scope");
+
+        await AuthenticateAsUserAsync(userId); // we are looking for tasks in the first board, so we need to be a member of that project
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/boards/{boardId}/tasks");
 
@@ -151,6 +147,8 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     [Fact]
     public async Task GetTasks_NonexistentBoard_Returns404()
     {
+        await AuthenticateAsNewUserAsync();
+
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/boards/{Guid.CreateVersion7()}/tasks");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -191,6 +189,8 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     public async Task RenameBoard_NonexistentBoard_Returns404()
     {
         var request = new RenameBoardRequest("Renamed Board");
+
+        await AuthenticateAsNewUserAsync();
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/boards/{Guid.CreateVersion7()}/name", PlaceholderIfMatch, request);
 
@@ -309,6 +309,8 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     [Fact]
     public async Task ArchiveBoard_NonexistentBoard_Returns404()
     {
+        await AuthenticateAsNewUserAsync();
+
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/boards/{Guid.CreateVersion7()}/archive", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -362,6 +364,8 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     [Fact]
     public async Task UnarchiveBoard_NonexistentBoard_Returns404()
     {
+        await AuthenticateAsNewUserAsync();
+
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/boards/{Guid.CreateVersion7()}/unarchive", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -392,6 +396,8 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
 
             return project.Id;
         });
+
+        await AuthenticateAsUserAsync(userId); // Ensure Client is authenticated as the project creator for subsequent requests
 
         return (userId, projectId);
     }

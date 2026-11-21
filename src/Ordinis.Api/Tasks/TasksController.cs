@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Ordinis.Api.Common;
 using Ordinis.Api.Common.DataShaping;
@@ -13,11 +14,18 @@ namespace Ordinis.Api.Tasks;
 /// <summary>
 /// Manages tasks: creation, lookup, updates, deletion, and comments/attachments on a task.
 /// </summary>
+/// <remarks>
+/// The acting user on every command is the authenticated caller from
+/// <see cref="ICurrentUserService"/> (the access token's <c>sub</c> claim) - never a value the
+/// client supplies in the body, query string, or form, which would let a caller act as anyone.
+/// </remarks>
 [ApiController]
+[Authorize]
 [Route("api/v1/tasks")]
-public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
+public sealed class TasksController(IDispatcher dispatcher, ICurrentUserService currentUser) : ControllerBase
 {
     private readonly IDispatcher _dispatcher = dispatcher;
+    private readonly ICurrentUserService _currentUser = currentUser;
 
     /// <summary>
     /// Lists tasks, with optional filtering, sorting, and pagination.
@@ -42,6 +50,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// number of matching tasks across all pages.
     /// </response>
     [HttpGet]
+    [Authorize]
     [ProducesResponseType(typeof(IReadOnlyList<TaskSummaryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetTasks(
         [FromQuery] Guid? boardId = null,
@@ -88,7 +97,8 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// </response>
     /// <response code="404">No task exists with the given ID.</response>
     [HttpGet("{id:guid}")]
-    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any, VaryByHeader = "Accept-Encoding,Authorization")]
+    [Authorize(Policy = "TaskMember")]
+    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Client, VaryByHeader = "Accept-Encoding,Authorization")]
     [ProducesResponseType(typeof(TaskDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<TaskDto>> GetById(
@@ -114,6 +124,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <response code="200">Returns all comments on the task.</response>
     /// <response code="404">No task exists with the given ID.</response>
     [HttpGet("{id:guid}/comments")]
+    [Authorize(Policy = "TaskMember")]
     [ProducesResponseType(typeof(IReadOnlyCollection<CommentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<IReadOnlyCollection<CommentDto>>> GetComments(
@@ -134,6 +145,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <response code="200">Returns all attachments on the task.</response>
     /// <response code="404">No task exists with the given ID.</response>
     [HttpGet("{id:guid}/attachments")]
+    [Authorize(Policy = "TaskMember")]
     [ProducesResponseType(typeof(IReadOnlyCollection<AttachmentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<IReadOnlyCollection<AttachmentDto>>> GetAttachments(
@@ -154,6 +166,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <response code="201">The task was created. The <c>Location</c> header points at <see cref="GetById"/>.</response>
     /// <response code="422">The request failed validation (e.g. board does not exist or is archived, assignee not found).</response>
     [HttpPost]
+    [Authorize]
     [Idempotent]
     [ProducesResponseType(typeof(TaskDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -168,7 +181,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
             Priority: request.Priority,
             AssigneeId: request.AssigneeId,
             DueDate: request.DueDate,
-            RequestedByUserId: request.RequestedByUserId);
+            RequestedByUserId: _currentUser.UserId);
 
         Guid id = await _dispatcher.SendAsync<CreateTask, Guid>(command, cancellationToken);
 
@@ -192,6 +205,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <response code="409">The task was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The request failed validation.</response>
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "TaskOwner")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -207,7 +221,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
             Description: request.Description,
             Priority: request.Priority,
             DueDate: request.DueDate,
-            RequestedByUserId: request.RequestedByUserId,
+            RequestedByUserId: _currentUser.UserId,
             IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
@@ -219,23 +233,22 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// Soft-deletes a task, removing it from normal query results.
     /// </summary>
     /// <param name="id">The task to delete.</param>
-    /// <param name="requestedByUserId">The user performing the deletion.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The task was deleted.</response>
     /// <response code="404">No task exists with the given ID.</response>
     /// <response code="409">The task was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The <c>If-Match</c> header is missing.</response>
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "TaskProjectAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Delete(
         Guid id,
-        [FromQuery] Guid requestedByUserId,
         CancellationToken cancellationToken)
     {
-        var command = new DeleteTask(id, requestedByUserId, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        var command = new DeleteTask(id, _currentUser.UserId, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
         await _dispatcher.SendAsync(command, cancellationToken);
         return NoContent();
     }
@@ -244,13 +257,14 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// Transitions a task to a new workflow status.
     /// </summary>
     /// <param name="id">The task to transition.</param>
-    /// <param name="request">The target status and the requesting user.</param>
+    /// <param name="request">The target status.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The task was transitioned.</response>
     /// <response code="404">No task exists with the given ID.</response>
     /// <response code="409">The task was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The transition is not legal from the task's current status.</response>
     [HttpPost("{id:guid}/move")]
+    [Authorize(Policy = "TaskOwner")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -263,7 +277,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
         var command = new MoveTask(
             TaskId: id,
             NewStatus: request.Status,
-            RequestedByUserId: request.RequestedByUserId,
+            RequestedByUserId: _currentUser.UserId,
             IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
@@ -275,13 +289,14 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// Assigns a task to a user, or reassigns it from the current assignee.
     /// </summary>
     /// <param name="id">The task to assign.</param>
-    /// <param name="request">The target assignee and the requesting user.</param>
+    /// <param name="request">The target assignee.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The task was assigned.</response>
     /// <response code="404">No task exists with the given ID.</response>
     /// <response code="409">The task was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The request failed validation (e.g. assignee does not exist, task is in a terminal state, or already assigned to this user).</response>
     [HttpPost("{id:guid}/assign")]
+    [Authorize(Policy = "TaskOwner")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -294,7 +309,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
         var command = new AssignTask(
             TaskId: id,
             AssigneeId: request.AssigneeId,
-            RequestedByUserId: request.RequestedByUserId,
+            RequestedByUserId: _currentUser.UserId,
             IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
@@ -306,23 +321,22 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// Removes the current assignee from a task, leaving it unassigned.
     /// </summary>
     /// <param name="id">The task to unassign.</param>
-    /// <param name="request">The requesting user.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The task was unassigned.</response>
     /// <response code="404">No task exists with the given ID.</response>
     /// <response code="409">The task was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The task is in a terminal state or already unassigned.</response>
     [HttpPost("{id:guid}/unassign")]
+    [Authorize(Policy = "TaskOwner")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Unassign(
         Guid id,
-        [FromBody] UnassignTaskRequest request,
         CancellationToken cancellationToken = default)
     {
-        var command = new UnassignTask(id, request.RequestedByUserId, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
+        var command = new UnassignTask(id, _currentUser.UserId, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
         await _dispatcher.SendAsync(command, cancellationToken);
 
         return NoContent();
@@ -333,7 +347,6 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <see cref="ProjectTaskStatus.Done"/>.
     /// </summary>
     /// <param name="id">The task to close.</param>
-    /// <param name="request">The requesting user.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The task was closed.</response>
     /// <response code="404">No task exists with the given ID.</response>
@@ -343,19 +356,19 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <see cref="ProjectTaskStatus.Done"/> from its current status - only <see cref="ProjectTaskStatus.InReview"/> allows it.
     /// </response>
     [HttpPost("{id:guid}/close")]
+    [Authorize(Policy = "TaskOwner")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Close(
         Guid id,
-        [FromBody] CloseTaskRequest request,
         CancellationToken cancellationToken = default)
     {
         var command = new MoveTask(
             TaskId: id,
             NewStatus: ProjectTaskStatus.Done,
-            RequestedByUserId: request.RequestedByUserId,
+            RequestedByUserId: _currentUser.UserId,
             IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
@@ -368,7 +381,6 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <see cref="ProjectTaskStatus.Done"/> task back to <see cref="ProjectTaskStatus.ToDo"/>.
     /// </summary>
     /// <param name="id">The task to reopen.</param>
-    /// <param name="request">The requesting user.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The task was reopened.</response>
     /// <response code="404">No task exists with the given ID.</response>
@@ -379,19 +391,19 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// any other status.
     /// </response>
     [HttpPost("{id:guid}/reopen")]
+    [Authorize(Policy = "TaskOwner")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Reopen(
         Guid id,
-        [FromBody] ReopenTaskRequest request,
         CancellationToken cancellationToken = default)
     {
         var command = new MoveTask(
             TaskId: id,
             NewStatus: ProjectTaskStatus.ToDo,
-            RequestedByUserId: request.RequestedByUserId,
+            RequestedByUserId: _currentUser.UserId,
             IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
@@ -403,12 +415,13 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// Adds a comment to a task.
     /// </summary>
     /// <param name="id">The task to comment on.</param>
-    /// <param name="request">The comment author and content.</param>
+    /// <param name="request">The comment content. The author is the authenticated caller.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="201">The comment was added. The <c>Location</c> header points at <see cref="GetComments"/>.</response>
     /// <response code="404">No task exists with the given ID.</response>
     /// <response code="422">The request failed validation (e.g. empty content).</response>
     [HttpPost("{id:guid}/comments")]
+    [Authorize(Policy = "TaskContributor")]
     [Idempotent]
     [ProducesResponseType(typeof(CommentDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -420,7 +433,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     {
         var command = new AddComment(
             TaskId: id,
-            AuthorId: request.AuthorId,
+            AuthorId: _currentUser.UserId,
             Content: request.Content);
 
         Guid commentId = await _dispatcher.SendAsync<AddComment, Guid>(command, cancellationToken);
@@ -438,11 +451,12 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// </summary>
     /// <param name="id">The task that owns the comment.</param>
     /// <param name="commentId">The comment to edit.</param>
-    /// <param name="request">The replacement content and the requesting user.</param>
+    /// <param name="request">The replacement content.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The comment was updated.</response>
     /// <response code="422">The request failed validation (e.g. task or comment does not exist, or requester is not the comment's author).</response>
     [HttpPut("{id:guid}/comments/{commentId:guid}")]
+    [Authorize(Policy = "TaskContributor")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> EditComment(
@@ -455,7 +469,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
             TaskId: id,
             CommentId: commentId,
             NewContent: request.NewContent,
-            RequestedByUserId: request.RequestedByUserId);
+            RequestedByUserId: _currentUser.UserId);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 
@@ -463,26 +477,29 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     }
 
     /// <summary>
-    /// Removes a comment from a task.
+    /// Removes a comment from a task. Only the comment's author, an Admin of the task's project,
+    /// or an org Admin of the project's organization may remove it.
     /// </summary>
     /// <param name="id">The task that owns the comment.</param>
     /// <param name="commentId">The comment to remove.</param>
-    /// <param name="requestedByUserId">The user performing the removal.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The comment was removed.</response>
     /// <response code="404">No task exists with the given ID.</response>
-    /// <response code="422">The comment does not exist on this task (<c>task.comment-not-found</c>).</response>
+    /// <response code="422">
+    /// The comment does not exist on this task (<c>task.comment-not-found</c>), or the caller is
+    /// neither its author nor an admin (<c>task.comment-not-author</c>).
+    /// </response>
     [HttpDelete("{id:guid}/comments/{commentId:guid}")]
+    [Authorize(Policy = "TaskContributor")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> RemoveComment(
         Guid id,
         Guid commentId,
-        [FromQuery] Guid requestedByUserId,
         CancellationToken cancellationToken = default)
     {
-        await _dispatcher.SendAsync(new RemoveComment(id, commentId, requestedByUserId), cancellationToken);
+        await _dispatcher.SendAsync(new RemoveComment(id, commentId, _currentUser.UserId), cancellationToken);
 
         return NoContent();
     }
@@ -491,13 +508,13 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// Uploads a file and attaches it to a task.
     /// </summary>
     /// <param name="id">The task to attach the file to.</param>
-    /// <param name="file">The file to upload.</param>
-    /// <param name="uploadedByUserId">The user uploading the attachment.</param>
+    /// <param name="file">The file to upload. The uploader is the authenticated caller.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="201">The attachment was added. The <c>Location</c> header points at <see cref="GetAttachments"/>.</response>
     /// <response code="404">No task exists with the given ID.</response>
     /// <response code="422">The request failed validation (e.g. empty file).</response>
     [HttpPost("{id:guid}/attachments")]
+    [Authorize(Policy = "TaskContributor")]
     [Consumes("multipart/form-data")]
     [Idempotent]
     [ProducesResponseType(typeof(AttachmentDto), StatusCodes.Status201Created)]
@@ -506,7 +523,6 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     public async Task<ActionResult<AttachmentDto>> AddAttachment(
         Guid id,
         [FromForm] IFormFile file,
-        [FromForm] Guid uploadedByUserId,
         CancellationToken cancellationToken = default)
     {
         await using Stream stream = file.OpenReadStream();
@@ -517,7 +533,7 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
             ContentType: file.ContentType,
             SizeInBytes: file.Length,
             FileStream: stream,
-            UploadedByUserId: uploadedByUserId);
+            UploadedByUserId: _currentUser.UserId);
 
         Guid attachmentId = await _dispatcher.SendAsync<AddAttachment, Guid>(command, cancellationToken);
 
@@ -534,7 +550,6 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// </summary>
     /// <param name="id">The task that owns the attachment.</param>
     /// <param name="attachmentId">The attachment to remove.</param>
-    /// <param name="removedByUserId">The user performing the removal.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The attachment was removed.</response>
     /// <response code="404">
@@ -543,15 +558,15 @@ public sealed class TasksController(IDispatcher dispatcher) : ControllerBase
     /// <see cref="RemoveComment"/> — so this is <c>404</c>, not <c>422</c>).
     /// </response>
     [HttpDelete("{id:guid}/attachments/{attachmentId:guid}")]
+    [Authorize(Policy = "TaskContributor")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> RemoveAttachment(
         Guid id,
         Guid attachmentId,
-        [FromQuery] Guid removedByUserId,
         CancellationToken cancellationToken = default)
     {
-        await _dispatcher.SendAsync(new RemoveAttachment(id, attachmentId, removedByUserId), cancellationToken);
+        await _dispatcher.SendAsync(new RemoveAttachment(id, attachmentId, _currentUser.UserId), cancellationToken);
 
         return NoContent();
     }

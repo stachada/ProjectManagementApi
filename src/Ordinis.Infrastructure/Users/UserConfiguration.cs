@@ -45,6 +45,8 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.RefreshToken)
             .HasMaxLength(500);
 
+        builder.Property(u => u.RefreshTokenExpiresAt);
+
         // App-managed concurrency token (assigned by AppDbContext.SaveChangesAsync) — not
         // database-generated, so behavior is identical on SQL Server and PostgreSQL.
         builder.Property(u => u.RowVersion)

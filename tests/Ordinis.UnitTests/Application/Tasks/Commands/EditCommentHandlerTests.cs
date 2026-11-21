@@ -94,7 +94,7 @@ public class EditCommentHandlerTests
 
         ProjectTask task = TaskBuilder.Create(now: Now);
         Comment comment = task.AddComment("Original comment.", authorId, now: Now);
-        task.RemoveComment(comment.Id, authorId, now: Now);
+        task.RemoveComment(comment.Id, authorId, requesterIsModerator: false, now: Now);
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
 

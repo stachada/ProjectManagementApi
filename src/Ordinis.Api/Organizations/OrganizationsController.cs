@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Ordinis.Api.Common;
 using Ordinis.Api.Common.DataShaping;
@@ -15,7 +16,13 @@ namespace Ordinis.Api.Organizations;
 /// Manages organizations: creation, lookup, renaming/description updates,
 /// suspension/reactivation, and listing an organization's projects.
 /// </summary>
+/// <remarks>
+/// Every <c>{id}</c> route is scoped to the caller's own organization (the access token's
+/// <c>org_id</c> claim): any other organization is reported as <c>404</c>, exactly like a
+/// nonexistent one, so an Admin of one tenant can neither read nor modify another.
+/// </remarks>
 [ApiController]
+[Authorize]
 [Route("api/v1/organizations")]
 public sealed class OrganizationsController(IDispatcher dispatcher) : ControllerBase
 {
@@ -30,9 +37,10 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
     /// The organization was found and is returned. Cacheable for 30 seconds
     /// (<c>Cache-Control: public, max-age=30</c>).
     /// </response>
-    /// <response code="404">No organization exists with the given ID.</response>
+    /// <response code="404">The ID is not the caller's organization.</response>
     [HttpGet("{id:guid}")]
-    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any, VaryByHeader = "Accept-Encoding,Authorization")]
+    [Authorize(Policy = "OrganizationMember")]
+    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Client, VaryByHeader = "Accept-Encoding,Authorization")]
     [ProducesResponseType(typeof(OrganizationDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<OrganizationDto>> GetById(Guid id, CancellationToken cancellationToken)
@@ -45,6 +53,7 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
 
     /// <summary>
     /// Lists projects belonging to an organization, with optional filtering, sorting, and pagination.
+    /// An org Admin sees every project; any other caller sees only projects they are a member of.
     /// </summary>
     /// <param name="id">The organization whose projects to list.</param>
     /// <param name="memberId">Optional: restrict to projects where this user is a member.</param>
@@ -62,8 +71,9 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
     /// Returns the page of projects. Sets the <c>X-Total-Count</c> response header to the total
     /// number of matching projects across all pages.
     /// </response>
-    /// <response code="404">No organization exists with the given ID.</response>
+    /// <response code="404">The ID is not the caller's organization.</response>
     [HttpGet("{id:guid}/projects")]
+    [Authorize(Policy = "OrganizationMember")]
     [ProducesResponseType(typeof(IReadOnlyList<ProjectSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetProjects(
@@ -103,6 +113,7 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
     /// <response code="201">The organization was created. The <c>Location</c> header points at <see cref="GetById"/>.</response>
     /// <response code="422">The request failed validation (e.g. duplicate name).</response>
     [HttpPost]
+    [Authorize(Roles = "Admin")]
     [Idempotent]
     [ProducesResponseType(typeof(OrganizationDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -126,11 +137,14 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
     /// <param name="request">The new name and description.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The organization was updated.</response>
-    /// <response code="404">No organization exists with the given ID.</response>
+    /// <response code="403">The caller is not an org Admin.</response>
+    /// <response code="404">The ID is not the caller's organization.</response>
     /// <response code="409">The organization was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The request failed validation.</response>
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "OrganizationAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -151,11 +165,14 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
     /// <param name="id">The organization to suspend.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The organization was suspended.</response>
-    /// <response code="404">No organization exists with the given ID.</response>
+    /// <response code="403">The caller is not an org Admin.</response>
+    /// <response code="404">The ID is not the caller's organization.</response>
     /// <response code="409">The organization was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The organization is already suspended (<c>organization.already-suspended</c>).</response>
     [HttpPost("{id:guid}/suspend")]
+    [Authorize(Policy = "OrganizationAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -171,11 +188,14 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
     /// <param name="id">The organization to reactivate.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The organization was reactivated.</response>
-    /// <response code="404">No organization exists with the given ID.</response>
+    /// <response code="403">The caller is not an org Admin.</response>
+    /// <response code="404">The ID is not the caller's organization.</response>
     /// <response code="409">The organization was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The organization is already active (<c>organization.already-active</c>).</response>
     [HttpPost("{id:guid}/reactivate")]
+    [Authorize(Policy = "OrganizationAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]

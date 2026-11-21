@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Ordinis.Api.Common;
 using Ordinis.Api.Common.DataShaping;
@@ -19,10 +20,12 @@ namespace Ordinis.Api.Projects;
 /// </summary>
 /// <param name="dispatcher"></param>
 [ApiController]
+[Authorize]
 [Route("api/v1/projects")]
-public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
+public sealed class ProjectsController(IDispatcher dispatcher, ICurrentUserService currentUser) : ControllerBase
 {
     private readonly IDispatcher _dispatcher = dispatcher;
+    private readonly ICurrentUserService _currentUser = currentUser;
 
     /// <summary>
     /// Lists projects, with optional filtering, sorting, and pagination.
@@ -44,6 +47,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// number of matching projects across all pages.
     /// </response>
     [HttpGet]
+    [Authorize]
     [ProducesResponseType(typeof(IReadOnlyList<ProjectSummaryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetProjects(
         [FromQuery] Guid? organizationId,
@@ -87,7 +91,8 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// </response>
     /// <response code="404">No project exists with the given ID.</response>
     [HttpGet("{id:guid}")]
-    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any, VaryByHeader = "Accept-Encoding,Authorization")]
+    [Authorize(Policy = "ProjectMember")]
+    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Client, VaryByHeader = "Accept-Encoding,Authorization")]
     [ProducesResponseType(typeof(ProjectDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ProjectDto>> GetById(Guid id, CancellationToken cancellationToken)
@@ -128,6 +133,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// </response>
     /// <response code="404">No project exists with the given ID.</response>
     [HttpGet("{id:guid}/tasks")]
+    [Authorize(Policy = "ProjectMember")]
     [ProducesResponseType(typeof(IReadOnlyList<TaskSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetTasks(
@@ -176,6 +182,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="200">Returns all members, ordered by <c>JoinedAt</c> ascending.</response>
     /// <response code="404">No project exists with the given ID.</response>
     [HttpGet("{id:guid}/members")]
+    [Authorize(Policy = "ProjectMember")]
     [ProducesResponseType(typeof(IReadOnlyList<ProjectMemberDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<IReadOnlyList<ProjectMemberDto>>> GetMembers(Guid id, CancellationToken cancellationToken)
@@ -196,6 +203,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// </response>
     /// <response code="404">No project exists with the given ID.</response>
     [HttpGet("{id:guid}/boards")]
+    [Authorize(Policy = "ProjectMember")]
     [ProducesResponseType(typeof(IReadOnlyList<BoardSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<IReadOnlyList<BoardSummaryDto>>> GetBoards(Guid id, CancellationToken cancellationToken)
@@ -219,6 +227,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// </response>
     /// <response code="404">No project exists with the given ID.</response>
     [HttpGet("{id:guid}/audit")]
+    [Authorize(Policy = "ProjectMember")]
     [ProducesResponseType(typeof(IReadOnlyList<AuditEntryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetAudit(
@@ -240,11 +249,15 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <summary>
     /// Creates a new project under the specified organization.
     /// </summary>
-    /// <param name="request">The owning organization, creator, name, and optional description.</param>
+    /// <param name="request">
+    /// The owning organization, name, and optional description. The authenticated caller is
+    /// recorded as the creator and becomes the project's first Admin member.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="201">The project was created. The <c>Location</c> header points at <see cref="GetById"/>.</response>
     /// <response code="422">The request failed validation (e.g. duplicate name in the organization).</response>
     [HttpPost]
+    [Authorize]
     [Idempotent]
     [ProducesResponseType(typeof(ProjectDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -254,7 +267,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     {
         Guid id = await _dispatcher.SendAsync<CreateProject, Guid>(new CreateProject(
             request.OrganizationId,
-            request.CreatedByUserId,
+            _currentUser.UserId,
             request.Name,
             request.Description), cancellationToken);
 
@@ -275,6 +288,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The request failed validation.</response>
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "ProjectAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -299,6 +313,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The <c>If-Match</c> header is missing.</response>
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "ProjectAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -320,6 +335,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The <c>If-Match</c> header is missing.</response>
     [HttpPost("{id:guid}/archive")]
+    [Authorize(Policy = "ProjectAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -341,6 +357,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The <c>If-Match</c> header is missing.</response>
     [HttpPost("{id:guid}/unarchive")]
+    [Authorize(Policy = "ProjectAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -362,6 +379,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The request failed validation (e.g. project does not exist, user not found, already a member).</response>
     [HttpPost("{id:guid}/members")]
+    [Authorize(Policy = "ProjectAdmin")]
     [Idempotent]
     [ProducesResponseType(typeof(ProjectMemberDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -394,6 +412,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">Not allowed (e.g. demoting the last Admin).</response>
     [HttpPut("{id:guid}/members/{userId:guid}/role")]
+    [Authorize(Policy = "ProjectAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -420,6 +439,7 @@ public sealed class ProjectsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="409">The project was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">Not allowed (e.g. removing the last Admin).</response>
     [HttpDelete("{id:guid}/members/{userId:guid}")]
+    [Authorize(Policy = "ProjectAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]

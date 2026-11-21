@@ -35,8 +35,14 @@ public sealed record GetUserTasks(Guid UserId, TaskFilter? Filter = null) : IQue
 /// a missing user returns a clean <see cref="NotFoundException"/> (404) rather
 /// than an empty list that could be mistaken for "user has no tasks".
 /// </para>
+/// <para>
+/// Results are restricted to projects the <i>caller</i> can see (see
+/// <see cref="CurrentUserServiceExtensions.GetAllowedProjectIds"/>) - the target user may be
+/// assigned tasks in projects the caller has no access to, and listing them here would leak
+/// those tasks' titles, statuses, and due dates.
+/// </para>
 /// </remarks>
-internal sealed class GetUserTasksHandler(IAppDbContext db)
+internal sealed class GetUserTasksHandler(IAppDbContext db, ICurrentUserService currentUser)
     : IQueryHandler<GetUserTasks, PagedResult<TaskSummaryDto>>
 {
     public async Task<PagedResult<TaskSummaryDto>> HandleAsync(
@@ -85,6 +91,10 @@ internal sealed class GetUserTasksHandler(IAppDbContext db)
         {
             queryable = queryable.Where(t => t.DueDate >= filter.DueAfter.Value);
         }
+
+        IQueryable<Guid> allowedProjectIds = currentUser.GetAllowedProjectIds(db);
+        queryable = queryable.Where(t => db.Boards
+            .Any(b => b.Id == t.BoardId && allowedProjectIds.Contains(b.ProjectId)));
 
         // Total count on the filtered (pre-pagination) queryable.
         var totalCount = await queryable.CountAsync(ct);

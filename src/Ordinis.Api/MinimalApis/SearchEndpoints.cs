@@ -71,6 +71,7 @@ public static class SearchEndpoints
                     "Invalid query parameter",
                     "Query parameter 'type' must be either 'tasks' or 'projects'."));
             })
+            .RequireAuthorization()
             .Produces<IReadOnlyList<TaskSummaryDto>>(StatusCodes.Status200OK)
             .Produces<IReadOnlyList<ProjectSummaryDto>>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest);

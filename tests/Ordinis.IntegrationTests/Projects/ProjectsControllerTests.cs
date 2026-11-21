@@ -19,9 +19,10 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
 
+        await AuthenticateAsUserAsync(userId);
+
         var request = new CreateProjectRequest(
             OrganizationId: organizationId,
-            CreatedByUserId: userId,
             Name: "Apollo",
             Description: "A project to land on the moon"
         );
@@ -34,7 +35,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Assert.Equal(request.Name, dto!.Name);
         Assert.Equal(request.Description, dto.Description);
         Assert.Equal(request.OrganizationId, dto.OrganizationId);
-        Assert.Equal(request.CreatedByUserId, dto.CreatedByUserId);
+        Assert.Equal(userId, dto.CreatedByUserId); // the creator is the authenticated caller
         Assert.Equal($"/api/v1/projects/{dto.Id}", response.Headers.Location?.PathAndQuery);
     }
 
@@ -43,9 +44,10 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     {
         var request = new CreateProjectRequest(
             OrganizationId: Guid.Empty,
-            CreatedByUserId: Guid.CreateVersion7(),
             Name: "Apollo"
         );
+
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 422 instead of a 401
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/projects", request);
 
@@ -57,9 +59,10 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     {
         var request = new CreateProjectRequest(
             OrganizationId: Guid.CreateVersion7(),
-            CreatedByUserId: Guid.CreateVersion7(),
             Name: "Apollo"
         );
+
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 422 instead of a 401
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/projects", request);
 
@@ -67,35 +70,26 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     }
 
     [Fact]
-    public async Task CreateProject_EmptyCreatedByUserId_Returns422()
+    public async Task CreateProject_InOrganizationCallerDoesNotBelongTo_Returns422AndCreatesNothing()
     {
-        Guid organizationId = await SeedOrganizationAsync();
+        // Regression test for caller impersonation: the creator used to come from the body, so a
+        // caller could create a project in another organization by naming one of its users. The
+        // creator is now the authenticated caller, whom the validator checks against the target
+        // organization.
+        Guid otherOrganizationId = await SeedOrganizationAsync();
+        await SeedUserAsync(otherOrganizationId);
+        await AuthenticateAsNewUserAsync();
 
         var request = new CreateProjectRequest(
-            OrganizationId: organizationId,
-            CreatedByUserId: Guid.Empty,
+            OrganizationId: otherOrganizationId,
             Name: "Apollo"
         );
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/projects", request);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task CreateProject_NotExistingCreatedByUser_Returns422()
-    {
-        Guid organizationId = await SeedOrganizationAsync();
-
-        var request = new CreateProjectRequest(
-            OrganizationId: organizationId,
-            CreatedByUserId: Guid.CreateVersion7(),
-            Name: "Apollo"
-        );
-
-        HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/projects", request);
-
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        await AssertValidationProblemAsync(response, string.Empty, "member of this organization");
+        bool anyProject = await SeedAsync(db => db.Projects.AnyAsync(p => p.OrganizationId == otherOrganizationId));
+        Assert.False(anyProject);
     }
 
     [Fact]
@@ -104,9 +98,10 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
 
+        await AuthenticateAsUserAsync(userId);
+
         var request = new CreateProjectRequest(
             OrganizationId: organizationId,
-            CreatedByUserId: userId,
             Name: ""
         );
 
@@ -121,9 +116,10 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
 
+        await AuthenticateAsUserAsync(userId);
+
         var request1 = new CreateProjectRequest(
             OrganizationId: organizationId,
-            CreatedByUserId: userId,
             Name: "Apollo"
         );
 
@@ -132,7 +128,6 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
 
         var request2 = new CreateProjectRequest(
             OrganizationId: organizationId,
-            CreatedByUserId: userId,
             Name: "Apollo"
         );
 
@@ -146,11 +141,12 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
 
+        await AuthenticateAsUserAsync(userId);
+
         string longDescription = new string('A', 1001); // Assuming max length is 1000
 
         var request = new CreateProjectRequest(
             OrganizationId: organizationId,
-            CreatedByUserId: userId,
             Name: "Apollo",
             Description: longDescription
         );
@@ -166,11 +162,12 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
 
+        await AuthenticateAsUserAsync(userId);
+
         string maxDescription = new string('A', 1000); // Assuming max length is 1000
 
         var request = new CreateProjectRequest(
             OrganizationId: organizationId,
-            CreatedByUserId: userId,
             Name: "Apollo",
             Description: maxDescription
         );
@@ -188,6 +185,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     {
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
+
         await SeedProjectAsync(organizationId, userId);
         await SeedProjectAsync(organizationId, userId, "Gemini", "gemini");
 
@@ -204,6 +202,11 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     [Fact]
     public async Task GetProjects_EmptyDatabase_ReturnsEmptyList()
     {
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+
+        await AuthenticateAsUserAsync(userId);
+
         HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/projects");
 
         Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
@@ -268,6 +271,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     {
         Guid nonExistingProjectId = Guid.CreateVersion7();
 
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
+
         HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/projects/{nonExistingProjectId}");
 
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
@@ -279,6 +284,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         var projectId = await SeedFullProjectAsync(organizationId, userId);
+
+        await AuthenticateAsUserAsync(userId);
 
         HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/projects/{projectId}/tasks");
 
@@ -294,6 +301,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     public async Task GetTask_NonExistingProject_Returns404()
     {
         Guid nonExistingProjectId = Guid.CreateVersion7();
+
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
 
         HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/projects/{nonExistingProjectId}/tasks");
 
@@ -321,6 +330,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     [Fact]
     public async Task GetMembers_NonexistentProject_Returns404()
     {
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
+
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/projects/{Guid.CreateVersion7()}/members");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -333,6 +344,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedFullProjectAsync(organizationId, userId);
 
+        await AuthenticateAsUserAsync(userId);
+
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/projects/{projectId}/boards");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -344,6 +357,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     [Fact]
     public async Task GetBoards_NonexistentProject_Returns404()
     {
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
+
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/projects/{Guid.CreateVersion7()}/boards");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -355,6 +370,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         var request = new UpdateProjectRequest("Updated Name", "Updated Description");
         byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
@@ -376,6 +392,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
         await AssertConcurrentRequestsConflictAsync(
@@ -388,6 +405,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     {
         var request = new UpdateProjectRequest("Updated Name", null);
 
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
+
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{Guid.CreateVersion7()}", PlaceholderIfMatch, request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -399,6 +418,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         var request = new UpdateProjectRequest("Updated Name", null);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", null, request);
@@ -412,6 +432,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         var request = new UpdateProjectRequest("Updated Name", null);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", PlaceholderIfMatch, request);
@@ -425,6 +446,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         byte[]? ifMatchForArchive = await GetProjectRowVersionAsync(projectId);
         await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", ifMatchForArchive);
         var request = new UpdateProjectRequest("Updated Name", null);
@@ -441,6 +463,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         var request = new UpdateProjectRequest(string.Empty, null);
         byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
@@ -455,6 +478,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         string longDescription = new string('A', 1001);
         var request = new UpdateProjectRequest("Valid Name", longDescription);
         byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
@@ -470,6 +494,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Delete, $"/api/v1/projects/{projectId}", ifMatch);
@@ -488,6 +513,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
         await AssertConcurrentRequestsConflictAsync(
@@ -498,6 +524,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     [Fact]
     public async Task Delete_NonexistentProject_Returns404()
     {
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
+
         HttpResponseMessage response = await SendAsync(HttpMethod.Delete, $"/api/v1/projects/{Guid.CreateVersion7()}", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -509,6 +537,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", ifMatch);
@@ -527,6 +556,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
 
         await AssertConcurrentRequestsConflictAsync(
@@ -537,6 +567,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     [Fact]
     public async Task Archive_NonexistentProject_Returns404()
     {
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
+
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{Guid.CreateVersion7()}/archive", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -548,6 +580,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         byte[]? ifMatchForFirstArchive = await GetProjectRowVersionAsync(projectId);
         await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", ifMatchForFirstArchive);
         byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
@@ -563,6 +596,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         byte[]? ifMatchForArchive = await GetProjectRowVersionAsync(projectId);
         await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", ifMatchForArchive);
         byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
@@ -586,6 +620,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
+
         byte[]? ifMatchForArchive = await GetProjectRowVersionAsync(projectId);
         await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", ifMatchForArchive);
         byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
@@ -598,6 +633,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     [Fact]
     public async Task Unarchive_NonexistentProject_Returns404()
     {
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
+
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{Guid.CreateVersion7()}/unarchive", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -622,9 +659,11 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
         Guid projectId = await SeedProjectAsync(organizationId, userId);
-        Guid newMemberId = await SeedUserAsync(organizationId);
+        Guid newMemberId = await SeedUserAsync(organizationId); // not a member of the project yet
         var request = new AddProjectMemberRequest(newMemberId, Role.Member);
         byte[]? ifMatch = await GetProjectRowVersionAsync(projectId);
+
+        await AuthenticateAsUserAsync(userId);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/members", ifMatch, request);
 
@@ -653,18 +692,18 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     }
 
     [Fact]
-    public async Task AddMember_NonexistentProject_Returns422()
+    public async Task AddMember_NonexistentProject_Returns404()
     {
-        // AddProjectMemberValidator does its own ProjectId existence MustAsync check, so a
-        // missing project fails validation (422) before the handler ever runs and could throw
-        // NotFoundException (404) - same class of bug already found in TasksController.Create.
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
+
+        await AuthenticateAsUserAsync(userId);
+
         var request = new AddProjectMemberRequest(userId, Role.Member);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{Guid.CreateVersion7()}/members", PlaceholderIfMatch, request);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -750,6 +789,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     public async Task ChangeMemberRole_NonexistentProject_Returns404()
     {
         var request = new ChangeMemberRoleRequest(Role.Viewer);
+
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
 
         HttpResponseMessage response = await SendAsync(
             HttpMethod.Put, $"/api/v1/projects/{Guid.CreateVersion7()}/members/{Guid.CreateVersion7()}/role", PlaceholderIfMatch, request);
@@ -840,6 +881,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     [Fact]
     public async Task RemoveMember_NonexistentProject_Returns404()
     {
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
+
         HttpResponseMessage response = await SendAsync(
             HttpMethod.Delete, $"/api/v1/projects/{Guid.CreateVersion7()}/members/{Guid.CreateVersion7()}", PlaceholderIfMatch);
 
@@ -902,6 +945,9 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         db.Projects.Add(project);
 
         await db.SaveChangesAsync();
+
+        await AuthenticateAsUserAsync(userId);
+
         return project.Id;
     });
 

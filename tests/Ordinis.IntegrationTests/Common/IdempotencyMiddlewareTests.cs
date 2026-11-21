@@ -2,7 +2,13 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Ordinis.Api.Organizations.Requests;
+using Ordinis.Api.Tasks.Requests;
 using Ordinis.Application.Organizations.Dtos;
+using Ordinis.Application.Tasks.Dtos;
+using Ordinis.Domain.Organizations;
+using Ordinis.Domain.Projects;
+using Ordinis.Domain.Tasks;
+using Ordinis.Domain.Users;
 using Ordinis.IntegrationTests.Infrastructure;
 
 namespace Ordinis.IntegrationTests.Common;
@@ -17,6 +23,7 @@ public sealed class IdempotencyMiddlewareTests(OrdinisApiFactory factory) : Inte
     [Fact]
     public async Task Post_SameKeySameBody_ReplaysIdenticalResponseAndCreatesOnlyOneResource()
     {
+        await AuthenticateAsOrgAdminAsync();
         string idempotencyKey = Guid.CreateVersion7().ToString();
         var request = new CreateOrganizationRequest("Replay Co", "Created once, replayed once.");
 
@@ -40,6 +47,7 @@ public sealed class IdempotencyMiddlewareTests(OrdinisApiFactory factory) : Inte
     [Fact]
     public async Task Post_SameKeyDifferentBody_Returns409Conflict()
     {
+        await AuthenticateAsOrgAdminAsync();
         string idempotencyKey = Guid.CreateVersion7().ToString();
 
         HttpResponseMessage first = await SendWithIdempotencyKeyAsync(
@@ -55,6 +63,7 @@ public sealed class IdempotencyMiddlewareTests(OrdinisApiFactory factory) : Inte
     [Fact]
     public async Task Post_NoIdempotencyKey_CreatesTwoIndependentResources()
     {
+        await AuthenticateAsOrgAdminAsync();
         var request = new CreateOrganizationRequest("No Key Co", "No idempotency key sent.");
 
         HttpResponseMessage first = await Client.PostAsJsonAsync("/api/v1/organizations", request);
@@ -70,6 +79,7 @@ public sealed class IdempotencyMiddlewareTests(OrdinisApiFactory factory) : Inte
     [Fact]
     public async Task Post_FailedRequestThenRetryWithSameKey_SecondCallSucceeds()
     {
+        await AuthenticateAsOrgAdminAsync();
         string idempotencyKey = Guid.CreateVersion7().ToString();
 
         HttpResponseMessage failed = await SendWithIdempotencyKeyAsync(
@@ -82,11 +92,109 @@ public sealed class IdempotencyMiddlewareTests(OrdinisApiFactory factory) : Inte
         Assert.Equal(HttpStatusCode.Created, retried.StatusCode);
     }
 
+    [Fact]
+    public async Task Post_SameKeySameBodyDifferentUser_IsNotReplayed()
+    {
+        // Arrange: user A creates an organization with in idempotency key
+        await AuthenticateAsOrgAdminAsync();
+        string idempotencyKey = Guid.CreateVersion7().ToString();
+        var request = new CreateOrganizationRequest("User A Co", "Created by user A.");
+
+        HttpResponseMessage first = await SendWithIdempotencyKeyAsync(request, idempotencyKey);
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+
+        // Act: a different user (a second org admin) sends the same key and the same body
+        await AuthenticateAsOrgAdminAsync(); // re-authenticate as a different user
+        HttpResponseMessage second = await SendWithIdempotencyKeyAsync(request, idempotencyKey);
+
+        // Assert: B's request actually ran and hit CreateOrganizationValidator's global slug-uniqueness
+        // rule. A replay would have returned A's cached 201 without running the validator at all.
+        await AssertValidationProblemAsync(second, "Name");
+        Assert.Null(second.Headers.Location);
+
+        int count = await SeedAsync(db => db.Organizations.CountAsync(o => o.Name == "User A Co"));
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public async Task Post_SameKeySameBodyDifferentUser_IsNotReplayedAndCreatesSecondResource()
+    {
+        // Arrange: a task whose project has two contributors: A (creator, Admin) and B (Member)
+        (Guid taskId, Guid userAId, Guid userBId) = await SeedTaskWithTwoContributorsAsync();
+        string path = $"/api/v1/tasks/{taskId}/comments";
+        string idempotencyKey = Guid.CreateVersion7().ToString();
+        var request = new AddCommentRequest("Same comment, same key");
+
+        await AuthenticateAsUserAsync(userAId);
+        HttpResponseMessage first = await SendWithIdempotencyKeyAsync(path, request, idempotencyKey);
+
+        // Act: B sends the identical key and body
+        await AuthenticateAsUserAsync(userBId);
+        HttpResponseMessage second = await SendWithIdempotencyKeyAsync(path, request, idempotencyKey);
+
+        // Assert: both requests executed, giving two distinct comments rather than one replayed response
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
+
+        CommentDto? firstComment = await first.Content.ReadFromJsonAsync<CommentDto>();
+        CommentDto? secondComment = await second.Content.ReadFromJsonAsync<CommentDto>();
+        Assert.NotNull(firstComment);
+        Assert.NotNull(secondComment);
+        Assert.NotEqual(firstComment.Id, secondComment.Id);
+        // Each comment is authored by whoever was authenticated when it was sent.
+        Assert.Equal(userAId, firstComment.AuthorId);
+        Assert.Equal(userBId, secondComment.AuthorId);
+
+        int commentCount = await SeedAsync(db => db.Tasks
+            .Where(t => t.Id == taskId)
+            .SelectMany(t => t.Comments)
+            .CountAsync());
+        Assert.Equal(2, commentCount);
+    }
+
     private async Task<HttpResponseMessage> SendWithIdempotencyKeyAsync(CreateOrganizationRequest body, string idempotencyKey)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/organizations")
         {
             Content = JsonContent.Create(body),
+        };
+        request.Headers.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
+
+        return await Client.SendAsync(request);
+    }
+
+    private Task<(Guid TaskId, Guid UserAId, Guid UserBId)> SeedTaskWithTwoContributorsAsync() => SeedAsync(async db =>
+    {
+        Organization organization = CreateOrganization();
+        db.Organizations.Add(organization);
+
+        User userA = User.Create(organization.Id, "User A", "a@example.com", "hashed-password");
+        User userB = User.Create(organization.Id, "User B", "b@example.com", "hashed-password");
+        db.Users.AddRange(userA, userB);
+
+        // A is auto-added as the project's Admin; B is added as a Member, so both pass TaskContributor.
+        Project project = Project.Create(organization.Id, userA.Id, "Apollo", "apollo", DateTimeOffset.UtcNow);
+        project.AddMember(userB.Id, Role.Member, DateTimeOffset.UtcNow);
+        db.Projects.Add(project);
+
+        Board board = Board.Create(project.Id, "Sprint Board", userA.Id);
+        db.Boards.Add(board);
+
+        ProjectTask task = ProjectTask.Create(board.Id, userA.Id, "Shared task", DateTimeOffset.UtcNow);
+        db.Tasks.Add(task);
+
+        await db.SaveChangesAsync();
+        return (task.Id, userA.Id, userB.Id);
+    });
+
+    private async Task<HttpResponseMessage> SendWithIdempotencyKeyAsync<TBody>(
+        string path,
+        TBody body,
+        string idempotencyKey)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = JsonContent.Create(body)
         };
         request.Headers.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
 

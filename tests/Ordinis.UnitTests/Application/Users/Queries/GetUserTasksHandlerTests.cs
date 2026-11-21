@@ -2,6 +2,7 @@ using Ordinis.Application.Common;
 using Ordinis.Application.Tasks.Dtos;
 using Ordinis.Application.Tasks.Queries;
 using Ordinis.Application.Users.Queries;
+using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
 using Ordinis.Domain.Users;
 using Ordinis.UnitTests.Common;
@@ -11,10 +12,17 @@ namespace Ordinis.UnitTests.Application.Users.Queries;
 
 /// <summary>
 /// Verifies <see cref="GetUserTasksHandler"/> returns paged tasks scoped to the
-/// user, applies optional filters, and throws when the user does not exist.
+/// user, applies optional filters, restricts results to projects the caller can see,
+/// and throws when the user does not exist.
 /// </summary>
 public class GetUserTasksHandlerTests
 {
+    private static readonly Guid TestOrganizationId = Guid.CreateVersion7();
+    private static readonly ICurrentUserService AdminCurrentUser = new FakeCurrentUserService(
+        userId: Guid.CreateVersion7(),
+        organizationId: TestOrganizationId,
+        isOrgAdmin: true);
+
     private static readonly DateTimeOffset Now = new(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
@@ -24,7 +32,7 @@ public class GetUserTasksHandlerTests
         User user = UserBuilder.Create(displayName: "Alice");
         db.Users.Add(user);
 
-        var boardId = Guid.CreateVersion7();
+        Guid boardId = SeedBoard(db);
         ProjectTask mine = TaskBuilder.Create(boardId: boardId, now: Now);
         mine.Assign(user.Id, Guid.CreateVersion7(), Now);
 
@@ -33,7 +41,7 @@ public class GetUserTasksHandlerTests
         db.Tasks.AddRange(mine, other);
         await db.SaveChangesAsync();
 
-        PagedResult<TaskSummaryDto> result = await new GetUserTasksHandler(db)
+        PagedResult<TaskSummaryDto> result = await new GetUserTasksHandler(db, AdminCurrentUser)
             .HandleAsync(new GetUserTasks(user.Id), CancellationToken.None);
 
         Assert.Equal(1, result.TotalCount);
@@ -46,7 +54,7 @@ public class GetUserTasksHandlerTests
         using TestAppDbContext db = TestDbContextFactory.Create();
 
         await Assert.ThrowsAsync<NotFoundException>(
-            () => new GetUserTasksHandler(db)
+            () => new GetUserTasksHandler(db, AdminCurrentUser)
                 .HandleAsync(new GetUserTasks(Guid.CreateVersion7()), CancellationToken.None));
     }
 
@@ -57,7 +65,7 @@ public class GetUserTasksHandlerTests
         User user = UserBuilder.Create();
         db.Users.Add(user);
 
-        var boardId = Guid.CreateVersion7();
+        Guid boardId = SeedBoard(db);
         ProjectTask todo = TaskBuilder.Create(boardId: boardId, now: Now);
         todo.Assign(user.Id, Guid.CreateVersion7(), Now);
 
@@ -70,7 +78,7 @@ public class GetUserTasksHandlerTests
         db.Tasks.AddRange(todo, inProgress);
         await db.SaveChangesAsync();
 
-        PagedResult<TaskSummaryDto> result = await new GetUserTasksHandler(db)
+        PagedResult<TaskSummaryDto> result = await new GetUserTasksHandler(db, AdminCurrentUser)
             .HandleAsync(
                 new GetUserTasks(user.Id, new TaskFilter { Status = ProjectTaskStatus.InProgress }),
                 CancellationToken.None);
@@ -86,7 +94,7 @@ public class GetUserTasksHandlerTests
         User user = UserBuilder.Create();
         db.Users.Add(user);
 
-        var boardId = Guid.CreateVersion7();
+        Guid boardId = SeedBoard(db);
         for (int i = 0; i < 5; i++)
         {
             ProjectTask t = TaskBuilder.Create(boardId: boardId, title: $"Task {i}", now: Now);
@@ -95,7 +103,7 @@ public class GetUserTasksHandlerTests
         }
         await db.SaveChangesAsync();
 
-        PagedResult<TaskSummaryDto> result = await new GetUserTasksHandler(db)
+        PagedResult<TaskSummaryDto> result = await new GetUserTasksHandler(db, AdminCurrentUser)
             .HandleAsync(
                 new GetUserTasks(user.Id, new TaskFilter { Page = 2, PageSize = 2 }),
                 CancellationToken.None);
@@ -112,14 +120,60 @@ public class GetUserTasksHandlerTests
         User user = UserBuilder.Create(displayName: "Bob");
         db.Users.Add(user);
 
-        ProjectTask task = TaskBuilder.Create(now: Now);
+        ProjectTask task = TaskBuilder.Create(boardId: SeedBoard(db), now: Now);
         task.Assign(user.Id, Guid.CreateVersion7(), Now);
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
 
-        PagedResult<TaskSummaryDto> result = await new GetUserTasksHandler(db)
+        PagedResult<TaskSummaryDto> result = await new GetUserTasksHandler(db, AdminCurrentUser)
             .HandleAsync(new GetUserTasks(user.Id), CancellationToken.None);
 
         Assert.Equal("Bob", result.Items.Single().AssigneeDisplayName);
+    }
+
+    [Fact]
+    public async Task HandleAsync_NonAdminCaller_ExcludesTasksInProjectsCallerIsNotMemberOf()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        User assignee = UserBuilder.Create(displayName: "Carol");
+        db.Users.Add(assignee);
+
+        var callerId = Guid.CreateVersion7();
+
+        // The caller created (and so is an Admin member of) the first project only.
+        Project shared = ProjectBuilder.Create(organizationId: TestOrganizationId, createdByUserId: callerId);
+        Project hidden = ProjectBuilder.Create(organizationId: TestOrganizationId);
+        Board sharedBoard = BoardBuilder.Create(projectId: shared.Id);
+        Board hiddenBoard = BoardBuilder.Create(projectId: hidden.Id);
+        db.Projects.AddRange(shared, hidden);
+        db.Boards.AddRange(sharedBoard, hiddenBoard);
+
+        ProjectTask visible = TaskBuilder.Create(boardId: sharedBoard.Id, now: Now);
+        visible.Assign(assignee.Id, Guid.CreateVersion7(), Now);
+        ProjectTask invisible = TaskBuilder.Create(boardId: hiddenBoard.Id, now: Now);
+        invisible.Assign(assignee.Id, Guid.CreateVersion7(), Now);
+        db.Tasks.AddRange(visible, invisible);
+        await db.SaveChangesAsync();
+
+        var caller = new FakeCurrentUserService(callerId, TestOrganizationId, isOrgAdmin: false);
+
+        PagedResult<TaskSummaryDto> result = await new GetUserTasksHandler(db, caller)
+            .HandleAsync(new GetUserTasks(assignee.Id), CancellationToken.None);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal(visible.Id, result.Items.Single().Id);
+    }
+
+    /// <summary>
+    /// Seeds a project in <see cref="TestOrganizationId"/> with one board - tasks must sit on a
+    /// real board in a real project for the handler's caller-visibility filter to see them.
+    /// </summary>
+    private static Guid SeedBoard(TestAppDbContext db)
+    {
+        Project project = ProjectBuilder.Create(organizationId: TestOrganizationId);
+        Board board = BoardBuilder.Create(projectId: project.Id);
+        db.Projects.Add(project);
+        db.Boards.Add(board);
+        return board.Id;
     }
 }

@@ -68,7 +68,7 @@ public sealed record GetTasksFiltered(TaskFilter? Filter = null) : IQuery<PagedR
 /// assignee IDs present in the returned page — not across the full dataset.
 /// </para>
 /// </remarks>
-internal sealed class GetTasksFilteredHandler(IAppDbContext db) : IQueryHandler<GetTasksFiltered, PagedResult<TaskSummaryDto>>
+internal sealed class GetTasksFilteredHandler(IAppDbContext db, ICurrentUserService currentUser) : IQueryHandler<GetTasksFiltered, PagedResult<TaskSummaryDto>>
 {
     private const int MaxPageSize = 100;
 
@@ -125,6 +125,10 @@ internal sealed class GetTasksFilteredHandler(IAppDbContext db) : IQueryHandler<
         {
             queryable = queryable.Where(t => t.DueDate >= filter.DueAfter.Value);
         }
+
+        IQueryable<Guid> allowedProjectIds = currentUser.GetAllowedProjectIds(db);
+        queryable = queryable.Where(t => db.Boards
+            .Any(b => b.Id == t.BoardId && allowedProjectIds.Contains(b.ProjectId)));
 
         // Executed against the filtered (pre-pagination) queryable.
         // This is a separate round-trip but unavoidable for offset pagination.

@@ -1,10 +1,13 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Ordinis.Api.Tasks.Requests;
 using Ordinis.Application.Tasks.Dtos;
 using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
+using Ordinis.Domain.Users;
 using Ordinis.IntegrationTests.Infrastructure;
 
 namespace Ordinis.IntegrationTests.Tasks;
@@ -15,7 +18,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     public async Task Create_ValidRequest_Returns201WithLocationAndPersistedTask()
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
-        var request = new CreateTaskRequest(boardId, "Fix login bug", "Users can't sign in", Priority.High, null, null, userId);
+        var request = new CreateTaskRequest(boardId, "Fix login bug", "Users can't sign in", Priority.High, null, null);
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/tasks", request);
 
@@ -27,6 +30,10 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         Assert.Equal(Priority.High, task.Priority);
         Assert.Equal(ProjectTaskStatus.Backlog, task.Status);
         Assert.Equal($"/api/v1/tasks/{task.Id}", response.Headers.Location?.PathAndQuery);
+
+        // The reporter is the authenticated caller - the request body carries no user ID at all.
+        Guid reporterId = await SeedAsync(db => db.Tasks.Where(t => t.Id == task.Id).Select(t => t.ReporterId).SingleAsync());
+        Assert.Equal(userId, reporterId);
     }
 
     [Fact]
@@ -35,7 +42,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         // CreateTaskValidator's BoardId rule does an existence MustAsync check, so a missing
         // board fails validation (422) before the handler ever runs - it never gets the chance
         // to throw a NotFoundException (404).
-        var request = new CreateTaskRequest(Guid.CreateVersion7(), "Orphan task", null, Priority.Medium, null, null, Guid.CreateVersion7());
+        var request = new CreateTaskRequest(Guid.CreateVersion7(), "Orphan task", null, Priority.Medium, null, null);
+
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 422 instead of a 401
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/tasks", request);
 
@@ -46,7 +55,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     public async Task Create_EmptyTitle_Returns422()
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
-        var request = new CreateTaskRequest(boardId, string.Empty, null, Priority.Medium, null, null, userId);
+        var request = new CreateTaskRequest(boardId, string.Empty, null, Priority.Medium, null, null);
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/tasks", request);
 
@@ -57,7 +66,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     public async Task Create_TitleTooLong_Returns422()
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
-        var request = new CreateTaskRequest(boardId, new string('A', 201), null, Priority.Medium, null, null, userId);
+        var request = new CreateTaskRequest(boardId, new string('A', 201), null, Priority.Medium, null, null);
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/tasks", request);
 
@@ -68,7 +77,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     public async Task Create_InvalidPriority_Returns422()
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
-        var request = new CreateTaskRequest(boardId, "Valid title", null, (Priority)9999, null, null, userId);
+        var request = new CreateTaskRequest(boardId, "Valid title", null, (Priority)9999, null, null);
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/tasks", request);
 
@@ -79,7 +88,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     public async Task Create_NonexistentAssignee_Returns422()
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
-        var request = new CreateTaskRequest(boardId, "Valid title", null, Priority.Medium, Guid.CreateVersion7(), null, userId);
+        var request = new CreateTaskRequest(boardId, "Valid title", null, Priority.Medium, Guid.CreateVersion7(), null);
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/tasks", request);
 
@@ -87,14 +96,18 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     }
 
     [Fact]
-    public async Task Create_NonexistentRequestedByUser_Returns422()
+    public async Task Create_CallerNotMemberOfBoardsProject_Returns422()
     {
+        // Regression test for caller impersonation: the acting user used to come from the body,
+        // so a non-member could create tasks on any board by sending a real member's ID. It now
+        // comes from the access token, so the membership rule sees the real caller.
         (_, Guid boardId) = await SeedBoardAsync();
-        var request = new CreateTaskRequest(boardId, "Valid title", null, Priority.Medium, null, null, Guid.CreateVersion7());
+        await AuthenticateAsNewUserAsync();
+        var request = new CreateTaskRequest(boardId, "Valid title", null, Priority.Medium, null, null);
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/tasks", request);
 
-        await AssertValidationProblemAsync(response, "RequestedByUserId");
+        await AssertValidationProblemAsync(response, "RequestedByUserId", "Member or Admin");
     }
 
     [Fact]
@@ -140,7 +153,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId, "Abandoned task");
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
-        await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, new MoveTaskRequest(ProjectTaskStatus.Cancelled, userId));
+        await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, new MoveTaskRequest(ProjectTaskStatus.Cancelled));
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks/{taskId}");
 
@@ -168,6 +181,8 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     [Fact]
     public async Task GetById_NonexistentTask_Returns404()
     {
+        await AuthenticateAsNewUserAsync();
+
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks/{Guid.CreateVersion7()}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -176,13 +191,16 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     [Fact]
     public async Task GetTasks_FilterByBoardId_ReturnsOnlyMatchingTasksAndSetsTotalCountHeader()
     {
-        (Guid UserId, Guid BoardId)[] boards = await Task.WhenAll(SeedBoardAsync(), SeedBoardAsync());
-        (Guid userId, Guid boardId) = boards[0];
-        (Guid otherUserId, Guid otherBoardId) = boards[1];
+        // Seeded sequentially: SeedBoardAsync authenticates Client as the seeded user, and
+        // HttpRequestHeaders is not thread-safe for concurrent writes.
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        (Guid otherUserId, Guid otherBoardId) = await SeedBoardAsync();
 
         await Task.WhenAll(
             SeedTaskAsync(boardId, userId, "In scope"),
             SeedTaskAsync(otherBoardId, otherUserId, "Out of scope"));
+
+        await AuthenticateAsUserAsync(userId); // we are looking for tasks in the first board, so we need to be a member of that project
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks?boardId={boardId}");
 
@@ -199,7 +217,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId, "Original title");
-        var request = new UpdateTaskRequest("Updated title", "New description", Priority.Critical, null, userId);
+        var request = new UpdateTaskRequest("Updated title", "New description", Priority.Critical, null);
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, request);
@@ -222,14 +240,16 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, new UpdateTaskRequest("Title from request 1", null, Priority.Medium, null, userId)),
-            () => SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, new UpdateTaskRequest("Title from request 2", null, Priority.Medium, null, userId)));
+            () => SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, new UpdateTaskRequest("Title from request 1", null, Priority.Medium, null)),
+            () => SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, new UpdateTaskRequest("Title from request 2", null, Priority.Medium, null)));
     }
 
     [Fact]
     public async Task Update_NonexistentTask_Returns404()
     {
-        var request = new UpdateTaskRequest("Title", null, Priority.Medium, null, Guid.CreateVersion7());
+        await AuthenticateAsNewUserAsync();
+
+        var request = new UpdateTaskRequest("Title", null, Priority.Medium, null);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{Guid.CreateVersion7()}", PlaceholderIfMatch, request);
 
@@ -241,7 +261,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new UpdateTaskRequest("Valid title", null, Priority.Medium, null, userId);
+        var request = new UpdateTaskRequest("Valid title", null, Priority.Medium, null);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", null, request);
 
@@ -253,7 +273,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new UpdateTaskRequest("Valid title", null, Priority.Medium, null, userId);
+        var request = new UpdateTaskRequest("Valid title", null, Priority.Medium, null);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", PlaceholderIfMatch, request);
 
@@ -265,7 +285,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new UpdateTaskRequest(string.Empty, null, Priority.Medium, null, userId);
+        var request = new UpdateTaskRequest(string.Empty, null, Priority.Medium, null);
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, request);
@@ -278,7 +298,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new UpdateTaskRequest(new string('A', 201), null, Priority.Medium, null, userId);
+        var request = new UpdateTaskRequest(new string('A', 201), null, Priority.Medium, null);
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, request);
@@ -291,7 +311,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new UpdateTaskRequest("Valid title", null, (Priority)9999, null, userId);
+        var request = new UpdateTaskRequest("Valid title", null, (Priority)9999, null);
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, request);
@@ -306,7 +326,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         Guid taskId = await SeedTaskAsync(boardId, userId);
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await SendAsync(HttpMethod.Delete, $"/api/v1/tasks/{taskId}?requestedByUserId={userId}", ifMatch);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Delete, $"/api/v1/tasks/{taskId}", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/tasks/{taskId}");
@@ -316,8 +336,10 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     [Fact]
     public async Task Delete_NonexistentTask_Returns404()
     {
+        await AuthenticateAsNewUserAsync();
+
         HttpResponseMessage response = await SendAsync(
-            HttpMethod.Delete, $"/api/v1/tasks/{Guid.CreateVersion7()}?requestedByUserId={Guid.CreateVersion7()}", PlaceholderIfMatch);
+            HttpMethod.Delete, $"/api/v1/tasks/{Guid.CreateVersion7()}", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -333,8 +355,8 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => SendAsync(HttpMethod.Delete, $"/api/v1/tasks/{taskId}?requestedByUserId={userId}", ifMatch),
-            () => SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, new UpdateTaskRequest("Title from request 2", null, Priority.Medium, null, userId)));
+            () => SendAsync(HttpMethod.Delete, $"/api/v1/tasks/{taskId}", ifMatch),
+            () => SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, new UpdateTaskRequest("Title from request 2", null, Priority.Medium, null)));
     }
 
     [Fact]
@@ -342,7 +364,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new MoveTaskRequest(ProjectTaskStatus.ToDo, userId);
+        var request = new MoveTaskRequest(ProjectTaskStatus.ToDo);
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, request);
@@ -358,7 +380,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         // Backlog cannot jump straight to Done - only InReview -> Done is legal.
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new MoveTaskRequest(ProjectTaskStatus.Done, userId);
+        var request = new MoveTaskRequest(ProjectTaskStatus.Done);
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, request);
@@ -369,7 +391,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     [Fact]
     public async Task Move_NonexistentTask_Returns404()
     {
-        var request = new MoveTaskRequest(ProjectTaskStatus.ToDo, Guid.CreateVersion7());
+        var request = new MoveTaskRequest(ProjectTaskStatus.ToDo);
+
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{Guid.CreateVersion7()}/move", PlaceholderIfMatch, request);
 
@@ -381,7 +405,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new MoveTaskRequest(ProjectTaskStatus.ToDo, userId);
+        var request = new MoveTaskRequest(ProjectTaskStatus.ToDo);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", null, request);
 
@@ -393,7 +417,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new MoveTaskRequest(ProjectTaskStatus.ToDo, userId);
+        var request = new MoveTaskRequest(ProjectTaskStatus.ToDo);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", PlaceholderIfMatch, request);
 
@@ -408,8 +432,8 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, new MoveTaskRequest(ProjectTaskStatus.ToDo, userId)),
-            () => SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, new MoveTaskRequest(ProjectTaskStatus.Cancelled, userId)));
+            () => SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, new MoveTaskRequest(ProjectTaskStatus.ToDo)),
+            () => SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, new MoveTaskRequest(ProjectTaskStatus.Cancelled)));
     }
 
     [Fact]
@@ -417,7 +441,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new AssignTaskRequest(userId, userId);
+        var request = new AssignTaskRequest(userId);
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/assign", ifMatch, request);
@@ -432,7 +456,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new AssignTaskRequest(Guid.CreateVersion7(), userId);
+        var request = new AssignTaskRequest(Guid.CreateVersion7());
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/assign", ifMatch, request);
@@ -444,7 +468,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     public async Task Assign_NonexistentTask_Returns404()
     {
         (Guid userId, _) = await SeedBoardAsync();
-        var request = new AssignTaskRequest(userId, userId);
+        var request = new AssignTaskRequest(userId);
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{Guid.CreateVersion7()}/assign", PlaceholderIfMatch, request);
 
@@ -457,11 +481,10 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         byte[]? ifMatchBeforeAssign = await GetTaskRowVersionAsync(taskId);
-        await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/assign", ifMatchBeforeAssign, new AssignTaskRequest(userId, userId));
-        var request = new UnassignTaskRequest(userId);
+        await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/assign", ifMatchBeforeAssign, new AssignTaskRequest(userId));
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/unassign", ifMatch, request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/unassign", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
@@ -473,10 +496,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new UnassignTaskRequest(userId);
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/unassign", ifMatch, request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/unassign", ifMatch);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -484,9 +506,10 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     [Fact]
     public async Task Unassign_NonexistentTask_Returns404()
     {
-        var request = new UnassignTaskRequest(Guid.CreateVersion7());
 
-        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{Guid.CreateVersion7()}/unassign", PlaceholderIfMatch, request);
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
+
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{Guid.CreateVersion7()}/unassign", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -497,10 +520,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         await MoveTaskAsync(taskId, userId, ProjectTaskStatus.ToDo, ProjectTaskStatus.InProgress, ProjectTaskStatus.InReview);
-        var request = new CloseTaskRequest(userId);
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/close", ifMatch, request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/close", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
@@ -513,10 +535,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         // A freshly created task starts in Backlog - Backlog -> Done is not a legal transition.
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new CloseTaskRequest(userId);
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/close", ifMatch, request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/close", ifMatch);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -524,9 +545,10 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     [Fact]
     public async Task Close_NonexistentTask_Returns404()
     {
-        var request = new CloseTaskRequest(Guid.CreateVersion7());
 
-        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{Guid.CreateVersion7()}/close", PlaceholderIfMatch, request);
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
+
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{Guid.CreateVersion7()}/close", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -537,10 +559,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         await MoveTaskAsync(taskId, userId, ProjectTaskStatus.ToDo, ProjectTaskStatus.InProgress, ProjectTaskStatus.InReview, ProjectTaskStatus.Done);
-        var request = new ReopenTaskRequest(userId);
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/reopen", ifMatch, request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/reopen", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
@@ -556,10 +577,9 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         await MoveTaskAsync(taskId, userId, ProjectTaskStatus.ToDo, ProjectTaskStatus.InProgress, ProjectTaskStatus.InReview);
-        var request = new ReopenTaskRequest(userId);
         byte[]? ifMatch = await GetTaskRowVersionAsync(taskId);
 
-        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/reopen", ifMatch, request);
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/reopen", ifMatch);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -567,9 +587,10 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     [Fact]
     public async Task Reopen_NonexistentTask_Returns404()
     {
-        var request = new ReopenTaskRequest(Guid.CreateVersion7());
 
-        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{Guid.CreateVersion7()}/reopen", PlaceholderIfMatch, request);
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
+
+        HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{Guid.CreateVersion7()}/reopen", PlaceholderIfMatch);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -579,7 +600,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new AddCommentRequest(userId, "Looks good to me");
+        var request = new AddCommentRequest("Looks good to me");
 
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/comments", request);
 
@@ -588,12 +609,16 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         Assert.NotNull(comment);
         Assert.Equal("Looks good to me", comment!.Content);
         Assert.Equal($"/api/v1/tasks/{taskId}/comments", response.Headers.Location?.PathAndQuery);
+        // The author is the authenticated caller - the request body carries no user ID at all.
+        Assert.Equal(userId, comment.AuthorId);
     }
 
     [Fact]
     public async Task AddComment_NonexistentTask_Returns404()
     {
-        var request = new AddCommentRequest(Guid.CreateVersion7(), "Comment on nothing");
+        var request = new AddCommentRequest("Comment on nothing");
+
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
 
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/comments", request);
 
@@ -605,7 +630,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new AddCommentRequest(userId, string.Empty);
+        var request = new AddCommentRequest(string.Empty);
 
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/comments/", request);
 
@@ -617,7 +642,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new AddCommentRequest(userId, new string('A', 10_001));
+        var request = new AddCommentRequest(new string('A', 10_001));
 
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/comments/", request);
 
@@ -630,7 +655,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         Guid commentId = await SeedCommentAsync(taskId, userId, "Initial comment");
-        var request = new EditCommentRequest("Edited comment", userId);
+        var request = new EditCommentRequest("Edited comment");
 
         HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}/comments/{commentId}", request);
 
@@ -642,13 +667,15 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     }
 
     [Fact]
-    public async Task EditComment_NonExistingTask_Returns422()
+    public async Task EditComment_NonExistingTask_Returns404()
     {
-        var request = new EditCommentRequest("Edited comment", Guid.CreateVersion7());
+        var request = new EditCommentRequest("Edited comment");
+
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
 
         HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/comments/{Guid.CreateVersion7()}", request);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -656,7 +683,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     {
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
-        var request = new EditCommentRequest("Edited comment", userId);
+        var request = new EditCommentRequest("Edited comment");
 
         HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}/comments/{Guid.CreateVersion7()}", request);
 
@@ -669,7 +696,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         Guid commentId = await SeedCommentAsync(taskId, userId, "Initial comment");
-        var request = new EditCommentRequest(string.Empty, userId);
+        var request = new EditCommentRequest(string.Empty);
 
         HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}/comments/{commentId}", request);
 
@@ -682,7 +709,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         Guid commentId = await SeedCommentAsync(taskId, userId, "Initial comment");
-        var request = new EditCommentRequest(new string('A', 10_001), userId);
+        var request = new EditCommentRequest(new string('A', 10_001));
 
         HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}/comments/{commentId}", request);
 
@@ -695,11 +722,15 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         // The combined task/comment/author MustAsync rule has no OverridePropertyName, so
         // FluentValidation keys it under the empty string "" - the same rule the
         // NonExistingTask/NonexistentComment tests above already trip, just via a different input.
+        // The non-author must be a project Member to get past the TaskContributor policy (a
+        // non-member would get 404 before the validator runs), and is authenticated as
+        // themselves - the request body no longer carries a user ID that could claim authorship.
         (Guid userId, Guid boardId) = await SeedBoardAsync();
         Guid taskId = await SeedTaskAsync(boardId, userId);
         Guid commentId = await SeedCommentAsync(taskId, userId, "Initial comment");
-        (_, Guid nonAuthorUserId) = await SeedOrganizationWithUserAsync("Bob", "bob@example.com");
-        var request = new EditCommentRequest("Edited by someone else", nonAuthorUserId);
+        Guid nonAuthorUserId = await SeedProjectMemberAsync(boardId, Role.Member, "Bob");
+        await AuthenticateAsUserAsync(nonAuthorUserId);
+        var request = new EditCommentRequest("Edited by someone else");
 
         HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}/comments/{commentId}", request);
 
@@ -713,7 +744,44 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         Guid taskId = await SeedTaskAsync(boardId, userId);
         Guid commentId = await SeedCommentAsync(taskId, userId, "Delete me");
 
-        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/tasks/{taskId}/comments/{commentId}?requestedByUserId={userId}");
+        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/tasks/{taskId}/comments/{commentId}");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        List<CommentDto>? comments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/comments")).Content.ReadFromJsonAsync<List<CommentDto>>();
+        Assert.DoesNotContain(comments!, c => c.Id == commentId);
+    }
+
+    [Fact]
+    public async Task RemoveComment_NonAuthorProjectMember_Returns422AndKeepsComment()
+    {
+        // TaskContributor only proves the caller is a project Member; removing someone else's
+        // comment additionally needs project Admin (or org Admin), enforced by the aggregate.
+        (Guid adminUserId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, adminUserId);
+        Guid commentId = await SeedCommentAsync(taskId, adminUserId, "Admin's comment");
+        Guid memberUserId = await SeedProjectMemberAsync(boardId, Role.Member, "Bob");
+        await AuthenticateAsUserAsync(memberUserId);
+
+        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/tasks/{taskId}/comments/{commentId}");
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        ProblemDetails? problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        Assert.Equal("urn:ordinis:error:task.comment-not-author", problem?.Type);
+
+        List<CommentDto>? comments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/comments")).Content.ReadFromJsonAsync<List<CommentDto>>();
+        Assert.Contains(comments!, c => c.Id == commentId);
+    }
+
+    [Fact]
+    public async Task RemoveComment_ProjectAdminRemovesAnotherUsersComment_Returns204()
+    {
+        (Guid adminUserId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, adminUserId);
+        Guid memberUserId = await SeedProjectMemberAsync(boardId, Role.Member, "Bob");
+        Guid commentId = await SeedCommentAsync(taskId, memberUserId, "Member's comment");
+
+        // Client is still authenticated as the project Admin from SeedBoardAsync.
+        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/tasks/{taskId}/comments/{commentId}");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         List<CommentDto>? comments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/comments")).Content.ReadFromJsonAsync<List<CommentDto>>();
@@ -723,8 +791,10 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     [Fact]
     public async Task RemoveComment_NonexistentTask_Returns404()
     {
+        await AuthenticateAsNewUserAsync();
+
         HttpResponseMessage response = await Client.DeleteAsync(
-            $"/api/v1/tasks/{Guid.CreateVersion7()}/comments/{Guid.CreateVersion7()}?requestedByUserId={Guid.CreateVersion7()}");
+            $"/api/v1/tasks/{Guid.CreateVersion7()}/comments/{Guid.CreateVersion7()}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -739,7 +809,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         Guid taskId = await SeedTaskAsync(boardId, userId);
 
         HttpResponseMessage response = await Client.DeleteAsync(
-            $"/api/v1/tasks/{taskId}/comments/{Guid.CreateVersion7()}?requestedByUserId={userId}");
+            $"/api/v1/tasks/{taskId}/comments/{Guid.CreateVersion7()}");
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -754,7 +824,6 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         using var fileContent = new ByteArrayContent([1, 2, 3, 4]);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
         content.Add(fileContent, "file", "notes.txt");
-        content.Add(new StringContent(userId.ToString()), "uploadedByUserId");
 
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
 
@@ -765,22 +834,21 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         Assert.NotEmpty(attachment.DownloadUrl);
 
         // Clean up the file LocalFileStorageService wrote to disk - Respawn only resets the database.
-        await Client.DeleteAsync($"/api/v1/tasks/{taskId}/attachments/{attachment.Id}?removedByUserId={userId}");
+        await Client.DeleteAsync($"/api/v1/tasks/{taskId}/attachments/{attachment.Id}");
     }
 
     [Fact]
     public async Task AddAttachment_NonexistentTask_Returns404()
     {
-        // uploadedByUserId must be a real, existing user - AddAttachmentValidator checks that
-        // existence itself (422 on failure), so a nonexistent user here would trip that rule
-        // before the handler's own TaskId lookup (the thing this test targets) ever runs.
-        (Guid userId, _) = await SeedBoardAsync();
+        // The uploader is the authenticated caller, who must be a real, existing user -
+        // AddAttachmentValidator checks that existence itself (422 on failure) - so this seeds a
+        // real user rather than authenticating with an arbitrary token.
+        await SeedBoardAsync();
 
         using var content = new MultipartFormDataContent();
         using var fileContent = new ByteArrayContent([1, 2, 3]);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
         content.Add(fileContent, "file", "notes.txt");
-        content.Add(new StringContent(userId.ToString()), "uploadedByUserId");
 
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{Guid.CreateVersion7()}/attachments", content);
 
@@ -804,7 +872,6 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         using var fileContent = new ByteArrayContent([1, 2, 3]);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
         content.Add(fileContent, "file", new string('a', 256) + ".txt");
-        content.Add(new StringContent(userId.ToString()), "uploadedByUserId");
 
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
 
@@ -823,7 +890,6 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         // through as "" when the file part has no Content-Type header, which is what this test
         // needs to trigger AddAttachmentValidator's ContentType.NotEmpty() rule.
         content.Add(fileContent, "file", "notes.txt");
-        content.Add(new StringContent(userId.ToString()), "uploadedByUserId");
 
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
 
@@ -840,7 +906,6 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         using var fileContent = new ByteArrayContent([1, 2, 3]);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/" + new string('a', 100));
         content.Add(fileContent, "file", "notes.txt");
-        content.Add(new StringContent(userId.ToString()), "uploadedByUserId");
 
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
 
@@ -857,29 +922,12 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         using var fileContent = new ByteArrayContent([]);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
         content.Add(fileContent, "file", "empty.txt");
-        content.Add(new StringContent(userId.ToString()), "uploadedByUserId");
 
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
 
         await AssertValidationProblemAsync(response, "SizeInBytes");
     }
 
-    [Fact]
-    public async Task AddAttachment_NonexistentUploadedByUser_Returns422()
-    {
-        (Guid userId, Guid boardId) = await SeedBoardAsync();
-        Guid taskId = await SeedTaskAsync(boardId, userId);
-
-        using var content = new MultipartFormDataContent();
-        using var fileContent = new ByteArrayContent([1, 2, 3]);
-        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
-        content.Add(fileContent, "file", "notes.txt");
-        content.Add(new StringContent(Guid.CreateVersion7().ToString()), "uploadedByUserId");
-
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
-
-        await AssertValidationProblemAsync(response, "UploadedByUserId");
-    }
 
     [Fact]
     public async Task RemoveAttachment_ExistingAttachment_Returns204AndRemovesAttachment()
@@ -888,7 +936,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         Guid taskId = await SeedTaskAsync(boardId, userId);
         Guid attachmentId = await SeedAttachmentAsync(taskId, userId);
 
-        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/tasks/{taskId}/attachments/{attachmentId}?removedByUserId={userId}");
+        HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/tasks/{taskId}/attachments/{attachmentId}");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         List<AttachmentDto>? attachments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/attachments")).Content.ReadFromJsonAsync<List<AttachmentDto>>();
@@ -898,8 +946,10 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     [Fact]
     public async Task RemoveAttachment_NonexistentTask_Returns404()
     {
+        await AuthenticateAsNewUserAsync();
+
         HttpResponseMessage response = await Client.DeleteAsync(
-            $"/api/v1/tasks/{Guid.CreateVersion7()}/attachments/{Guid.CreateVersion7()}?removedByUserId={Guid.CreateVersion7()}");
+            $"/api/v1/tasks/{Guid.CreateVersion7()}/attachments/{Guid.CreateVersion7()}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -913,7 +963,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         Guid taskId = await SeedTaskAsync(boardId, userId);
 
         HttpResponseMessage response = await Client.DeleteAsync(
-            $"/api/v1/tasks/{taskId}/attachments/{Guid.CreateVersion7()}?removedByUserId={userId}");
+            $"/api/v1/tasks/{taskId}/attachments/{Guid.CreateVersion7()}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -939,8 +989,34 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
             return board.Id;
         });
 
+        await AuthenticateAsUserAsync(userId);
+
         return (userId, boardId);
     }
+
+    /// <summary>
+    /// Seeds a new user in the same organization as <paramref name="boardId"/>'s project and adds
+    /// them to that project with <paramref name="role"/>. Does not change who <c>Client</c> is
+    /// authenticated as.
+    /// </summary>
+    private Task<Guid> SeedProjectMemberAsync(Guid boardId, Role role, string displayName) => SeedAsync(async db =>
+    {
+        Guid projectId = await db.Boards.Where(b => b.Id == boardId).Select(b => b.ProjectId).SingleAsync();
+        Project project = await db.Projects.Include(p => p.Members).SingleAsync(p => p.Id == projectId);
+
+        User user = User.Create(
+            project.OrganizationId,
+            displayName,
+            $"{displayName.ToLowerInvariant()}-{Guid.CreateVersion7()}@example.com",
+            "hashed-password",
+            Role.Member);
+        db.Users.Add(user);
+
+        project.AddMember(user.Id, role, DateTimeOffset.UtcNow);
+        await db.SaveChangesAsync();
+
+        return user.Id;
+    });
 
     private Task<Guid> SeedTaskAsync(Guid boardId, Guid reporterId, string title = "Default task") => SeedAsync(async db =>
     {

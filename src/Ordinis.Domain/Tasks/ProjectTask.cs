@@ -421,22 +421,33 @@ public class ProjectTask : AggregateRoot
     /// Removes a comment from the task by soft-deleting it.
     /// </summary>
     /// <param name="commentId">The Id of the comment to remove.</param>
-    /// <param name="requestingUserId">
-    /// The user requesting removal. Only the comment's author or a project Admin
-    /// may remove a comment — enforced by policy in Phase 7. The domain only
-    /// enforces that the comment exists and belongs to this task.
+    /// <param name="requestingUserId">The user requesting removal.</param>
+    /// <param name="requesterIsModerator">
+    /// Whether <paramref name="requestingUserId"/> may remove other users' comments (an Admin of
+    /// the task's project, or an org Admin of its organization). The aggregate can't determine
+    /// that itself - project roles live on the separate <c>Project</c> aggregate - so the
+    /// application layer resolves it and the aggregate enforces the rule: only the comment's
+    /// author or a moderator may remove it.
     /// </param>
     /// <param name="now">The date and time when the comment is being removed. Carried in the domain event.</param>
     /// <exception cref="DomainException">
-    /// Thrown if the comment is not found on this task.
+    /// Thrown if the comment is not found on this task (<c>task.comment-not-found</c>), or if the
+    /// requester is neither its author nor a moderator (<c>task.comment-not-author</c>).
     /// </exception>
-    public void RemoveComment(Guid commentId, Guid requestingUserId, DateTimeOffset now)
+    public void RemoveComment(Guid commentId, Guid requestingUserId, bool requesterIsModerator, DateTimeOffset now)
     {
         var comment = _comments.FirstOrDefault(c => c.Id == commentId)
             ?? throw new DomainException(
                 "Comment not found on this task.",
                 "task.comment-not-found"
             );
+
+        if (comment.AuthorId != requestingUserId && !requesterIsModerator)
+        {
+            throw new DomainException(
+                "Only the comment's author or a project admin can remove this comment.",
+                "task.comment-not-author");
+        }
 
         comment.SoftDelete(now);
 

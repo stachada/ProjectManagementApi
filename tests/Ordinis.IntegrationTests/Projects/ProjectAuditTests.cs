@@ -71,6 +71,8 @@ public sealed class ProjectAuditTests(
         (Guid projectAId, _) = await SeedProjectWithTaskEventsAsync(organizationId, userA, userB);
         (Guid projectBId, _) = await SeedProjectWithTaskEventsAsync(organizationId, userB, userA);
 
+        await AuthenticateAsUserAsync(userA); // Ensure Client is authenticated as userA for subsequent requests
+
         HttpResponseMessage responseA = await Client.GetAsync($"/api/v1/projects/{projectAId}/audit");
 
         IReadOnlyList<AuditEntryDto>? entriesA = await responseA.Content.ReadFromJsonAsync<IReadOnlyList<AuditEntryDto>>();
@@ -90,6 +92,8 @@ public sealed class ProjectAuditTests(
     [Fact]
     public async Task GetAudit_NonExistentProject_Returns404()
     {
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
+
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/projects/{Guid.CreateVersion7()}/audit");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -117,6 +121,8 @@ public sealed class ProjectAuditTests(
         Guid assigneeId)
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        await AuthenticateAsUserAsync(reporterId); // Ensure Client is authenticated as the reporter for subsequent requests
 
         return await SeedAsync(async db =>
         {

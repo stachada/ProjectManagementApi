@@ -66,7 +66,7 @@ public sealed record GetProjectsFiltered(ProjectFilter? Filter = null)
 /// to avoid loading full collections.
 /// </summary>
 /// <param name="db"></param>
-public sealed class GetProjectsFilteredHandler(IAppDbContext db) : IQueryHandler<GetProjectsFiltered, PagedResult<ProjectSummaryDto>>
+public sealed class GetProjectsFilteredHandler(IAppDbContext db, ICurrentUserService currentUser) : IQueryHandler<GetProjectsFiltered, PagedResult<ProjectSummaryDto>>
 {
     public async Task<PagedResult<ProjectSummaryDto>> HandleAsync(
         GetProjectsFiltered query,
@@ -99,6 +99,8 @@ public sealed class GetProjectsFilteredHandler(IAppDbContext db) : IQueryHandler
         {
             q = q.Where(p => !p.IsArchived);
         }
+
+        q = q.Where(p => currentUser.GetAllowedProjectIds(db).Contains(p.Id));
 
         // Sorting. See EntityQueryableExtensions.ThenByStableId for why every branch ends with
         // it - GetOrganizationProjects shares this exact sort shape and must stay consistent.

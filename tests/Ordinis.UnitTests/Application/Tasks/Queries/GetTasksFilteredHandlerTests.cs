@@ -1,7 +1,9 @@
 using Ordinis.Application.Common;
 using Ordinis.Application.Tasks.Dtos;
 using Ordinis.Application.Tasks.Queries;
+using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
+using Ordinis.Domain.Users;
 using Ordinis.UnitTests.Common;
 using Ordinis.UnitTests.Common.Builders;
 
@@ -13,19 +15,26 @@ namespace Ordinis.UnitTests.Application.Tasks.Queries;
 /// </summary>
 public class GetTasksFilteredHandlerTests
 {
+    private static readonly Guid TestOrganizationId = Guid.CreateVersion7();
+    private static readonly ICurrentUserService AdminCurrentUser = new FakeCurrentUserService(
+        userId: Guid.CreateVersion7(),
+        organizationId: TestOrganizationId,
+        isOrgAdmin: true);
+
     private static readonly DateTimeOffset Now = new(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
     public async Task HandleAsync_NoFilter_ReturnsAllTasksWithCorrectTotalCount()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
         db.Tasks.AddRange(
-            TaskBuilder.Create(now: Now),
-            TaskBuilder.Create(now: Now),
-            TaskBuilder.Create(now: Now));
+            TaskBuilder.Create(boardId: boardId, now: Now),
+            TaskBuilder.Create(boardId: boardId, now: Now),
+            TaskBuilder.Create(boardId: boardId, now: Now));
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(), CancellationToken.None);
 
@@ -37,13 +46,14 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_FilterByBoardId_ReturnsOnlyMatchingTasks()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        var targetBoardId = Guid.CreateVersion7();
+        Guid targetBoardId = SeedDefaultBoard(db);
+        Guid otherBoardId = SeedDefaultBoard(db);
         db.Tasks.AddRange(
             TaskBuilder.Create(boardId: targetBoardId, now: Now),
-            TaskBuilder.Create(now: Now));
+            TaskBuilder.Create(boardId: otherBoardId, now: Now));
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(BoardId: targetBoardId)),
             CancellationToken.None);
@@ -57,13 +67,14 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_FilterByAssigneeId_ReturnsOnlyMatchingTasks()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
         var assigneeId = Guid.CreateVersion7();
-        ProjectTask assigned = TaskBuilder.Create(now: Now);
+        ProjectTask assigned = TaskBuilder.Create(boardId: boardId, now: Now);
         assigned.Assign(assigneeId, Guid.CreateVersion7(), Now);
-        db.Tasks.AddRange(assigned, TaskBuilder.Create(now: Now));
+        db.Tasks.AddRange(assigned, TaskBuilder.Create(boardId: boardId, now: Now));
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(AssigneeId: assigneeId)),
             CancellationToken.None);
@@ -77,13 +88,14 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_FilterByStatus_ReturnsOnlyMatchingTasks()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        ProjectTask inProgress = TaskBuilder.Create(now: Now);
+        Guid boardId = SeedDefaultBoard(db);
+        ProjectTask inProgress = TaskBuilder.Create(boardId: boardId, now: Now);
         inProgress.Move(ProjectTaskStatus.ToDo, Guid.CreateVersion7(), Now);
         inProgress.Move(ProjectTaskStatus.InProgress, Guid.CreateVersion7(), Now);
-        db.Tasks.AddRange(inProgress, TaskBuilder.Create(now: Now)); // second stays Backlog
+        db.Tasks.AddRange(inProgress, TaskBuilder.Create(boardId: boardId, now: Now)); // second stays Backlog
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(Status: ProjectTaskStatus.InProgress)),
             CancellationToken.None);
@@ -97,12 +109,13 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_FilterByPriority_ReturnsOnlyMatchingTasks()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
         db.Tasks.AddRange(
-            TaskBuilder.Create(priority: Priority.High, now: Now),
-            TaskBuilder.Create(priority: Priority.Low, now: Now));
+            TaskBuilder.Create(boardId: boardId, priority: Priority.High, now: Now),
+            TaskBuilder.Create(boardId: boardId, priority: Priority.Low, now: Now));
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(Priority: Priority.High)),
             CancellationToken.None);
@@ -116,12 +129,13 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_FilterByDueBefore_ReturnsOnlyTasksDueOnOrBefore()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
         db.Tasks.AddRange(
-            TaskBuilder.Create(dueDate: Now.AddDays(3), now: Now),  // within range
-            TaskBuilder.Create(dueDate: Now.AddDays(14), now: Now)); // outside range
+            TaskBuilder.Create(boardId: boardId, dueDate: Now.AddDays(3), now: Now),  // within range
+            TaskBuilder.Create(boardId: boardId, dueDate: Now.AddDays(14), now: Now)); // outside range
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(DueBefore: Now.AddDays(7))),
             CancellationToken.None);
@@ -135,12 +149,13 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_FilterByDueAfter_ReturnsOnlyTasksDueOnOrAfter()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
         db.Tasks.AddRange(
-            TaskBuilder.Create(dueDate: Now.AddDays(3), now: Now),  // outside range
-            TaskBuilder.Create(dueDate: Now.AddDays(14), now: Now)); // within range
+            TaskBuilder.Create(boardId: boardId, dueDate: Now.AddDays(3), now: Now),  // outside range
+            TaskBuilder.Create(boardId: boardId, dueDate: Now.AddDays(14), now: Now)); // within range
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(DueAfter: Now.AddDays(7))),
             CancellationToken.None);
@@ -154,13 +169,14 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_SecondPage_ReturnsCorrectItemsAndPreservesTotalCount()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
         for (int i = 0; i < 5; i++)
         {
-            db.Tasks.Add(TaskBuilder.Create(now: Now));
+            db.Tasks.Add(TaskBuilder.Create(boardId: boardId, now: Now));
         }
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(Page: 2, PageSize: 3)),
             CancellationToken.None);
@@ -175,13 +191,14 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_SortByTitleAscending_ReturnsTitlesAlphabetically()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
         db.Tasks.AddRange(
-            TaskBuilder.Create(title: "Gamma", now: Now),
-            TaskBuilder.Create(title: "Alpha", now: Now),
-            TaskBuilder.Create(title: "Beta", now: Now));
+            TaskBuilder.Create(boardId: boardId, title: "Gamma", now: Now),
+            TaskBuilder.Create(boardId: boardId, title: "Alpha", now: Now),
+            TaskBuilder.Create(boardId: boardId, title: "Beta", now: Now));
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(SortBy: "title", SortDescending: false)),
             CancellationToken.None);
@@ -193,13 +210,14 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_SortByTitleDescending_ReturnsTitlesReverseAlphabetically()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
         db.Tasks.AddRange(
-            TaskBuilder.Create(title: "Gamma", now: Now),
-            TaskBuilder.Create(title: "Alpha", now: Now),
-            TaskBuilder.Create(title: "Beta", now: Now));
+            TaskBuilder.Create(boardId: boardId, title: "Gamma", now: Now),
+            TaskBuilder.Create(boardId: boardId, title: "Alpha", now: Now),
+            TaskBuilder.Create(boardId: boardId, title: "Beta", now: Now));
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(SortBy: "title", SortDescending: true)),
             CancellationToken.None);
@@ -211,10 +229,11 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_PageSizeAboveMax_CapsPageSizeAt100()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        db.Tasks.Add(TaskBuilder.Create(now: Now));
+        Guid boardId = SeedDefaultBoard(db);
+        db.Tasks.Add(TaskBuilder.Create(boardId: boardId, now: Now));
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(PageSize: 200)),
             CancellationToken.None);
@@ -226,12 +245,13 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_SearchMatchesTitle_ReturnsOnlyMatchingTasks()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
         db.Tasks.AddRange(
-            TaskBuilder.Create(title: "Fix login bug", now: Now),
-            TaskBuilder.Create(title: "Update documentation", now: Now));
+            TaskBuilder.Create(boardId: boardId, title: "Fix login bug", now: Now),
+            TaskBuilder.Create(boardId: boardId, title: "Update documentation", now: Now));
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(Search: "login")),
             CancellationToken.None);
@@ -245,12 +265,13 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_SearchMatchesDescription_ReturnsOnlyMatchingTasks()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
         db.Tasks.AddRange(
-            TaskBuilder.Create(title: "Task A", description: "Investigate the payment gateway timeout", now: Now),
-            TaskBuilder.Create(title: "Task B", description: "Refresh the onboarding screenshots", now: Now));
+            TaskBuilder.Create(boardId: boardId, title: "Task A", description: "Investigate the payment gateway timeout", now: Now),
+            TaskBuilder.Create(boardId: boardId, title: "Task B", description: "Refresh the onboarding screenshots", now: Now));
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(Search: "payment gateway")),
             CancellationToken.None);
@@ -264,10 +285,11 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_SearchIsCaseInsensitive_ReturnsMatchingTasks()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        db.Tasks.Add(TaskBuilder.Create(title: "Fix login bug", now: Now));
+        Guid boardId = SeedDefaultBoard(db);
+        db.Tasks.Add(TaskBuilder.Create(boardId: boardId, title: "Fix login bug", now: Now));
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(Search: "BUG")),
             CancellationToken.None);
@@ -279,10 +301,11 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_SearchNoMatch_ReturnsEmptyResult()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        db.Tasks.Add(TaskBuilder.Create(title: "Fix login bug", now: Now));
+        Guid boardId = SeedDefaultBoard(db);
+        db.Tasks.Add(TaskBuilder.Create(boardId: boardId, title: "Fix login bug", now: Now));
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(Search: "nonexistent")),
             CancellationToken.None);
@@ -295,12 +318,13 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_SearchWhitespaceOnly_ReturnsAllTasks()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
         db.Tasks.AddRange(
-            TaskBuilder.Create(title: "Fix login bug", now: Now),
-            TaskBuilder.Create(title: "Update documentation", now: Now));
+            TaskBuilder.Create(boardId: boardId, title: "Fix login bug", now: Now),
+            TaskBuilder.Create(boardId: boardId, title: "Update documentation", now: Now));
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(new TaskFilter(Search: "   ")),
             CancellationToken.None);
@@ -312,20 +336,84 @@ public class GetTasksFilteredHandlerTests
     public async Task HandleAsync_AssignedTask_ResolvesAssigneeDisplayNameInSummary()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        var assignee = UserBuilder.Create(displayName: "Carol White");
+        Guid boardId = SeedDefaultBoard(db);
+        User assignee = UserBuilder.Create(displayName: "Carol White");
         db.Users.Add(assignee);
 
-        ProjectTask task = TaskBuilder.Create(now: Now);
+        ProjectTask task = TaskBuilder.Create(boardId: boardId, now: Now);
         task.Assign(assignee.Id, Guid.CreateVersion7(), Now);
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
 
-        var handler = new GetTasksFilteredHandler(db);
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
         PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
             new GetTasksFiltered(), CancellationToken.None);
 
         TaskSummaryDto only = Assert.Single(result.Items);
         Assert.Equal(assignee.Id, only.AssigneeId);
         Assert.Equal("Carol White", only.AssigneeDisplayName);
+    }
+
+    [Fact]
+    public async Task HandleAsync_NonAdminCallerIsProjectMember_ReturnsOnlyTasksFromTheirProjects()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        var callerId = Guid.CreateVersion7();
+
+        Project memberProject = ProjectBuilder.Create(organizationId: TestOrganizationId);
+        memberProject.AddMember(callerId, Role.Member, Now);
+        Board memberBoard = BoardBuilder.Create(projectId: memberProject.Id);
+
+        Project otherProject = ProjectBuilder.Create(organizationId: TestOrganizationId);
+        Board otherBoard = BoardBuilder.Create(projectId: otherProject.Id);
+
+        db.Projects.AddRange(memberProject, otherProject);
+        db.Boards.AddRange(memberBoard, otherBoard);
+        db.Tasks.AddRange(
+            TaskBuilder.Create(boardId: memberBoard.Id, now: Now),
+            TaskBuilder.Create(boardId: otherBoard.Id, now: Now));
+        await db.SaveChangesAsync();
+
+        var currentUser = new FakeCurrentUserService(
+            userId: callerId,
+            organizationId: TestOrganizationId,
+            isOrgAdmin: false);
+        var handler = new GetTasksFilteredHandler(db, currentUser);
+        PagedResult<TaskSummaryDto> result = await handler.HandleAsync(new GetTasksFiltered(), CancellationToken.None);
+
+        TaskSummaryDto only = Assert.Single(result.Items);
+        Assert.Equal(memberBoard.Id, only.BoardId);
+        Assert.Equal(1, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task HandleAsync_NonAdminCallerIsNotAMember_RetrunsNoTasks()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
+        db.Tasks.Add(TaskBuilder.Create(boardId: boardId, now: Now));
+        await db.SaveChangesAsync();
+
+        var currentUser = new FakeCurrentUserService(
+            userId: Guid.CreateVersion7(),
+            organizationId: TestOrganizationId,
+            isOrgAdmin: false);
+        var handler = new GetTasksFilteredHandler(db, currentUser);
+        PagedResult<TaskSummaryDto> result = await handler.HandleAsync(new GetTasksFiltered(), CancellationToken.None);
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+    }
+
+    /// <summary>
+    /// Seeds a Project + Board pair under <see cref="TestOrganizationId"/> and returns the board's ID.
+    /// </summary>
+    private static Guid SeedDefaultBoard(TestAppDbContext db)
+    {
+        Project project = ProjectBuilder.Create(organizationId: TestOrganizationId);
+        Board board = BoardBuilder.Create(projectId: project.Id);
+        db.Projects.Add(project);
+        db.Boards.Add(board);
+        return board.Id;
     }
 }

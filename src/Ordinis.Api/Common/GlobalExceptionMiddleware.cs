@@ -75,6 +75,15 @@ public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Glob
             await WriteAsync(context, ProblemDetailsFactory.Create(
                 context, ex.StatusCode, "Bad request", ex.Message));
         }
+        catch (AuthenticationException ex)
+        {
+            _logger.LogInformation("Failed login attempt for {Method} {Path}", context.Request.Method, context.Request.Path);
+            await WriteAsync(context, ProblemDetailsFactory.Create(
+                context,
+                StatusCodes.Status401Unauthorized,
+                "Authentication failed",
+                ex.Message));
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception for {Method} {Path}", context.Request.Method, context.Request.Path);

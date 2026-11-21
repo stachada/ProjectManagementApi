@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,6 +7,8 @@ using Ordinis.Application.Common;
 using Ordinis.Domain.Tasks;
 using Ordinis.Infrastructure.FileStorage;
 using Ordinis.Infrastructure.Persistence;
+using Ordinis.Infrastructure.Security;
+using Ordinis.Infrastructure.Security.Authorization;
 using Ordinis.Infrastructure.Webhooks;
 
 namespace Ordinis.Infrastructure.Common;
@@ -40,6 +43,11 @@ public static class InfrastructureServiceExtensions
         services.Configure<LocalStorageOptions>(configuration.GetSection(LocalStorageOptions.SectionName));
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
 
+        services.AddSingleton<IPasswordHasher, PasswordHasher>();
+
+        services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
+        services.AddSingleton<IJwtTokenService, JwtTokenService>();
+
         // MemoryCacheOptions has no TimeProvider-based clock override in the referenced package
         // version, so cache expiry runs on the wall clock rather than the app's TimeProvider
         // singleton — the only clock dependency in this codebase not routed through TimeProvider.
@@ -68,6 +76,12 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IDomainEventHandler<CommentAdded>, WebhookDomainEventHandler>();
 
         services.AddHostedService<WebhookDeliveryDispatcherService>();
+
+        services.AddScoped<IAuthorizationHandler, ProjectScopeAuthorizationHandler>();
+        services.AddScoped<IAuthorizationHandler, TaskOwnerAuthorizationHandler>();
+        services.AddScoped<IAuthorizationHandler, OrganizationScopeAuthorizationHandler>();
+
+        services.AddScoped<ICurrentUserService, CurrentUserService>();
 
         return services;
     }
