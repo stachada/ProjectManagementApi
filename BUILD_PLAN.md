@@ -1297,15 +1297,20 @@ See [docs/REST_API_CONCEPTS.md#hateoas](docs/REST_API_CONCEPTS.md#hateoas) for t
   - `dotnet build`: 0 warnings, 0 errors. `Ordinis.UnitTests`: 584/584 passing (575 + 9 new).
     `Ordinis.IntegrationTests`: 178/178 passing (152 + 26 new).
 - [x] Auth tests — unauthenticated requests to protected endpoints return `401`; wrong role returns `403` (done in Phase 8 — `tests/Ordinis.IntegrationTests/Auth/AuthorizationTests.cs` and `AuthEndpointsTests.cs`; see Phase 8's Tests note)
-- [ ] Rate limiting tests — exceed limit, assert `429 Too Many Requests` with `Retry-After` header
-- [ ] Idempotency tests — repeat `POST` with same `Idempotency-Key`, assert same response and no duplicate record
+- [x] Rate limiting tests — exceed limit, assert `429 Too Many Requests` with `Retry-After` header (done in Phase 7 — `tests/Ordinis.IntegrationTests/Common/RateLimitingTests.cs`: within-limit success, `429` with `Retry-After` + Problem Details body, `/health` exemption; checkbox was stale, verified passing)
+- [x] Idempotency tests — repeat `POST` with same `Idempotency-Key`, assert same response and no duplicate record (done in Phase 7 — `tests/Ordinis.IntegrationTests/Common/IdempotencyMiddlewareTests.cs`: replay with single resource, same key + different body → `409`, no key, retry after failure, per-user key isolation ×2; checkbox was stale, verified passing)
 
 ### Benchmarks (Ordinis.Benchmarks)
-- [ ] Scaffold `Ordinis.Benchmarks` project with BenchmarkDotNet
-- [ ] EF Core vs Dapper: benchmark `GetTasksFiltered` with 10 000 task rows — measure p50/p99 query time
-- [ ] Manual mapping vs Mapster: benchmark `TaskMapper.ToDto()` across 1 / 100 / 10 000 items
-- [ ] Middleware pipeline overhead: benchmark raw endpoint response vs full middleware stack (correlation ID + request logging + exception handling)
-- [ ] Load test: k6 or NBomber script for `PUT /tasks/{id}` concurrent write throughput — validate `409 Conflict` handling under load; target 50 concurrent users
+- [x] Scaffold `Ordinis.Benchmarks` project with BenchmarkDotNet (done — `tests/Ordinis.Benchmarks`, BenchmarkDotNet 0.15.8, explicit `BenchmarkEntryPoint` class instead of top-level statements so it can't collide with `Ordinis.Api`'s public `Program`. Shared SQL Server database via a reusable Testcontainer (`ordinis-benchmarks-mssql`; `ORDINIS_BENCHMARK_CONNECTION` overrides) seeded once through the domain model by `BenchmarkDataSeeder` — also exposed as a `seed` command for the load test. See `docs/BENCHMARKS.md`)
+- [x] EF Core vs Dapper: benchmark `GetTasksFiltered` with 10 000 task rows — measure p50/p99 query time (done — `GetTasksFilteredBenchmarks`: production handler vs EF `Select` projection vs Dapper across FirstPage / SearchAndFilter / DeepPage. `PerOperationLatencyConfig` pins 1 invocation per iteration so percentiles are per-query, plus a custom `PercentileColumn` for P99 (BenchmarkDotNet has none). Setup asserts all variants return identical pages before measuring. Result: the projection recovers most of the gap — 0.52–0.87× the handler's latency vs Dapper's 0.46–0.80×)
+- [x] Manual mapping vs Mapster: benchmark `TaskMapper.ToDto()` across 1 / 100 / 10 000 items (done — `TaskMappingBenchmarks`; Mapster is a benchmark-only package. `TaskMapper.BuildLinks` made `internal` + `InternalsVisibleTo("Ordinis.Benchmarks")` so Mapster produces identical `_links` without a copy; setup asserts identical JSON. Result: manual ≈3× faster at 1/100 items, 1.33× at 10 000 — keeps the "no Mapster" decision)
+- [x] Middleware pipeline overhead: benchmark raw endpoint response vs full middleware stack (correlation ID + request logging + exception handling) (done — `MiddlewarePipelineBenchmarks`, cumulative stages on `TestServer` with real Serilog into a discarding sink. Result: ≈4–5 µs and +3 KB per request, mostly request logging; timings are within noise, allocation deltas are the reliable signal)
+- [x] Load test: k6 or NBomber script for `PUT /tasks/{id}` concurrent write throughput — validate `409 Conflict` handling under load; target 50 concurrent users (done — `tests/load/task-update-contention.js`, k6 via the `grafana/k6:2.4.0` Docker image (no local install, no NBomber licensing question). 50 VUs × 60 s on 5 hot tasks: 91 619 read/write cycles, 9 651 `204`, 81 968 `409` Problem Details, 0 unexpected outcomes, PUT p95 29.7 ms / p99 40.5 ms; thresholds fail the run on any non-`204`/`409` write)
+
+**Benchmark findings (not fixed here — separate `fix/` PR):**
+- **List-endpoint counts are wrong.** `GetTasksFiltered` includes `Comments` but never `Attachments`, so `TaskSummaryDto.AttachmentCount` is always `0` on `GET /api/v1/tasks`; `GetBoardTasks`, `GetProjectTasks`, `GetUserTasks` and `GetBoardById` include neither, so `CommentCount` is always `0` too. No test asserts either count on a list endpoint. The benchmark's EF projection (`EfProjectionGetTasksFiltered`) is the fix and also ~2× faster.
+- **`sortBy=dueDate` is silently ignored** in `GetTasksFiltered`: the switch compares `filter.SortBy.ToLowerInvariant()` against `"dueDate"` (capital `D`), which can never match, so it falls through to `createdAt`.
+- **Deferred join for offset paging with subqueries.** Correlated `COUNT` subqueries in a `SELECT … OFFSET n` get evaluated for all `n` skipped rows (4× slower on a deep page) — page the IDs first, then compute per-row aggregates. Applies to any future Dapper/projection list query.
 
 **Git tag:** `v0.9-phase9-testing`
 
