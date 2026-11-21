@@ -60,7 +60,7 @@ public class TaskMapperTests
         ProjectTask task = TaskBuilder.Create(now: Now);
         Comment keptComment = task.AddComment("Looks good", Guid.CreateVersion7(), Now);
         Comment removedComment = task.AddComment("Retracted", Guid.CreateVersion7(), Now);
-        task.RemoveComment(removedComment.Id, Guid.CreateVersion7(), Now);
+        task.RemoveComment(removedComment.Id, Guid.CreateVersion7(), requesterIsModerator: true, Now);
         task.AddAttachment("a.png", "image/png", 100, "blob://a", Guid.CreateVersion7(), Now);
         task.AddAttachment("b.png", "image/png", 200, "blob://b", Guid.CreateVersion7(), Now);
 
@@ -126,7 +126,7 @@ public class TaskMapperTests
         Comment first = task.AddComment("First", authorId, Now);
         Comment second = task.AddComment("Second", authorId, Now.AddMinutes(5));
         Comment removed = task.AddComment("Removed", authorId, Now.AddMinutes(10));
-        task.RemoveComment(removed.Id, Guid.CreateVersion7(), Now.AddMinutes(15));
+        task.RemoveComment(removed.Id, Guid.CreateVersion7(), requesterIsModerator: true, Now.AddMinutes(15));
         first.CreatedAt = Now;
         second.CreatedAt = Now.AddMinutes(5);
         var userLookup = new Dictionary<Guid, string> { [authorId] = "Grace Hopper" };

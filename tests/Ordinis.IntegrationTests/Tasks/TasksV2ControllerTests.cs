@@ -57,6 +57,8 @@ public sealed class TasksV2ControllerTests(OrdinisApiFactory factory) : Integrat
     [Fact]
     public async Task GetById_NonexistentTask_Returns404()
     {
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
+
         HttpResponseMessage response = await Client.GetAsync($"/api/v2/tasks/{Guid.CreateVersion7()}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -82,6 +84,8 @@ public sealed class TasksV2ControllerTests(OrdinisApiFactory factory) : Integrat
 
             return board.Id;
         });
+
+        await AuthenticateAsUserAsync(userId); // Ensure Client is authenticated as the board's creator for subsequent requests
 
         return (userId, boardId);
     }

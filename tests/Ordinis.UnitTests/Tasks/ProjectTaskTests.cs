@@ -294,18 +294,46 @@ public class ProjectTaskTests
 
     #region RemoveComment
     [Fact]
-    public void RemoveComment_ExistingComment_SoftDeletesItAndRaisesEvent()
+    public void RemoveComment_ByAuthor_SoftDeletesItAndRaisesEvent()
     {
         ProjectTask task = TaskBuilder.Create(now: Now);
         var authorId = Guid.CreateVersion7();
         task.AddComment("Original.", authorId, Now);
         Comment comment = task.Comments.Single();
 
-        task.RemoveComment(comment.Id, Guid.CreateVersion7(), Now);
+        task.RemoveComment(comment.Id, authorId, requesterIsModerator: false, Now);
 
         Assert.True(comment.IsDeleted);
         CommentRemoved evt = Assert.Single(task.DomainEvents.OfType<CommentRemoved>());
         Assert.Equal(comment.Id, evt.CommentId);
+    }
+
+    [Fact]
+    public void RemoveComment_ByModeratorWhoIsNotAuthor_SoftDeletesIt()
+    {
+        ProjectTask task = TaskBuilder.Create(now: Now);
+        Comment comment = task.AddComment("Original.", Guid.CreateVersion7(), Now);
+        var moderatorId = Guid.CreateVersion7();
+
+        task.RemoveComment(comment.Id, moderatorId, requesterIsModerator: true, Now);
+
+        Assert.True(comment.IsDeleted);
+        CommentRemoved evt = Assert.Single(task.DomainEvents.OfType<CommentRemoved>());
+        Assert.Equal(moderatorId, evt.RemovedByUserId);
+    }
+
+    [Fact]
+    public void RemoveComment_ByNonAuthorWhoIsNotModerator_ThrowsAndLeavesCommentIntact()
+    {
+        ProjectTask task = TaskBuilder.Create(now: Now);
+        Comment comment = task.AddComment("Original.", Guid.CreateVersion7(), Now);
+
+        DomainException ex = Assert.Throws<DomainException>(() =>
+            task.RemoveComment(comment.Id, Guid.CreateVersion7(), requesterIsModerator: false, Now));
+
+        Assert.Equal("task.comment-not-author", ex.ErrorCode);
+        Assert.False(comment.IsDeleted);
+        Assert.Empty(task.DomainEvents.OfType<CommentRemoved>());
     }
 
     [Fact]
@@ -314,7 +342,7 @@ public class ProjectTaskTests
         ProjectTask task = TaskBuilder.Create(now: Now);
 
         DomainException ex = Assert.Throws<DomainException>(() =>
-            task.RemoveComment(Guid.CreateVersion7(), Guid.CreateVersion7(), Now));
+            task.RemoveComment(Guid.CreateVersion7(), Guid.CreateVersion7(), requesterIsModerator: true, Now));
 
         Assert.Equal("task.comment-not-found", ex.ErrorCode);
     }

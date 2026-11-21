@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Ordinis.Api.Common;
 using Ordinis.Api.Common.DataShaping;
@@ -16,10 +17,12 @@ namespace Ordinis.Api.Projects;
 /// Manages boards: creation, lookup, renaming, archiving/unarchiving, and listing a board's tasks.
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/v1/boards")]
-public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
+public sealed class BoardsController(IDispatcher dispatcher, ICurrentUserService currentUser) : ControllerBase
 {
     private readonly IDispatcher _dispatcher = dispatcher;
+    private readonly ICurrentUserService _currentUser = currentUser;
 
     /// <summary>
     /// Retrieves a single board by its ID.
@@ -32,7 +35,8 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
     /// </response>
     /// <response code="404">No board exists with the given ID.</response>
     [HttpGet("{id:guid}")]
-    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any, VaryByHeader = "Accept-Encoding,Authorization")]
+    [Authorize(Policy = "BoardMember")]
+    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Client, VaryByHeader = "Accept-Encoding,Authorization")]
     [ProducesResponseType(typeof(BoardDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<BoardDto>> GetById(Guid id, CancellationToken cancellationToken)
@@ -71,6 +75,7 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
     /// </response>
     /// <response code="404">No board exists with the given ID.</response>
     [HttpGet("{id:guid}/tasks")]
+    [Authorize(Policy = "BoardMember")]
     [ProducesResponseType(typeof(IReadOnlyList<TaskSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetTasks(
@@ -112,11 +117,12 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
     /// Creates a new board within a project.
     /// </summary>
     /// <param name="projectId">The project to add the board to.</param>
-    /// <param name="request">The creator and the new board's name.</param>
+    /// <param name="request">The new board's name. The creator is the authenticated caller.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="201">The board was created. The <c>Location</c> header points at <see cref="GetById"/>.</response>
     /// <response code="422">The request failed validation (e.g. project does not exist or is archived, duplicate board name).</response>
     [HttpPost("/api/v1/projects/{projectId:guid}/boards")]
+    [Authorize(Policy = "BoardCreateMember")]
     [Idempotent]
     [ProducesResponseType(typeof(BoardDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -126,7 +132,7 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
         CancellationToken cancellationToken)
     {
         Guid id = await _dispatcher.SendAsync<CreateBoard, Guid>(
-            new CreateBoard(projectId, request.CreatedByUserId, request.Name), cancellationToken);
+            new CreateBoard(projectId, _currentUser.UserId, request.Name), cancellationToken);
 
         BoardDto dto = await _dispatcher.QueryAsync<GetBoardById, BoardDto>(new GetBoardById(id), cancellationToken);
 
@@ -144,6 +150,7 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="409">The board was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The request failed validation (e.g. duplicate name, board archived).</response>
     [HttpPut("{id:guid}/name")]
+    [Authorize(Policy = "BoardAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -169,6 +176,7 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="409">The board was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The board is already archived (<c>board.already-archived</c>).</response>
     [HttpPost("{id:guid}/archive")]
+    [Authorize(Policy = "BoardAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -191,6 +199,7 @@ public sealed class BoardsController(IDispatcher dispatcher) : ControllerBase
     /// <response code="409">The board was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The board is not archived (<c>board.not-archived</c>).</response>
     [HttpPost("{id:guid}/unarchive")]
+    [Authorize(Policy = "BoardAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]

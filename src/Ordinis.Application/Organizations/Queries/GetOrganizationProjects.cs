@@ -26,8 +26,11 @@ public sealed record GetOrganizationProjects(
 /// <c>GetProjectsFilteredHandler</c> but with <c>OrganizationId</c>
 /// fixed from the route — avoids handler-to-handler coupling while
 /// sharing zero duplicated query logic (the filter shape is identical).
+/// Results are restricted to projects the caller can see (see
+/// <see cref="CurrentUserServiceExtensions.GetAllowedProjectIds"/>): every project for an org
+/// Admin, otherwise only projects the caller is a member of.
 /// </summary>
-public sealed class GetOrganizationProjectsHandler(IAppDbContext db) : IQueryHandler<GetOrganizationProjects, PagedResult<ProjectSummaryDto>>
+public sealed class GetOrganizationProjectsHandler(IAppDbContext db, ICurrentUserService currentUser) : IQueryHandler<GetOrganizationProjects, PagedResult<ProjectSummaryDto>>
 {
     public async Task<PagedResult<ProjectSummaryDto>> HandleAsync(
         GetOrganizationProjects query,
@@ -62,6 +65,9 @@ public sealed class GetOrganizationProjectsHandler(IAppDbContext db) : IQueryHan
         {
             q = q.Where(p => p.Members.Any(m => m.UserId == filter.MemberId.Value));
         }
+
+        IQueryable<Guid> allowedProjectIds = currentUser.GetAllowedProjectIds(db);
+        q = q.Where(p => allowedProjectIds.Contains(p.Id));
 
         // Sorting. See EntityQueryableExtensions.ThenByStableId for why every branch ends with it.
         q = (filter.SortBy.ToLowerInvariant(), filter.SortDescending) switch

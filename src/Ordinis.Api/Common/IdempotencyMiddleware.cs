@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Primitives;
 using Ordinis.Application.Common;
@@ -38,7 +39,8 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, IIdempotencyStor
         }
 
         string idempotencyKey = headerValue.ToString().Trim();
-        string cacheKey = $"{context.Request.Method}:{context.Request.Path}:{idempotencyKey}";
+        string callerId = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? "anonymous";
+        string cacheKey = $"{callerId}:{context.Request.Method}:{context.Request.Path}:{idempotencyKey}";
         string requestBodyHash = await HashRequestBodyAsync(context);
 
         IdempotencyRecord? cached = await _store.TryGetAsync(cacheKey, context.RequestAborted);

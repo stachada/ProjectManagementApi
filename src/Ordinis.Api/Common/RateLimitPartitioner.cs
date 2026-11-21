@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
@@ -13,14 +14,13 @@ public static class RateLimitPartitioner
 {
     /// <summary>
     /// Authenticated requests get a sliding window keyed by user ID; anonymous requests get a
-    /// fixed window keyed by client IP. <c>HttpContext.User</c> is never authenticated until
-    /// Phase 8 (JWT auth) exists, so today every request takes the anonymous branch.
+    /// fixed window keyed by client IP.
     /// </summary>
     public static RateLimitPartition<string> CreatePartition(HttpContext context, RateLimitingOptions options)
     {
         if (context.User.Identity?.IsAuthenticated == true)
         {
-            string userKey = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+            string userKey = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
                 ?? context.User.Identity.Name
                 ?? "unknown";
 

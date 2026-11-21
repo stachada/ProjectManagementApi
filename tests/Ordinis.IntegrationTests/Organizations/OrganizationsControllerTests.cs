@@ -15,6 +15,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     [Fact]
     public async Task Create_ValidRequest_Returns201WithLocationAndPersistedOrganization()
     {
+        await AuthenticateAsOrgAdminAsync();
         var request = new CreateOrganizationRequest("Acme Corp", "Leading provider of anvils and other products.");
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/organizations", request);
@@ -30,6 +31,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     [Fact]
     public async Task Create_WithEmptyName_Returns422UnprocessableEntity()
     {
+        await AuthenticateAsOrgAdminAsync();
         var request = new CreateOrganizationRequest(string.Empty, "Description is optional.");
 
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/organizations", request);
@@ -40,6 +42,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     [Fact]
     public async Task Create_WithDescription1001Chars_Returns422UnprocessableEntity()
     {
+        await AuthenticateAsOrgAdminAsync();
         string longDescription = new string('A', 1001);
         var request = new CreateOrganizationRequest("Valid Name", longDescription);
 
@@ -51,6 +54,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     [Fact]
     public async Task Create_DuplicateSlug_Returns422()
     {
+        await AuthenticateAsOrgAdminAsync();
         var request = new CreateOrganizationRequest("Acme Corp", "First one");
         await Client.PostAsJsonAsync("/api/v1/organizations", request);
 
@@ -62,7 +66,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     [Fact]
     public async Task GetById_ExistingOrganization_ReturnsOrganization()
     {
-        Guid orgId = await SeedOrganizationAsync();
+        (Guid orgId, _) = await AuthenticateAsOrgAdminAsync();
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/organizations/{orgId}");
 
@@ -77,6 +81,8 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     public async Task GetById_NonExistingOrganization_Returns404NotFound()
     {
         Guid nonExistingId = Guid.CreateVersion7();
+
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/organizations/{nonExistingId}");
 
@@ -100,9 +106,26 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     }
 
     [Fact]
+    public async Task GetProjects_CallerIsPlainMember_ReturnsOnlyProjectsCallerBelongsTo()
+    {
+        // The caller is a member of "Project 1" only; the other four belong to other users.
+        Guid orgId = await SeedOrganizationWithProjectsAsync(projectCount: 5, firstUserOrgRole: Role.Member);
+
+        HttpResponseMessage response = await Client.GetAsync($"/api/v1/organizations/{orgId}/projects");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        IReadOnlyList<ProjectSummaryDto>? projects = await response.Content.ReadFromJsonAsync<IReadOnlyList<ProjectSummaryDto>>();
+        ProjectSummaryDto project = Assert.Single(projects!);
+        Assert.Equal("Project 1", project.Name);
+        Assert.Equal("1", response.Headers.GetValues("X-Total-Count").Single());
+    }
+
+    [Fact]
     public async Task GetProjects_NonExistingOrganization_Returns404NotFound()
     {
         Guid nonExistingId = Guid.CreateVersion7();
+
+        await AuthenticateAsNewUserAsync(); // we need to be authenticated to get a 404 instead of a 401
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/organizations/{nonExistingId}/projects");
 
@@ -112,7 +135,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     [Fact]
     public async Task GetProjects_ExistingOrganizationWithNoProjects_ReturnsEmptyList()
     {
-        Guid orgId = await SeedOrganizationAsync();
+        (Guid orgId, _) = await AuthenticateAsOrgAdminAsync();
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/organizations/{orgId}/projects");
 
@@ -127,7 +150,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     [Fact]
     public async Task Update_ValidRequest_Returns204NoContentAndUpdatesOrganization()
     {
-        Guid orgId = await SeedOrganizationAsync();
+        (Guid orgId, _) = await AuthenticateAsOrgAdminAsync();
         var request = new UpdateOrganizationRequest("Updated Name", "Updated Description");
 
         HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/organizations/{orgId}", request);
@@ -145,7 +168,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         // No ETag/If-Match mechanism is wired at the HTTP layer, so a genuine 409 can only come
         // from a real RowVersion collision - see IntegrationTestBase.AssertConcurrentRequestsConflictAsync
         // and docs/INTEGRATION_TESTS.md for the deterministic mechanism.
-        Guid orgId = await SeedOrganizationAsync();
+        (Guid orgId, _) = await AuthenticateAsOrgAdminAsync();
 
         await AssertConcurrentRequestsConflictAsync(
             () => Client.PutAsJsonAsync($"/api/v1/organizations/{orgId}", new UpdateOrganizationRequest("Name from request 1", "Description 1")),
@@ -158,6 +181,8 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         Guid nonExistingId = Guid.CreateVersion7();
         var request = new UpdateOrganizationRequest("Updated Name", "Updated Description");
 
+        await AuthenticateAsOrgAdminAsync(); // we need to be authenticated to get a 404 instead of a 401
+
         HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/organizations/{nonExistingId}", request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -166,7 +191,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     [Fact]
     public async Task Update_DescriptionOverMaxLength_Returns422()
     {
-        Guid orgId = await SeedOrganizationAsync();
+        (Guid orgId, _) = await AuthenticateAsOrgAdminAsync();
         string longDescription = new string('A', 1001);
         var request = new UpdateOrganizationRequest("Valid Name", longDescription);
 
@@ -236,6 +261,8 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     [Fact]
     public async Task Suspend_NotExistingOrganization_Returns404NotFound()
     {
+        await AuthenticateAsOrgAdminAsync(); // we need to be authenticated to get a 404 instead of a 401
+
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/organizations/{Guid.CreateVersion7()}/suspend", null);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -278,6 +305,8 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     [Fact]
     public async Task Reactivate_NotExistingOrganization_Returns404NotFound()
     {
+        await AuthenticateAsOrgAdminAsync(); // we need to be authenticated to get a 404 instead of a 401
+
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/organizations/{Guid.CreateVersion7()}/reactivate", null);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -295,34 +324,50 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
 
     private Task<Guid> SeedOrganizationAsync(bool isSuspended = false) => SeedAsync(async db =>
     {
-        Organization org = CreateOrganization();
-        if (isSuspended)
-        {
-            org.Suspend();
-        }
-        db.Organizations.Add(org);
+        (Guid orgId, Guid userId) = await SeedOrganizationWithUserAsync(orgRole: Role.Admin, isSuspended: isSuspended);
 
-        await db.SaveChangesAsync();
+        // await db.SaveChangesAsync();
 
-        return org.Id;
+        await AuthenticateAsUserAsync(userId);
+
+        return orgId;
     });
 
-    private Task<Guid> SeedOrganizationWithProjectsAsync(int projectCount) => SeedAsync(async db =>
+    /// <summary>
+    /// Seeds an organization with <paramref name="projectCount"/> projects, each created by (and so
+    /// with an Admin member of) a different user, and authenticates <c>Client</c> as the first of
+    /// those users. That user is a member of "Project 1" only, so <paramref name="firstUserOrgRole"/>
+    /// decides what they see: an org Admin sees every project, a plain Member sees just theirs.
+    /// </summary>
+    private Task<Guid> SeedOrganizationWithProjectsAsync(int projectCount, Role firstUserOrgRole = Role.Admin) => SeedAsync(async db =>
     {
+        if (projectCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(projectCount), "Project count must be greater than zero.");
+        }
+
         Organization org = CreateOrganization();
         db.Organizations.Add(org);
 
         // "project-{i+1}" needs no extra slug suffix - Project.Slug is unique per organization,
         // and the index alone is already unique within this freshly created one.
+        Guid userId = Guid.Empty;
         for (int i = 0; i < projectCount; i++)
         {
-            User user = User.Create(org.Id, $"User {i + 1}", $"user{i + 1}@example.com", $"hashed-password-{i + 1}");
+            Role orgRole = i == 0 ? firstUserOrgRole : Role.Member;
+            User user = User.Create(org.Id, $"User {i + 1}", $"user{i + 1}@example.com", $"hashed-password-{i + 1}", orgRole);
+            if (i == 0)
+            {
+                userId = user.Id;
+            }
             db.Users.Add(user);
             Project project = Project.Create(org.Id, user.Id, $"Project {i + 1}", $"project-{i + 1}", DateTimeOffset.UtcNow);
             db.Projects.Add(project);
         }
 
         await db.SaveChangesAsync();
+
+        await AuthenticateAsUserAsync(userId);
 
         return org.Id;
     });

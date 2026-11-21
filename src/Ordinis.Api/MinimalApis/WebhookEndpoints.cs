@@ -17,6 +17,11 @@ public static class WebhookEndpoints
     /// Maps <c>POST /api/v1/projects/{id}/webhooks</c>, <c>DELETE .../webhooks/{webhookId}</c>,
     /// and <c>GET .../webhooks</c>.
     /// </summary>
+    /// <remarks>
+    /// All three require the <c>ProjectAdmin</c> policy: a webhook sends project events to an
+    /// external URL, so registering, removing, and even listing them is project administration,
+    /// not ordinary membership. The registering user is always the authenticated caller.
+    /// </remarks>
     /// <param name="routes">The endpoint route builder to register the endpoints on.</param>
     /// <returns>The same <paramref name="routes"/> for chaining.</returns>
     public static IEndpointRouteBuilder MapWebhookEndpoints(this IEndpointRouteBuilder routes)
@@ -26,6 +31,7 @@ public static class WebhookEndpoints
                 Guid id,
                 RegisterWebhookRequest request,
                 IDispatcher dispatcher,
+                ICurrentUserService currentUser,
                 HttpContext context,
                 CancellationToken ct) =>
             {
@@ -35,7 +41,7 @@ public static class WebhookEndpoints
                     id,
                     request.Url,
                     request.EventTypes ?? [],
-                    request.RegisteredByUserId,
+                    currentUser.UserId,
                     ifMatch);
 
                 Guid webhookId = await dispatcher.SendAsync<RegisterWebhook, Guid>(command, ct);
@@ -47,8 +53,10 @@ public static class WebhookEndpoints
 
                 return Results.Created($"/api/v1/projects/{id}/webhooks", dto);
             })
+            .RequireAuthorization("ProjectAdmin")
             .WithMetadata(new IdempotentAttribute())
             .Produces<WebhookDto>(StatusCodes.Status201Created)
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status409Conflict)
             .Produces(StatusCodes.Status422UnprocessableEntity);
@@ -67,7 +75,9 @@ public static class WebhookEndpoints
 
                 return Results.NoContent();
             })
+            .RequireAuthorization("ProjectAdmin")
             .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status409Conflict)
             .Produces(StatusCodes.Status422UnprocessableEntity);
@@ -80,7 +90,9 @@ public static class WebhookEndpoints
 
                 return Results.Ok(webhooks);
             })
+            .RequireAuthorization("ProjectAdmin")
             .Produces<IReadOnlyList<WebhookDto>>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound);
 
         return routes;
@@ -95,5 +107,4 @@ public static class WebhookEndpoints
 /// Event names to subscribe to (see <see cref="WebhookEventTypes"/>). Omit or send an empty
 /// list to subscribe to all supported event types.
 /// </param>
-/// <param name="RegisteredByUserId">The user registering the webhook.</param>
-public sealed record RegisterWebhookRequest(string Url, IReadOnlyList<string>? EventTypes, Guid RegisteredByUserId);
+public sealed record RegisterWebhookRequest(string Url, IReadOnlyList<string>? EventTypes);

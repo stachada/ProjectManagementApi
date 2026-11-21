@@ -25,6 +25,10 @@ public static class UserServiceExtensions
         services.AddScoped<ICommandHandler<ReactivateUser>, ReactivateUserHandler>();
         services.AddScoped<ICommandHandler<ChangeUserOrgRole>, ChangeUserOrgRoleHandler>();
 
+        services.AddScoped<ICommandHandler<Login, LoginResult>, LoginHandler>();
+        services.AddScoped<ICommandHandler<RefreshToken, LoginResult>, RefreshTokenHandler>();
+        services.AddScoped<ICommandHandler<Logout>, LogoutHandler>();
+
         // Queries
         services.AddScoped<IQueryHandler<GetUserById, UserDto>, GetUserByIdHandler>();
         services.AddScoped<IQueryHandler<GetUserTasks, PagedResult<TaskSummaryDto>>, GetUserTasksHandler>();

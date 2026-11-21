@@ -11,8 +11,9 @@ namespace Ordinis.Application.Users.Commands;
 /// <param name="UserId">The ID of the user to update.</param>
 /// <param name="DisplayName">The new display name. 1–100 characters.</param>
 /// <param name="RequestedByUserId">
-/// The ID of the user performing the update. Used for authorization
-/// in Phase 8 — only the account owner or an Admin may update a display name.
+/// The ID of the user performing the update - always the authenticated caller. That only the
+/// account owner or an org Admin of the same organization may update a display name is
+/// enforced before dispatch by the <c>UserSelfOrOrgAdmin</c> authorization policy.
 /// </param>
 /// <remarks>
 /// Email is immutable after creation (it is the login identifier).

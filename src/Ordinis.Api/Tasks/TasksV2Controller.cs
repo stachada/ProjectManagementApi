@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Ordinis.Application.Common;
 using Ordinis.Application.Tasks.Dtos;
@@ -11,6 +12,7 @@ namespace Ordinis.Api.Tasks;
 /// pointing at the task's parent board that v1 does not include.
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/v2/tasks")]
 public sealed class TasksV2Controller(IDispatcher dispatcher) : ControllerBase
 {
@@ -27,7 +29,8 @@ public sealed class TasksV2Controller(IDispatcher dispatcher) : ControllerBase
     /// </response>
     /// <response code="404">No task exists with the given ID.</response>
     [HttpGet("{id:guid}")]
-    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any, VaryByHeader = "Accept-Encoding,Authorization")]
+    [Authorize(Policy = "TaskMember")]
+    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Client, VaryByHeader = "Accept-Encoding,Authorization")]
     [ProducesResponseType(typeof(TaskDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<TaskDto>> GetById(

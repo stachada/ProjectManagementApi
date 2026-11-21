@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Ordinis.Api.Common;
 using Ordinis.Api.Common.DataShaping;
@@ -16,11 +17,18 @@ namespace Ordinis.Api.Users;
 /// Manages users: creation, lookup, profile updates, organization-role changes,
 /// deactivation/reactivation, and listing a user's assigned tasks.
 /// </summary>
+/// <remarks>
+/// Every <c>{id}</c> route is scoped to the caller's own organization: a user in another
+/// organization is reported as <c>404</c>, exactly like a nonexistent one, so callers cannot
+/// probe other tenants. The acting user is always the authenticated caller.
+/// </remarks>
 [ApiController]
+[Authorize]
 [Route("api/v1/users")]
-public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
+public sealed class UsersController(IDispatcher dispatcher, ICurrentUserService currentUser) : ControllerBase
 {
     private readonly IDispatcher _dispatcher = dispatcher;
+    private readonly ICurrentUserService _currentUser = currentUser;
 
     /// <summary>
     /// Retrieves a single user by ID.
@@ -31,9 +39,10 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
     /// The user was found and is returned. Cacheable for 30 seconds
     /// (<c>Cache-Control: public, max-age=30</c>).
     /// </response>
-    /// <response code="404">No user exists with the given ID.</response>
+    /// <response code="404">No user exists with the given ID in the caller's organization.</response>
     [HttpGet("{id:guid}")]
-    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any, VaryByHeader = "Accept-Encoding,Authorization")]
+    [Authorize(Policy = "UserInOrganization")]
+    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Client, VaryByHeader = "Accept-Encoding,Authorization")]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<UserDto>> GetById(
@@ -46,6 +55,8 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
 
     /// <summary>
     /// Lists tasks assigned to a specific user, with optional filtering, sorting, and pagination.
+    /// Only tasks in projects the caller can see are returned (every project in the organization
+    /// for an org Admin, otherwise projects the caller is a member of).
     /// </summary>
     /// <param name="id">The user whose tasks to list.</param>
     /// <param name="boardId">Optional: restrict to this board.</param>
@@ -66,8 +77,9 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
     /// Returns the page of tasks. Sets the <c>X-Total-Count</c> response header to the total
     /// number of matching tasks across all pages.
     /// </response>
-    /// <response code="404">No user exists with the given ID.</response>
+    /// <response code="404">No user exists with the given ID in the caller's organization.</response>
     [HttpGet("{id:guid}/tasks")]
+    [Authorize(Policy = "UserInOrganization")]
     [ProducesResponseType(typeof(IReadOnlyList<TaskSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetTasks(
@@ -106,13 +118,14 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
     }
 
     /// <summary>
-    /// Creates a new user in the specified organization.
+    /// Creates a new user in the calling Admin's own organization.
     /// </summary>
-    /// <param name="request">The owning organization and the new user's details.</param>
+    /// <param name="request">The new user's details.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="201">The user was created. The <c>Location</c> header points at <see cref="GetById"/>.</response>
     /// <response code="422">The request failed validation (e.g. duplicate email in the organization).</response>
     [HttpPost]
+    [Authorize(Roles = "Admin")]
     [Idempotent]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -121,7 +134,7 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var command = new CreateUser(
-            OrganizationId: request.OrganizationId,
+            OrganizationId: _currentUser.OrganizationId,
             DisplayName: request.DisplayName,
             Email: request.Email,
             Password: request.Password,
@@ -138,13 +151,16 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
     /// Updates a user's display name. Only the user themselves or an Admin may perform this action.
     /// </summary>
     /// <param name="id">The user ID.</param>
-    /// <param name="request">The new display name and the ID of the user making the request.</param>
+    /// <param name="request">The new display name.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The user's display name was updated.</response>
-    /// <response code="404">No user exists with the given ID.</response>
+    /// <response code="403">The caller is neither the user themselves nor an org Admin.</response>
+    /// <response code="404">No user exists with the given ID in the caller's organization.</response>
     /// <response code="409">The user was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The request failed validation.</response>
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "UserSelfOrOrgAdmin")]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -157,7 +173,7 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
         var command = new UpdateUser(
             UserId: id,
             DisplayName: request.DisplayName,
-            RequestedByUserId: request.RequestedByUserId);
+            RequestedByUserId: _currentUser.UserId);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 
@@ -168,13 +184,16 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
     /// Changes the organization-level role of a user. Only Admins may perform this action.
     /// </summary>
     /// <param name="id">The user ID.</param>
-    /// <param name="request">The new organization role and the ID of the user making the request.</param>
+    /// <param name="request">The new organization role.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The user's role was changed.</response>
-    /// <response code="404">No user exists with the given ID.</response>
+    /// <response code="403">The caller is not an org Admin.</response>
+    /// <response code="404">No user exists with the given ID in the caller's organization.</response>
     /// <response code="409">The user was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The request failed validation.</response>
     [HttpPut("{id:guid}/org-role")]
+    [Authorize(Policy = "UserOrgAdmin")]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -187,7 +206,7 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
         var command = new ChangeUserOrgRole(
             UserId: id,
             NewOrgRole: request.NewOrgRole,
-            RequestedByUserId: request.RequestedByUserId);
+            RequestedByUserId: _currentUser.UserId);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 
@@ -198,25 +217,26 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
     /// Deactivates a user account. Only Admins may perform this action.
     /// </summary>
     /// <param name="id">The user ID.</param>
-    /// <param name="request">The ID of the user making the request.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The user was deactivated.</response>
-    /// <response code="404">No user exists with the given ID.</response>
+    /// <response code="403">The caller is not an org Admin.</response>
+    /// <response code="404">No user exists with the given ID in the caller's organization.</response>
     /// <response code="409">The user was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The user is already inactive (<c>user.already-inactive</c>).</response>
     [HttpPost("{id:guid}/deactivate")]
+    [Authorize(Policy = "UserOrgAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> DeactivateUser(
         Guid id,
-        [FromBody] DeactivateUserRequest request,
         CancellationToken cancellationToken = default)
     {
         var command = new DeactivateUser(
             UserId: id,
-            RequestedByUserId: request.RequestedByUserId);
+            RequestedByUserId: _currentUser.UserId);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 
@@ -227,25 +247,26 @@ public sealed class UsersController(IDispatcher dispatcher) : ControllerBase
     /// Reactivates a previously deactivated user account. Only Admins may perform this action.
     /// </summary>
     /// <param name="id">The user ID.</param>
-    /// <param name="request">The ID of the user making the request.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="204">The user was reactivated.</response>
-    /// <response code="404">No user exists with the given ID.</response>
+    /// <response code="403">The caller is not an org Admin.</response>
+    /// <response code="404">No user exists with the given ID in the caller's organization.</response>
     /// <response code="409">The user was concurrently modified (stale <c>RowVersion</c>).</response>
     /// <response code="422">The user is already active (<c>user.already-active</c>).</response>
     [HttpPost("{id:guid}/reactivate")]
+    [Authorize(Policy = "UserOrgAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> ReactivateUser(
         Guid id,
-        [FromBody] ReactivateUserRequest request,
         CancellationToken cancellationToken = default)
     {
         var command = new ReactivateUser(
             UserId: id,
-            RequestedByUserId: request.RequestedByUserId);
+            RequestedByUserId: _currentUser.UserId);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 

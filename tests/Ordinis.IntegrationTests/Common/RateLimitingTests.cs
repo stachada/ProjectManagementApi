@@ -47,7 +47,7 @@ public sealed class RateLimitingTests(OrdinisApiFactory factory) : IntegrationTe
         for (int i = 0; i < PermitLimit; i++)
         {
             HttpResponseMessage response = await client.GetAsync($"/api/v1/organizations/{Guid.CreateVersion7()}");
-            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, response.StatusCode);
         }
     }
 

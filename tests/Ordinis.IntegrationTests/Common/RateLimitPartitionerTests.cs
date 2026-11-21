@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
@@ -47,7 +48,7 @@ public sealed class RateLimitPartitionerTests
     public void CreatePartition_AuthenticatedRequest_UsesSlidingWindowKeyedByUserId()
     {
         var identity = new ClaimsIdentity(
-            [new Claim(ClaimTypes.NameIdentifier, "user-123")],
+            [new Claim(JwtRegisteredClaimNames.Sub, "user-123")],
             authenticationType: "Test");
         var context = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
 
@@ -59,7 +60,7 @@ public sealed class RateLimitPartitionerTests
     }
 
     [Fact]
-    public void CreatePartition_AuthenticatedRequest_NoNameIdentifierClaim_FallsBackToIdentityName()
+    public void CreatePartition_AuthenticatedRequest_NoSubClaim_FallsBackToIdentityName()
     {
         var identity = new ClaimsIdentity([], authenticationType: "Test", nameType: ClaimTypes.Name, roleType: null);
         identity.AddClaim(new Claim(ClaimTypes.Name, "jdoe"));

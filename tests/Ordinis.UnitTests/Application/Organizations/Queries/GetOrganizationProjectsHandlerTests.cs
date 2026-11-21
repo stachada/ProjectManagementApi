@@ -28,7 +28,7 @@ public class GetOrganizationProjectsHandlerTests
         db.Projects.Add(ProjectBuilder.Create(name: "Other org's project"));
         await db.SaveChangesAsync();
 
-        PagedResult<ProjectSummaryDto> result = await new GetOrganizationProjectsHandler(db)
+        PagedResult<ProjectSummaryDto> result = await new GetOrganizationProjectsHandler(db, AdminOf(org.Id))
             .HandleAsync(new GetOrganizationProjects(org.Id));
 
         Assert.Equal(2, result.TotalCount);
@@ -40,10 +40,38 @@ public class GetOrganizationProjectsHandlerTests
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
 
+        var unknownOrganizationId = Guid.CreateVersion7();
+
         await Assert.ThrowsAsync<NotFoundException>(
-            () => new GetOrganizationProjectsHandler(db)
-                .HandleAsync(new GetOrganizationProjects(Guid.CreateVersion7())));
+            () => new GetOrganizationProjectsHandler(db, AdminOf(unknownOrganizationId))
+                .HandleAsync(new GetOrganizationProjects(unknownOrganizationId)));
     }
+
+    [Fact]
+    public async Task HandleAsync_NonAdminCaller_ReturnsOnlyProjectsCallerIsMemberOf()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Organization org = OrganizationBuilder.Create();
+        db.Organizations.Add(org);
+
+        var callerId = Guid.CreateVersion7();
+        // The caller created (and so is an Admin member of) "Mine" only.
+        db.Projects.Add(ProjectBuilder.Create(organizationId: org.Id, createdByUserId: callerId, name: "Mine"));
+        db.Projects.Add(ProjectBuilder.Create(organizationId: org.Id, name: "Not mine"));
+        await db.SaveChangesAsync();
+
+        var caller = new FakeCurrentUserService(callerId, org.Id, isOrgAdmin: false);
+
+        PagedResult<ProjectSummaryDto> result = await new GetOrganizationProjectsHandler(db, caller)
+            .HandleAsync(new GetOrganizationProjects(org.Id));
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("Mine", result.Items.Single().Name);
+    }
+
+    /// <summary>An org-level Admin of <paramref name="organizationId"/>, who can see every project in it.</summary>
+    private static ICurrentUserService AdminOf(Guid organizationId) =>
+        new FakeCurrentUserService(Guid.CreateVersion7(), organizationId, isOrgAdmin: true);
 
     [Fact]
     public async Task HandleAsync_NoFilter_ExcludesArchivedProjectsByDefault()
@@ -58,7 +86,7 @@ public class GetOrganizationProjectsHandlerTests
         db.Projects.AddRange(active, archived);
         await db.SaveChangesAsync();
 
-        PagedResult<ProjectSummaryDto> result = await new GetOrganizationProjectsHandler(db)
+        PagedResult<ProjectSummaryDto> result = await new GetOrganizationProjectsHandler(db, AdminOf(org.Id))
             .HandleAsync(new GetOrganizationProjects(org.Id));
 
         Assert.Equal(1, result.TotalCount);
@@ -78,7 +106,7 @@ public class GetOrganizationProjectsHandlerTests
         db.Projects.AddRange(active, archived);
         await db.SaveChangesAsync();
 
-        PagedResult<ProjectSummaryDto> result = await new GetOrganizationProjectsHandler(db)
+        PagedResult<ProjectSummaryDto> result = await new GetOrganizationProjectsHandler(db, AdminOf(org.Id))
             .HandleAsync(new GetOrganizationProjects(
                 org.Id,
                 new ProjectFilter { IncludeArchived = true }));
@@ -100,7 +128,7 @@ public class GetOrganizationProjectsHandlerTests
         db.Projects.AddRange(proj1, proj2);
         await db.SaveChangesAsync();
 
-        PagedResult<ProjectSummaryDto> result = await new GetOrganizationProjectsHandler(db)
+        PagedResult<ProjectSummaryDto> result = await new GetOrganizationProjectsHandler(db, AdminOf(org.Id))
             .HandleAsync(new GetOrganizationProjects(
                 org.Id,
                 new ProjectFilter { MemberId = memberId }));
@@ -122,7 +150,7 @@ public class GetOrganizationProjectsHandlerTests
         }
         await db.SaveChangesAsync();
 
-        PagedResult<ProjectSummaryDto> result = await new GetOrganizationProjectsHandler(db)
+        PagedResult<ProjectSummaryDto> result = await new GetOrganizationProjectsHandler(db, AdminOf(org.Id))
             .HandleAsync(new GetOrganizationProjects(
                 org.Id,
                 new ProjectFilter { Page = 2, PageSize = 2 }));

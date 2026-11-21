@@ -87,6 +87,11 @@ public sealed class CreateProjectValidator : AbstractValidator<CreateProject>
         RuleFor(x => x.Description)
             .MaximumLength(1000)
             .When(x => x.Description is not null);
+
+        RuleFor(x => x)
+            .MustAsync(async (command, ct) =>
+                await db.Users.AnyAsync(u => u.Id == command.CreatedByUserId && u.OrganizationId == command.OrganizationId, ct))
+            .WithMessage("You must be a member of this organization to create a project in it.");
     }
 }
 

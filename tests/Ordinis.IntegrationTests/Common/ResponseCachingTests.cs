@@ -24,7 +24,7 @@ public sealed class ResponseCachingTests(OrdinisApiFactory factory) : Integratio
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(response.Headers.CacheControl);
-        Assert.True(response.Headers.CacheControl!.Public);
+        Assert.True(response.Headers.CacheControl!.Private);
         Assert.Equal(TimeSpan.FromSeconds(30), response.Headers.CacheControl.MaxAge);
         Assert.Contains("Accept-Encoding", response.Headers.Vary);
         Assert.Contains("Authorization", response.Headers.Vary);
@@ -33,13 +33,15 @@ public sealed class ResponseCachingTests(OrdinisApiFactory factory) : Integratio
     [Fact]
     public async Task GetOrganizationById_ExistingOrganization_ReturnsCacheControlAndVaryHeaders()
     {
-        (Guid organizationId, _) = await SeedOrganizationWithUserAsync();
+        (Guid organizationId, Guid userId) = await SeedOrganizationWithUserAsync();
+
+        await AuthenticateAsUserAsync(userId); // Ensure Client is authenticated as the organization's user for subsequent requests
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/organizations/{organizationId}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(response.Headers.CacheControl);
-        Assert.True(response.Headers.CacheControl!.Public);
+        Assert.True(response.Headers.CacheControl!.Private);
         Assert.Equal(TimeSpan.FromSeconds(30), response.Headers.CacheControl.MaxAge);
         Assert.Contains("Accept-Encoding", response.Headers.Vary);
         Assert.Contains("Authorization", response.Headers.Vary);
@@ -88,6 +90,8 @@ public sealed class ResponseCachingTests(OrdinisApiFactory factory) : Integratio
 
             return board.Id;
         });
+
+        await AuthenticateAsUserAsync(userId); // Ensure Client is authenticated as the board's creator for subsequent requests
 
         return (userId, boardId);
     }

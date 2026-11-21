@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -84,6 +85,7 @@ public sealed class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLi
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
         Environment.SetEnvironmentVariable("DatabaseProvider", "SqlServer");
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", _connectionString);
+        Environment.SetEnvironmentVariable("Jwt__SigningKey", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
 
         // Force host creation now (rather than lazily on first client request) so migrations
         // are applied before any test issues an HTTP call.

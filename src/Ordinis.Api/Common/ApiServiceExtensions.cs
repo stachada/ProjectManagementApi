@@ -1,6 +1,12 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.IdentityModel.Tokens;
+using Ordinis.Domain.Users;
+using Ordinis.Infrastructure.Security.Authorization;
 
 namespace Ordinis.Api.Common;
 
@@ -102,6 +108,102 @@ public static class ApiServiceExtensions
                     cancellationToken: cancellationToken);
             };
         });
+
+        IConfigurationSection jwtSection = configuration.GetSection("Jwt");
+        var signingKey = jwtSection["SigningKey"]
+            ?? throw new InvalidOperationException(
+                "Missing required configuration key 'Jwt:SigningKey'. " +
+                "Set it via User Secrets (development) or environment variables (production).");
+
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                // Keep claim types exactly as JwtTokenService issued them ("sub", "email", "org_id") -
+                // policy handlers, CurrentUserService, RateLimitPartitioner and IdempotencyMiddleware all read "sub".
+                options.MapInboundClaims = false;
+
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidIssuer = jwtSection["Issuer"],
+                    ValidateAudience = true,
+                    ValidAudience = jwtSection["Audience"],
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(Convert.FromBase64String(signingKey)),
+                    ValidateLifetime = true,
+                    // Default 5-minute slack lets an access token keep working briefly past its
+                    // stated expiry on a slow/clock-skewed client - not appropriate for a 15-minute
+                    // access token's security model, so it's removed.
+                    ClockSkew = TimeSpan.Zero,
+                    NameClaimType = JwtRegisteredClaimNames.Name // so Identity.Name resolves (useful in logs)
+                };
+
+                // Default WWWW-Authenticate challenge response has no body. Give 401s the same
+                // Problem Details shape as every other error response in this API.
+                options.Events = new JwtBearerEvents
+                {
+                    OnChallenge = async context =>
+                    {
+                        context.HandleResponse();
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        await context.Response.WriteAsJsonAsync(
+                            ProblemDetailsFactory.Create(
+                                context.HttpContext,
+                                StatusCodes.Status401Unauthorized,
+                                "Authentication required",
+                                "A valid access token is required to access this resource."),
+                            options: null,
+                            contentType: "application/problem+json");
+                    },
+                    OnForbidden = async context =>
+                    {
+                        context.Response.ContentType = "application/problem+json";
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        await context.Response.WriteAsJsonAsync(
+                            ProblemDetailsFactory.Create(
+                                context.HttpContext,
+                                StatusCodes.Status403Forbidden,
+                                "Access denied",
+                                "You do not have permission to perform this action."),
+                            options: null,
+                            contentType: "application/problem+json");
+                    }
+                };
+            });
+
+        services.AddHttpContextAccessor();
+
+        services.AddAuthorizationBuilder()
+            .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
+            .AddPolicy("ProjectMember", p => p.Requirements.Add(
+                new ProjectScopeRequirement(ProjectResourceType.Project, "id")))
+            .AddPolicy("ProjectAdmin", p => p.Requirements.Add(
+                new ProjectScopeRequirement(ProjectResourceType.Project, "id", Role.Admin)))
+            .AddPolicy("BoardMember", p => p.Requirements.Add(
+                new ProjectScopeRequirement(ProjectResourceType.Board, "id")))
+            .AddPolicy("BoardAdmin", p => p.Requirements.Add(
+                new ProjectScopeRequirement(ProjectResourceType.Board, "id", Role.Admin)))
+            .AddPolicy("BoardCreateMember", p => p.Requirements.Add(
+                new ProjectScopeRequirement(ProjectResourceType.Project, "projectId", Role.Member)))
+            .AddPolicy("TaskContributor", p => p.Requirements.Add(
+                new ProjectScopeRequirement(ProjectResourceType.Task, "id", Role.Member)))
+            .AddPolicy("TaskMember", p => p.Requirements.Add(
+                new ProjectScopeRequirement(ProjectResourceType.Task, "id")))
+            .AddPolicy("TaskProjectAdmin", p => p.Requirements.Add(
+                new ProjectScopeRequirement(ProjectResourceType.Task, "id", Role.Admin)))
+            .AddPolicy("TaskOwner", p => p.Requirements.Add(new TaskOwnerRequirement()))
+            .AddPolicy("OrganizationMember", p => p.Requirements.Add(
+                new OrganizationScopeRequirement(OrganizationResourceType.Organization, "id")))
+            .AddPolicy("OrganizationAdmin", p => p.Requirements.Add(
+                new OrganizationScopeRequirement(OrganizationResourceType.Organization, "id", requireOrgAdmin: true)))
+            .AddPolicy("UserInOrganization", p => p.Requirements.Add(
+                new OrganizationScopeRequirement(OrganizationResourceType.User, "id")))
+            .AddPolicy("UserOrgAdmin", p => p.Requirements.Add(
+                new OrganizationScopeRequirement(OrganizationResourceType.User, "id", requireOrgAdmin: true)))
+            .AddPolicy("UserSelfOrOrgAdmin", p => p.Requirements.Add(
+                new OrganizationScopeRequirement(OrganizationResourceType.User, "id", requireOrgAdmin: true, allowSelf: true)));
+
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, ResourceHidingAuthorizationResultHandler>();
 
         return services;
     }
