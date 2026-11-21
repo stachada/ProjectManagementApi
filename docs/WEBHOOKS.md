@@ -82,11 +82,18 @@ scoped to `["task.moved"]` never sees a `comment.added` row in its delivery hist
 
 ```http
 POST /api/v1/projects/{id}/webhooks
+Authorization: Bearer <access token>
 If-Match: "AAAAAAAAB9E="
 Content-Type: application/json
 
-{ "url": "https://example.com/hook", "eventTypes": [], "registeredByUserId": "..." }
+{ "url": "https://example.com/hook", "eventTypes": [] }
 ```
+
+All three webhook endpoints (register, list, unregister) require the `ProjectAdmin` policy:
+a webhook sends project events to an external URL, so managing (or even listing) them is
+project administration. The caller must be an Admin of the project, or an org Admin of its
+organization; a plain Member gets `403`, and a non-member gets `404`. The registering user
+recorded on the webhook is always the authenticated caller.
 
 Handled by `WebhookEndpoints.cs` (Minimal API, not a controller — per this project's
 "Minimal APIs for focused, non-resource routes" convention, alongside auth and search),
@@ -240,18 +247,22 @@ registered successfully.
 ## Testing it yourself
 
 ```bash
+# $TOKEN is an access token (POST /auth/login) for an Admin of the project.
+
 # 1. Register a webhook (requires an existing project's current ETag as If-Match)
 curl -i -X POST https://localhost:5001/api/v1/projects/{id}/webhooks \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'If-Match: "AAAAAAAAB9E="' \
   -H 'Content-Type: application/json' \
-  -d '{ "url": "https://webhook.site/your-id", "eventTypes": [], "registeredByUserId": "..." }'
+  -d '{ "url": "https://webhook.site/your-id", "eventTypes": [] }'
 # 201 Created
 
 # 2. Trigger an event — e.g. move a task in that project
 curl -i -X POST https://localhost:5001/api/v1/tasks/{taskId}/move \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'If-Match: "..."' \
   -H 'Content-Type: application/json' \
-  -d '{ "status": "InProgress", "requestedByUserId": "..." }'
+  -d '{ "status": "InProgress" }'
 
 # 3. Within ~5-10s (one OutboxDispatcherJob tick + one WebhookDeliveryDispatcherService
 #    tick), the registered URL receives:

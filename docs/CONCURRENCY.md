@@ -254,28 +254,35 @@ exist yet.
 ## Testing it yourself
 
 ```bash
+# $TOKEN is an access token from POST /auth/login. The acting user is always the
+# token's subject - no request body carries a user ID.
+
 # 1. Fetch the current ETag
-curl -i https://localhost:5001/api/v1/tasks/{id}
+curl -i https://localhost:5001/api/v1/tasks/{id} \
+  -H "Authorization: Bearer $TOKEN"
 # ETag: "AAAAAAAAB9E="
 
 # 2. Reuse it on a mutating call — succeeds
 curl -i -X POST https://localhost:5001/api/v1/tasks/{id}/move \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'If-Match: "AAAAAAAAB9E="' \
   -H 'Content-Type: application/json' \
-  -d '{ "status": "InProgress", "requestedByUserId": "..." }'
+  -d '{ "status": "InProgress" }'
 # 204 No Content — and the ETag has now changed underneath you
 
 # 3. Replay the same (now stale) If-Match — fails
 curl -i -X POST https://localhost:5001/api/v1/tasks/{id}/move \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'If-Match: "AAAAAAAAB9E="' \
   -H 'Content-Type: application/json' \
-  -d '{ "status": "Done", "requestedByUserId": "..." }'
+  -d '{ "status": "Done" }'
 # 409 Conflict, Problem Details body
 
 # 4. Omit If-Match entirely
 curl -i -X POST https://localhost:5001/api/v1/tasks/{id}/move \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{ "status": "Done", "requestedByUserId": "..." }'
+  -d '{ "status": "Done" }'
 # 422 Unprocessable Entity — errors.IfMatch: ["If-Match header is required."]
 ```
 
