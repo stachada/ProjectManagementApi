@@ -80,8 +80,9 @@ public sealed class GetBoardTasksHandler(IAppDbContext db)
             ("title", true) => q.OrderByDescending(t => t.Title).ThenByStableId(),
             ("priority", false) => q.OrderBy(t => t.Priority).ThenByStableId(),
             ("priority", true) => q.OrderByDescending(t => t.Priority).ThenByStableId(),
-            ("dueDate", false) => q.OrderBy(t => t.DueDate).ThenByStableId(),
-            ("dueDate", true) => q.OrderByDescending(t => t.DueDate).ThenByStableId(),
+            // Lowercase: SortBy is lowercased above, so a mixed-case pattern can never match.
+            ("duedate", false) => q.OrderBy(t => t.DueDate).ThenByStableId(),
+            ("duedate", true) => q.OrderByDescending(t => t.DueDate).ThenByStableId(),
             (_, false) => q.OrderBy(t => t.CreatedAt).ThenByStableId(),
             (_, true) => q.OrderByDescending(t => t.CreatedAt).ThenByStableId()
         };
@@ -93,19 +94,8 @@ public sealed class GetBoardTasksHandler(IAppDbContext db)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        var assigneeIds = tasks
-            .Where(t => t.AssigneeId.HasValue)
-            .Select(t => t.AssigneeId!.Value)
-            .ToHashSet();
-
-        Dictionary<Guid, string> userLookup = assigneeIds.Count > 0
-            ? await db.Users
-                .Where(u => assigneeIds.Contains(u.Id))
-                .Select(u => new { u.Id, u.DisplayName })
-                .ToDictionaryAsync(u => u.Id, u => u.DisplayName, cancellationToken)
-            : [];
-
-        var items = tasks.Select(t => t.ToSummaryDto(userLookup)).ToList();
+        // Assignee names and comment/attachment counts for this page only.
+        List<TaskSummaryDto> items = await tasks.ToSummaryDtosAsync(db, cancellationToken);
 
         return new PagedResult<TaskSummaryDto>(items, totalCount, page, pageSize);
     }

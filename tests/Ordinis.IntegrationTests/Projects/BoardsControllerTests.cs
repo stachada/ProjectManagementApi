@@ -144,6 +144,44 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         Assert.Equal("1", response.Headers.GetValues("X-Total-Count").Single());
     }
 
+    [Theory]
+    [InlineData(false, new[] { "Due first", "Due second", "Due third" })]
+    [InlineData(true, new[] { "Due third", "Due second", "Due first" })]
+    public async Task GetTasks_SortByDueDate_OrdersByDueDateNotCreation(bool descending, string[] expectedTitles)
+    {
+        (Guid userId, Guid projectId) = await SeedProjectAsync();
+        Guid boardId = await SeedBoardAsync(projectId, userId);
+        // Created in an order that differs from due-date order in both directions.
+        await SeedTaskWithChildrenAsync(boardId, userId, "Due second", dueInDays: 20);
+        await SeedTaskWithChildrenAsync(boardId, userId, "Due third", dueInDays: 30);
+        await SeedTaskWithChildrenAsync(boardId, userId, "Due first", dueInDays: 10);
+        await AuthenticateAsUserAsync(userId);
+
+        HttpResponseMessage response = await Client.GetAsync(
+            $"/api/v1/boards/{boardId}/tasks?sortBy=dueDate&sortDescending={descending}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        Assert.Equal(expectedTitles, tasks!.Select(t => t.Title).ToArray());
+    }
+
+    [Fact]
+    public async Task GetTasks_TasksWithCommentsAndAttachments_ReportsLiveCounts()
+    {
+        (Guid userId, Guid projectId) = await SeedProjectAsync();
+        Guid boardId = await SeedBoardAsync(projectId, userId);
+        await SeedTaskWithChildrenAsync(boardId, userId, "Has children", dueInDays: 5);
+        await AuthenticateAsUserAsync(userId);
+
+        HttpResponseMessage response = await Client.GetAsync($"/api/v1/boards/{boardId}/tasks");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        TaskSummaryDto only = Assert.Single(tasks!);
+        Assert.Equal(1, only.CommentCount); // soft-deleted comment excluded
+        Assert.Equal(1, only.AttachmentCount);
+    }
+
     [Fact]
     public async Task GetTasks_NonexistentBoard_Returns404()
     {
@@ -415,6 +453,26 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
     private Task<Guid> SeedTaskAsync(Guid boardId, Guid reporterId, string title = "Default task") => SeedAsync(async db =>
     {
         ProjectTask task = ProjectTask.Create(boardId, reporterId, title, DateTimeOffset.UtcNow);
+        db.Tasks.Add(task);
+
+        await db.SaveChangesAsync();
+
+        return task.Id;
+    });
+
+    /// <summary>
+    /// Seeds a task due in <paramref name="dueInDays"/> days with one live comment, one
+    /// soft-deleted comment and one attachment - so list responses should report
+    /// <c>CommentCount = 1</c> and <c>AttachmentCount = 1</c>.
+    /// </summary>
+    private Task<Guid> SeedTaskWithChildrenAsync(Guid boardId, Guid userId, string title, int dueInDays) => SeedAsync(async db =>
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        ProjectTask task = ProjectTask.Create(boardId, userId, title, now, dueDate: now.AddDays(dueInDays));
+        task.AddComment("Kept", userId, now);
+        Comment retracted = task.AddComment("Retracted", userId, now);
+        task.RemoveComment(retracted.Id, userId, requesterIsModerator: false, now);
+        task.AddAttachment("spec.pdf", "application/pdf", 1_024, "/attachments/spec.pdf", userId, now);
         db.Tasks.Add(task);
 
         await db.SaveChangesAsync();

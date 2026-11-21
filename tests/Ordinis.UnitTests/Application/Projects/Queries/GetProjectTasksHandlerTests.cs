@@ -91,4 +91,24 @@ public class GetProjectTasksHandlerTests
         Assert.Equal(3, result.TotalCount);
         Assert.Single(result.Items);
     }
+
+    [Fact]
+    public async Task HandleAsync_TaskWithCommentsAndAttachments_ReportsLiveCounts()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Project project = ProjectBuilder.Create();
+        db.Projects.Add(project);
+        Board board = BoardBuilder.Create(projectId: project.Id);
+        db.Boards.Add(board);
+        db.Tasks.Add(TaskBuilder.Create(boardId: board.Id).WithCountableChildren());
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear(); // a real request starts untracked - see WithCountableChildren
+
+        PagedResult<TaskSummaryDto> result = await new GetProjectTasksHandler(db)
+            .HandleAsync(new GetProjectTasks(project.Id));
+
+        TaskSummaryDto only = Assert.Single(result.Items);
+        Assert.Equal(TaskBuilder.ExpectedCommentCount, only.CommentCount);
+        Assert.Equal(TaskBuilder.ExpectedAttachmentCount, only.AttachmentCount);
+    }
 }

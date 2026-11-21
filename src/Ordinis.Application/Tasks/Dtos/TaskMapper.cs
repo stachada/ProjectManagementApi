@@ -72,12 +72,17 @@ public static class TaskMapper
     /// Maps a <see cref="ProjectTask"/> to a lean <see cref="TaskSummaryDto"/> for list responses.
     /// </summary>
     /// <param name="task">The task to map. Must not be <see langword="null"/>.</param>
-    /// <param name="userLookup">
-    /// A dictionary of <c>UserId -> DisplayName</c>. Only the assignee ID is looked up here;
-    /// comment authors are not needed for the summary view.
+    /// <param name="details">
+    /// The assignee display name and comment/attachment counts, resolved by the handler
+    /// (see <c>TaskSummaryQueries.ToSummaryDtosAsync</c>).
     /// </param>
-    /// <returns></returns>
-    public static TaskSummaryDto ToSummaryDto(this ProjectTask task, IReadOnlyDictionary<Guid, string> userLookup)
+    /// <remarks>
+    /// Counts are passed in rather than read from <see cref="ProjectTask.Comments"/> /
+    /// <see cref="ProjectTask.Attachments"/>: list queries deliberately don't load those
+    /// collections (materializing every comment row just to count it), and reading an
+    /// unloaded collection silently yields <c>0</c> instead of failing.
+    /// </remarks>
+    public static TaskSummaryDto ToSummaryDto(this ProjectTask task, TaskSummaryDetails details)
         => new()
         {
             Id = task.Id,
@@ -86,16 +91,12 @@ public static class TaskMapper
             Status = task.Status,
             Priority = task.Priority,
             AssigneeId = task.AssigneeId,
-            AssigneeDisplayName = task.AssigneeId.HasValue
-                ? userLookup.GetValueOrDefault(task.AssigneeId.Value)
-                : null,
+            AssigneeDisplayName = task.AssigneeId.HasValue ? details.AssigneeDisplayName : null,
             DueDate = task.DueDate,
             CreatedAt = task.CreatedAt,
             UpdatedAt = task.UpdatedAt,
-            // Counts exclude soft-deleted comments - consitent with what the detail
-            // view exposes. Attachments have no soft-delete, so no filter needed.
-            CommentCount = task.Comments.Count(c => !c.IsDeleted),
-            AttachmentCount = task.Attachments.Count
+            CommentCount = details.CommentCount,
+            AttachmentCount = details.AttachmentCount
         };
 
     #region Private helpers - not part of the public mapping surface

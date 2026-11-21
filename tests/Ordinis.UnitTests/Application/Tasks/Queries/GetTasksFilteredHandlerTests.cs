@@ -408,6 +408,67 @@ public class GetTasksFilteredHandlerTests
     /// <summary>
     /// Seeds a Project + Board pair under <see cref="TestOrganizationId"/> and returns the board's ID.
     /// </summary>
+    [Fact]
+    public async Task HandleAsync_TaskWithCommentsAndAttachments_ReportsLiveCounts()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
+        db.Tasks.Add(TaskBuilder.Create(boardId: boardId, now: Now).WithCountableChildren());
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear(); // a real request starts untracked - see WithCountableChildren
+
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
+        PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
+            new GetTasksFiltered(), CancellationToken.None);
+
+        TaskSummaryDto only = Assert.Single(result.Items);
+        Assert.Equal(TaskBuilder.ExpectedCommentCount, only.CommentCount);
+        Assert.Equal(TaskBuilder.ExpectedAttachmentCount, only.AttachmentCount);
+    }
+
+    [Theory]
+    [InlineData("dueDate")] // the documented spelling - previously never matched the lowercased switch
+    [InlineData("duedate")]
+    [InlineData("DUEDATE")]
+    public async Task HandleAsync_SortByDueDateAscending_OrdersByDueDateNotCreation(string sortBy)
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
+        // Added (and therefore created) in an order that differs from due-date order, so
+        // a fallback to the createdAt default would fail the assertion.
+        db.Tasks.AddRange(
+            TaskBuilder.Create(boardId: boardId, title: "Due third", dueDate: Now.AddDays(30), now: Now),
+            TaskBuilder.Create(boardId: boardId, title: "Due first", dueDate: Now.AddDays(10), now: Now),
+            TaskBuilder.Create(boardId: boardId, title: "Due second", dueDate: Now.AddDays(20), now: Now));
+        await db.SaveChangesAsync();
+
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
+        PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
+            new GetTasksFiltered(new TaskFilter(SortBy: sortBy, SortDescending: false)),
+            CancellationToken.None);
+
+        Assert.Equal(["Due first", "Due second", "Due third"], result.Items.Select(t => t.Title).ToArray());
+    }
+
+    [Fact]
+    public async Task HandleAsync_SortByDueDateDescending_OrdersByDueDateDescending()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Guid boardId = SeedDefaultBoard(db);
+        db.Tasks.AddRange(
+            TaskBuilder.Create(boardId: boardId, title: "Due second", dueDate: Now.AddDays(20), now: Now),
+            TaskBuilder.Create(boardId: boardId, title: "Due first", dueDate: Now.AddDays(10), now: Now),
+            TaskBuilder.Create(boardId: boardId, title: "Due third", dueDate: Now.AddDays(30), now: Now));
+        await db.SaveChangesAsync();
+
+        var handler = new GetTasksFilteredHandler(db, AdminCurrentUser);
+        PagedResult<TaskSummaryDto> result = await handler.HandleAsync(
+            new GetTasksFiltered(new TaskFilter(SortBy: "dueDate", SortDescending: true)),
+            CancellationToken.None);
+
+        Assert.Equal(["Due third", "Due second", "Due first"], result.Items.Select(t => t.Title).ToArray());
+    }
+
     private static Guid SeedDefaultBoard(TestAppDbContext db)
     {
         Project project = ProjectBuilder.Create(organizationId: TestOrganizationId);

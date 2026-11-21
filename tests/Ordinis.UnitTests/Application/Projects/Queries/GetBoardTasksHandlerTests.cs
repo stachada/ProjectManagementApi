@@ -81,4 +81,47 @@ public class GetBoardTasksHandlerTests
         Assert.Equal(3, result.TotalCount);
         Assert.Single(result.Items);
     }
+
+    [Fact]
+    public async Task HandleAsync_TaskWithCommentsAndAttachments_ReportsLiveCounts()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Board board = BoardBuilder.Create();
+        db.Boards.Add(board);
+        db.Tasks.Add(TaskBuilder.Create(boardId: board.Id).WithCountableChildren());
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear(); // a real request starts untracked - see WithCountableChildren
+
+        PagedResult<TaskSummaryDto> result = await new GetBoardTasksHandler(db)
+            .HandleAsync(new GetBoardTasks(board.Id));
+
+        TaskSummaryDto only = Assert.Single(result.Items);
+        Assert.Equal(TaskBuilder.ExpectedCommentCount, only.CommentCount);
+        Assert.Equal(TaskBuilder.ExpectedAttachmentCount, only.AttachmentCount);
+    }
+
+    [Theory]
+    [InlineData("dueDate", false, new[] { "Due first", "Due second", "Due third" })]
+    [InlineData("dueDate", true, new[] { "Due third", "Due second", "Due first" })]
+    [InlineData("duedate", false, new[] { "Due first", "Due second", "Due third" })]
+    public async Task HandleAsync_SortByDueDate_OrdersByDueDateNotCreation(
+        string sortBy, bool descending, string[] expectedTitles)
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Board board = BoardBuilder.Create();
+        db.Boards.Add(board);
+        var now = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        // Created in an order that differs from due-date order in both directions, so a
+        // fallback to the createdAt default fails either way.
+        db.Tasks.AddRange(
+            TaskBuilder.Create(boardId: board.Id, title: "Due second", dueDate: now.AddDays(20), now: now),
+            TaskBuilder.Create(boardId: board.Id, title: "Due third", dueDate: now.AddDays(30), now: now),
+            TaskBuilder.Create(boardId: board.Id, title: "Due first", dueDate: now.AddDays(10), now: now));
+        await db.SaveChangesAsync();
+
+        PagedResult<TaskSummaryDto> result = await new GetBoardTasksHandler(db)
+            .HandleAsync(new GetBoardTasks(board.Id, new TaskFilter(SortBy: sortBy, SortDescending: descending)));
+
+        Assert.Equal(expectedTitles, result.Items.Select(t => t.Title).ToArray());
+    }
 }

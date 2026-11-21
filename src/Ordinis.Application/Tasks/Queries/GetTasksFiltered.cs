@@ -64,8 +64,9 @@ public sealed record GetTasksFiltered(TaskFilter? Filter = null) : IQuery<PagedR
 /// the same predicate chain, so they always return consistent counts.
 /// </para>
 /// <para>
-/// <strong>User display names:</strong> resolved via a single batch lookup on the
-/// assignee IDs present in the returned page — not across the full dataset.
+/// <strong>Display names and counts:</strong> resolved by
+/// <see cref="TaskSummaryQueries.ToSummaryDtosAsync"/> in one batched query over the returned
+/// page's IDs — not across the full dataset.
 /// </para>
 /// </remarks>
 internal sealed class GetTasksFilteredHandler(IAppDbContext db, ICurrentUserService currentUser) : IQueryHandler<GetTasksFiltered, PagedResult<TaskSummaryDto>>
@@ -81,10 +82,9 @@ internal sealed class GetTasksFilteredHandler(IAppDbContext db, ICurrentUserServ
         var page = Math.Max(filter.Page, 1);
 
         // Start from the base queryable - the global soft-delete filter is applied
-        // automatically by EF Core, so deleted tasks never appear here.
-        IQueryable<ProjectTask> queryable = db.Tasks
-            .Include(t => t.Comments)
-            .Include(t => t.Assignee);
+        // automatically by EF Core, so deleted tasks never appear here. No Include: comment and
+        // attachment counts and the assignee name are resolved per page by ToSummaryDtosAsync.
+        IQueryable<ProjectTask> queryable = db.Tasks;
 
         // Each filter is applied only when the corresponding parameter is provided.
         // This produces a single SQL query with only the WHERE clauses that are needed.
@@ -145,8 +145,9 @@ internal sealed class GetTasksFilteredHandler(IAppDbContext db, ICurrentUserServ
             ("status", true) => queryable.OrderByDescending(t => t.Status).ThenByStableId(),
             ("priority", false) => queryable.OrderBy(t => t.Priority).ThenByStableId(),
             ("priority", true) => queryable.OrderByDescending(t => t.Priority).ThenByStableId(),
-            ("dueDate", false) => queryable.OrderBy(t => t.DueDate).ThenByStableId(),
-            ("dueDate", true) => queryable.OrderByDescending(t => t.DueDate).ThenByStableId(),
+            // Lowercase: SortBy is lowercased above, so a mixed-case pattern can never match.
+            ("duedate", false) => queryable.OrderBy(t => t.DueDate).ThenByStableId(),
+            ("duedate", true) => queryable.OrderByDescending(t => t.DueDate).ThenByStableId(),
             ("updatedat", false) => queryable.OrderBy(t => t.UpdatedAt).ThenByStableId(),
             ("updatedat", true) => queryable.OrderByDescending(t => t.UpdatedAt).ThenByStableId(),
             // Default createdAt ascending / descending
@@ -160,23 +161,8 @@ internal sealed class GetTasksFilteredHandler(IAppDbContext db, ICurrentUserServ
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        // Use display name resolution
-        // Collects assignee IDs from this page only - not from the full dataset.
-        HashSet<Guid> assigneeIds = tasks
-            .Where(t => t.AssigneeId.HasValue)
-            .Select(t => t.AssigneeId!.Value)
-            .ToHashSet();
-
-        Dictionary<Guid, string> userLookup = assigneeIds.Count > 0
-            ? await db.Users
-                .Where(u => assigneeIds.Contains(u.Id))
-                .ToDictionaryAsync(u => u.Id, u => u.DisplayName, cancellationToken)
-            : [];
-
-        // Mapping
-        var items = tasks
-            .Select(t => t.ToSummaryDto(userLookup))
-            .ToList();
+        // Assignee names and comment/attachment counts for this page only.
+        List<TaskSummaryDto> items = await tasks.ToSummaryDtosAsync(db, cancellationToken);
 
         return new PagedResult<TaskSummaryDto>(items, totalCount, page, pageSize);
     }

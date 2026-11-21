@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Ordinis.Application.Common;
 using Ordinis.Application.Projects.Dtos;
 using Ordinis.Application.Tasks.Dtos;
+using Ordinis.Application.Tasks.Queries;
 using Ordinis.Domain.Common;
 using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
@@ -45,22 +46,8 @@ public sealed class GetBoardByIdHandler(IAppDbContext db)
             .Take(BoardDto.MaxEmbeddedTasks)
             .ToListAsync(cancellationToken);
 
-        // Batch-resolve assignee display names for this page only.
-        var assigneeIds = tasks
-            .Where(t => t.AssigneeId.HasValue)
-            .Select(t => t.AssigneeId!.Value)
-            .ToHashSet();
-
-        Dictionary<Guid, string> userLookup = assigneeIds.Count > 0
-            ? await db.Users
-                .Where(u => assigneeIds.Contains(u.Id))
-                .Select(u => new { u.Id, u.DisplayName })
-                .ToDictionaryAsync(u => u.Id, u => u.DisplayName, cancellationToken)
-            : [];
-
-        IReadOnlyList<TaskSummaryDto> taskDtos = tasks
-            .Select(t => t.ToSummaryDto(userLookup))
-            .ToList();
+        // Assignee names and comment/attachment counts for the embedded tasks only.
+        IReadOnlyList<TaskSummaryDto> taskDtos = await tasks.ToSummaryDtosAsync(db, cancellationToken);
 
         return board.ToBoardDto(taskCount, taskDtos);
     }
