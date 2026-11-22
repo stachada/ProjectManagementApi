@@ -252,16 +252,18 @@ change independently.
 
 - **Controllers** (`AddControllers()`), with `ConfigureApiBehaviorOptions` overriding
   `InvalidModelStateResponseFactory` (see below).
-- **Response caching** (`AddResponseCaching()`) — enables `[ResponseCache]` attributes and
-  `Cache-Control` header handling on endpoints added in later phases.
+- **Response caching** (`AddResponseCaching()`) — enables the `[ResponseCache]` attributes on the
+  single-resource `GetById` endpoints (`Cache-Control: private, max-age=30`, `Vary:
+  Accept-Encoding, Authorization`; client-side caching only — see
+  [REST_API_CONCEPTS.md](REST_API_CONCEPTS.md#response-caching)).
 - **CORS** — a permissive default policy (any origin/method/header). Fine for a portfolio project
   with no browser-based first-party client yet; would need tightening before fronting a real SPA.
 - **Rate limiting** — a global limiter whose partition (key + algorithm) is chosen per request by
   `RateLimitPartitioner.CreatePartition` (`RateLimitPartitioner.cs`): anonymous requests get a
   fixed window (100/minute) keyed by client IP; authenticated requests get a sliding window
-  (500/minute) keyed by user ID. The authenticated branch is dormant until Phase 8 (JWT auth)
-  makes `HttpContext.User` an authenticated principal — every request takes the anonymous branch
-  today. Limits are bound from `RateLimitingOptions` (`RateLimiting` section of
+  (500/minute) keyed by user ID (the JWT `sub` claim). The limiter runs after
+  `UseAuthentication()`, so an invalid token is treated as anonymous and lands in its IP's
+  window. Limits are bound from `RateLimitingOptions` (`RateLimiting` section of
   `appsettings.json`) rather than hardcoded. Rejected requests get `429 Too Many Requests` via
   `options.OnRejected`, which reads the limiter's own `Retry-After` metadata onto the response
   header and writes a `ProblemDetailsFactory`-shaped body — the same RFC 9457 shape every other
@@ -269,8 +271,8 @@ change independently.
   `GET /health` opts out via `.DisableRateLimiting()` in `Program.cs`, so orchestrator
   liveness/readiness probes don't compete with real traffic for the same budget. Extracting the
   partition-selection logic into a pure function (`RateLimitPartitioner`, no `AddRateLimiter`
-  coupling) is what makes the authenticated-vs-anonymous branching unit-testable today against a
-  fabricated `ClaimsPrincipal`, without needing Phase 8's real JWT pipeline to exist yet — see
+  coupling) is what makes the authenticated-vs-anonymous branching unit-testable against a
+  fabricated `ClaimsPrincipal`, without spinning up the JWT pipeline — see
   `tests/Ordinis.IntegrationTests/Common/RateLimitPartitionerTests.cs`.
 
   **Gotcha found while wiring up the `429` body:** `HttpResponse.WriteAsJsonAsync(...)` always

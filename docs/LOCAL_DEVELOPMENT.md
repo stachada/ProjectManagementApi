@@ -47,10 +47,12 @@ throws `System.IO.InvalidDataException: Failed to load configuration` on startup
 
 ### JWT signing key
 
-> **Not yet consumed by application code.** `Jwt:SigningKey` / `Jwt__SigningKey` is already wired
-> into `docker-compose.yml` and `.github/workflows/ci.yml` as a forward-looking placeholder, but
-> no `appsettings.json` or C# code currently reads it — JWT auth is Phase 8 (Security) in
-> `BUILD_PLAN.md`, not yet implemented. Setting it now is harmless and saves a step later.
+> **Required.** The API signs and validates access tokens with `Jwt:SigningKey` (env var
+> `Jwt__SigningKey`) and **refuses to start without it** — `AddApiServices` throws
+> "Missing required configuration key 'Jwt:SigningKey'". It is deliberately not in
+> `appsettings.json`; supply it via User Secrets locally, `.env` for `docker-compose.yml`, and the
+> `JWT_SIGNING_KEY` secret in CI. (The integration and acceptance test factories generate their own
+> random key per run, so tests don't need it.)
 
 Generate a cryptographically random key (32+ characters; 64 random bytes base64-encoded is the
 project's convention) and use the **same value** in User Secrets, `.env`, and the GitHub Actions
