@@ -58,8 +58,9 @@ internal sealed class GetUserTasksHandler(IAppDbContext db, ICurrentUserService 
 
         TaskFilter filter = query.Filter ?? new TaskFilter();
 
-        var page = Math.Max(1, filter.Page);
-        var pageSize = Math.Clamp(filter.PageSize, 1, 100);
+        PageRequest paging = PageRequest.Normalize(filter.Page, filter.PageSize);
+        var page = paging.Page;
+        var pageSize = paging.PageSize;
 
         // Build the base queryable — AssigneeId always scoped to this user.
         IQueryable<ProjectTask> queryable = db.Tasks
@@ -118,7 +119,7 @@ internal sealed class GetUserTasksHandler(IAppDbContext db, ICurrentUserService 
 
         // Paginate and materialise.
         List<ProjectTask> tasks = await queryable
-            .Skip((page - 1) * pageSize)
+            .Skip(paging.Skip)
             .Take(pageSize)
             .ToListAsync(ct);
 

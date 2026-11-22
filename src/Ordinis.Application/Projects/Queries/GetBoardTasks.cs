@@ -42,8 +42,9 @@ public sealed class GetBoardTasksHandler(IAppDbContext db)
         }
 
         TaskFilter filter = query.Filter ?? new TaskFilter();
-        var pageSize = Math.Min(filter.PageSize, 100);
-        var page = Math.Max(filter.Page, 1);
+        PageRequest paging = PageRequest.Normalize(filter.Page, filter.PageSize);
+        var page = paging.Page;
+        var pageSize = paging.PageSize;
 
         IQueryable<ProjectTask> q = db.Tasks
             .Where(t => t.BoardId == query.BoardId);
@@ -90,7 +91,7 @@ public sealed class GetBoardTasksHandler(IAppDbContext db)
         var totalCount = await q.CountAsync(cancellationToken);
 
         List<ProjectTask> tasks = await q
-            .Skip((page - 1) * pageSize)
+            .Skip(paging.Skip)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 

@@ -71,15 +71,15 @@ public sealed record GetTasksFiltered(TaskFilter? Filter = null) : IQuery<PagedR
 /// </remarks>
 internal sealed class GetTasksFilteredHandler(IAppDbContext db, ICurrentUserService currentUser) : IQueryHandler<GetTasksFiltered, PagedResult<TaskSummaryDto>>
 {
-    private const int MaxPageSize = 100;
 
     public async Task<PagedResult<TaskSummaryDto>> HandleAsync(
         GetTasksFiltered query,
         CancellationToken cancellationToken)
     {
         TaskFilter filter = query.Filter ?? new TaskFilter();
-        var pageSize = Math.Min(filter.PageSize, MaxPageSize);
-        var page = Math.Max(filter.Page, 1);
+        PageRequest paging = PageRequest.Normalize(filter.Page, filter.PageSize);
+        var page = paging.Page;
+        var pageSize = paging.PageSize;
 
         // Start from the base queryable - the global soft-delete filter is applied
         // automatically by EF Core, so deleted tasks never appear here. No Include: comment and
@@ -156,7 +156,7 @@ internal sealed class GetTasksFilteredHandler(IAppDbContext db, ICurrentUserServ
 
         // Pagination
         List<ProjectTask> tasks = await queryable
-            .Skip((page - 1) * pageSize)
+            .Skip(paging.Skip)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 

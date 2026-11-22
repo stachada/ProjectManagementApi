@@ -46,8 +46,9 @@ public sealed class GetOrganizationProjectsHandler(IAppDbContext db, ICurrentUse
         }
 
         ProjectFilter filter = query.Filter ?? new ProjectFilter();
-        var page = Math.Max(1, filter.Page);
-        var pageSize = Math.Clamp(filter.PageSize, 1, 100);
+        PageRequest paging = PageRequest.Normalize(filter.Page, filter.PageSize);
+        var page = paging.Page;
+        var pageSize = paging.PageSize;
 
         // Base query - OrganizationId is always fixed from the route.
         // Members is included so ProjectMapper.ToSummaryDto can read Members.Count.
@@ -81,7 +82,7 @@ public sealed class GetOrganizationProjectsHandler(IAppDbContext db, ICurrentUse
         var totalCount = await q.CountAsync(cancellationToken);
 
         List<Project> projects = await q
-            .Skip((page - 1) * pageSize)
+            .Skip(paging.Skip)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 

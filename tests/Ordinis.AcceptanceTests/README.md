@@ -26,12 +26,13 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-961 scenarios (outline rows expanded): **162 pass, 799 skipped, 0 fail.**
+963 scenarios (outline rows expanded): **191 pass, 772 skipped, 0 fail.**
 
 | Feature | Status |
 | --- | --- |
 | Tasks/task-workflow | ✅ bound — 68 pass, 2 `@gap` (GAP-02) |
 | Tasks/task-listing | ✅ bound — 43 pass |
+| Platform/pagination | ✅ bound — 28 pass |
 | Tasks/task-assignment | ◐ 21 pass via shared steps, 14 skipped |
 | Tasks/task-comments, Tasks/task-creation | ◐ 8 / 7 pass via shared steps, rest skipped |
 | Authorization/role-permissions, resource-visibility, tenant-isolation | ◐ 5 / 1 / 1 pass via shared steps, rest skipped |
@@ -157,7 +158,6 @@ moves to **Fixed gaps** below.
 
 | Id | Current behaviour | Intended behaviour |
 | --- | --- | --- |
-| GAP-01 | `pageSize` < 1 is passed through (empty page / EF error) in `GetTasksFiltered`, `GetProjectsFiltered`, `GetProjectTasks`, `GetBoardTasks`, `GetProjectAudit` | clamped to 1–100 like `GetUserTasks` |
 | GAP-02 | Reopen is a plain move to ToDo, so it also succeeds from Backlog and InProgress (confirmed by the bound `task-workflow.feature`) | reopen only from Done |
 | GAP-03 | A user from another organization can be added to a project | rejected as invalid |
 | GAP-04 | An assignee need not be a project member | assignee must be a Member or Admin of the project |
@@ -175,6 +175,7 @@ moves to **Fixed gaps** below.
 
 | Id | Was | Fix |
 | --- | --- | --- |
+| GAP-01 | Five list queries (`GetTasksFiltered`, `GetProjectsFiltered`, `GetProjectTasks`, `GetBoardTasks`, `GetProjectAudit`) only capped `pageSize` at 100, so 0 / negative sizes reached SQL (`FETCH NEXT 0 ROWS`, negative `Take`) → 500; all seven list queries could also overflow `(page - 1) * pageSize` | One shared `PageRequest.Normalize` (`pageSize` 1..100, `page` ≥ 1 and capped so the offset fits an `int`) used by all seven list queries. Regression specs: `pagination.feature` (bound, 28 scenarios); unit tests `PageRequestTests` |
 | GAP-14 | Task `Status`/`Priority` are stored as strings (`HasConversion<string>()`), so `sortBy=status/priority` ordered alphabetically (priority descending: Medium, Low, High, Critical) | `EntityQueryableExtensions.OrderByEnumValue` sorts by a `CASE` rank of the declared enum order in `GetTasksFiltered`, `GetProjectTasks`, `GetBoardTasks`, `GetUserTasks`; string storage kept. Regression specs: `task-listing.feature` sort scenarios; unit tests `EntityQueryableExtensionsTests` |
 | GAP-15 | Re-creating a deleted project's name passed validation (the soft-delete query filter hid it) but violated the unfiltered unique `(OrganizationId, Slug)` index → 500 | `CreateProjectValidator` checks slug uniqueness with `IgnoreQueryFilters()`, so a deleted project's slug stays reserved (422 on `name`). Regression tests: `ProjectsControllerTests.CreateProject_NameOfSoftDeletedProject_Returns422AndCreatesNothing`; `project-lifecycle.feature` "The name of a deleted project stays reserved" |
 | GAP-16 | `User.Create` / `Organization.Create` lower-case email and slug, but `Login` compared the input as typed (trim only), so mixed-case sign-in worked on SQL Server's case-insensitive collation and failed on PostgreSQL | `Login` normalizes email and slug with `Trim().ToLowerInvariant()`, matching how they are stored. Regression tests: `Ordinis.UnitTests/Application/Users/Commands/LoginHandlerTests` (InMemory compares case-sensitively, like PostgreSQL) |

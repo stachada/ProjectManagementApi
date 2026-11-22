@@ -44,8 +44,9 @@ public sealed class GetProjectTasksHandler(IAppDbContext db)
         }
 
         var filter = query.Filter ?? new TaskFilter();
-        var pageSize = Math.Min(filter.PageSize, 100);
-        var page = Math.Max(filter.Page, 1);
+        PageRequest paging = PageRequest.Normalize(filter.Page, filter.PageSize);
+        var page = paging.Page;
+        var pageSize = paging.PageSize;
 
         // Scope to the project via the Board → ProjectId FK.
         IQueryable<Domain.Tasks.ProjectTask> q = db.Tasks
@@ -98,7 +99,7 @@ public sealed class GetProjectTasksHandler(IAppDbContext db)
         var totalCount = await q.CountAsync(cancellationToken);
 
         List<ProjectTask> tasks = await q
-            .Skip((page - 1) * pageSize)
+            .Skip(paging.Skip)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 

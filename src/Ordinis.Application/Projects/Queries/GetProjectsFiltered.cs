@@ -73,8 +73,9 @@ public sealed class GetProjectsFilteredHandler(IAppDbContext db, ICurrentUserSer
         CancellationToken cancellationToken = default)
     {
         ProjectFilter filter = query.Filter ?? new ProjectFilter();
-        var pageSize = Math.Min(filter.PageSize, 100);
-        var page = Math.Max(filter.Page, 1);
+        PageRequest paging = PageRequest.Normalize(filter.Page, filter.PageSize);
+        var page = paging.Page;
+        var pageSize = paging.PageSize;
 
         IQueryable<Project> q = db.Projects;
 
@@ -116,7 +117,7 @@ public sealed class GetProjectsFilteredHandler(IAppDbContext db, ICurrentUserSer
 
         // Project counts inline to avoid loading full collections.
         List<ProjectSummaryDto> items = await q
-            .Skip((page - 1) * pageSize)
+            .Skip(paging.Skip)
             .Take(pageSize)
             .Select(p => new ProjectSummaryDto
             {
