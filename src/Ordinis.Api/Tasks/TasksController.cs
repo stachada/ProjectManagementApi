@@ -93,7 +93,7 @@ public sealed class TasksController(IDispatcher dispatcher, ICurrentUserService 
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="200">
     /// The task was found and is returned. Cacheable for 30 seconds
-    /// (<c>Cache-Control: public, max-age=30</c>).
+    /// (<c>Cache-Control: private, max-age=30</c>; client-side only, since responses are per caller).
     /// </response>
     /// <response code="404">No task exists with the given ID.</response>
     [HttpGet("{id:guid}")]

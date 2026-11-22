@@ -13,9 +13,9 @@ public sealed class RateLimitingOptions
     public FixedWindowSettings FixedWindow { get; set; } = new();
 
     /// <summary>
-    /// Applied per user ID to authenticated requests. Dormant until Phase 8 (JWT auth) makes
-    /// <c>HttpContext.User</c> an authenticated principal — <see cref="RateLimitPartitioner"/>
-    /// falls back to <see cref="FixedWindow"/> until then.
+    /// Applied per user ID (the JWT <c>sub</c> claim) to authenticated requests. A request whose
+    /// token fails validation is anonymous, so <see cref="RateLimitPartitioner"/> applies
+    /// <see cref="FixedWindow"/> to it instead.
     /// </summary>
     public SlidingWindowSettings SlidingWindow { get; set; } = new();
 
