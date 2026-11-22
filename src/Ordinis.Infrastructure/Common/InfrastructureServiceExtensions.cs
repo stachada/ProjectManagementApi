@@ -60,9 +60,14 @@ public static class InfrastructureServiceExtensions
         services.AddHostedService<OutboxDispatcherJob>();
 
         services.Configure<WebhookDeliveryOptions>(configuration.GetSection(WebhookDeliveryOptions.SectionName));
-        services.AddHttpClient("WebhookDelivery")
+        // Redirects are never followed. WebhookUrlGuard vets only the registered URL, so an
+        // auto-followed 3xx would let any public receiver bounce the delivery POST to a
+        // loopback, private-network or cloud-metadata address (SSRF). With auto-redirect off,
+        // a 3xx is just a non-success status and goes through the normal retry/fail path.
+        services.AddHttpClient(WebhookDeliveryOptions.HttpClientName)
             .ConfigureHttpClient((sp, client) =>
-                client.Timeout = sp.GetRequiredService<IOptions<WebhookDeliveryOptions>>().Value.HttpTimeout);
+                client.Timeout = sp.GetRequiredService<IOptions<WebhookDeliveryOptions>>().Value.HttpTimeout)
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 
         // Stateless — same singleton treatment as ISlugGenerator.
         services.AddSingleton<IWebhookUrlGuard, WebhookUrlGuard>();

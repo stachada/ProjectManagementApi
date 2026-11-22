@@ -103,7 +103,7 @@ internal sealed class WebhookDeliveryDispatcherService : BackgroundService
             return;
         }
 
-        HttpClient client = _httpClientFactory.CreateClient("WebhookDelivery");
+        HttpClient client = _httpClientFactory.CreateClient(WebhookDeliveryOptions.HttpClientName);
 
         foreach (WebhookDelivery delivery in deliveries)
         {
@@ -172,6 +172,7 @@ internal sealed class WebhookDeliveryDispatcherService : BackgroundService
                 return;
             }
 
+            // Includes 3xx: the client never follows redirects (SSRF), so a redirect is a failure.
             RecordFailure(delivery, now, $"Received HTTP {(int)response.StatusCode} {response.ReasonPhrase}.");
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)

@@ -99,7 +99,9 @@ Modifiers: `… using the version <persona> read` (stale If-Match),
 
 ## Gap register
 
-Scenarios tagged `@gap` carry a `# GAP-nn` comment pointing here.
+Scenarios tagged `@gap` carry a `# GAP-nn` comment pointing here. When a gap is fixed,
+its `@gap` tags are removed (the scenarios become ordinary regression specs) and the row
+moves to **Fixed gaps** below.
 
 | Id | Current behaviour | Intended behaviour |
 | --- | --- | --- |
@@ -119,7 +121,12 @@ Scenarios tagged `@gap` carry a `# GAP-nn` comment pointing here.
 | GAP-14 | Task `Status`/`Priority` are stored as strings (`ProjectTaskConfiguration` `HasConversion<string>()`), so `sortBy=status/priority` orders alphabetically | ordered by workflow position / severity |
 | GAP-15 | Re-creating a deleted project's name passes validation (soft-delete filter hides it) but violates the unfiltered unique `(OrganizationId, Slug)` index → 500 | rejected as invalid on `name` (slug stays reserved) |
 | GAP-16 | `User.Create` lower-cases emails but `Login` compares the input as typed, so mixed-case sign-in works on SQL Server (CI collation) but fails on PostgreSQL | email matched case-insensitively on both providers |
-| GAP-17 | **Security (SSRF):** the `WebhookDelivery` HttpClient follows redirects (default `AllowAutoRedirect = true`), so a public receiver can redirect delivery to loopback / private / cloud-metadata addresses that `WebhookUrlGuard` never vets | redirects are not followed; a 3xx counts as a failed attempt |
+
+### Fixed gaps
+
+| Id | Was | Fix |
+| --- | --- | --- |
+| GAP-17 | **Security (SSRF):** the `WebhookDelivery` HttpClient followed redirects (default `AllowAutoRedirect = true`), so a public receiver could redirect delivery to loopback / private / cloud-metadata addresses that `WebhookUrlGuard` never vets | primary handler `SocketsHttpHandler { AllowAutoRedirect = false }`; a 3xx is a failed attempt. Regression test: `Ordinis.IntegrationTests/Common/WebhookDeliveryHttpClientTests` |
 
 ## Out of scope (by design, not gaps)
 
