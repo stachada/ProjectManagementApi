@@ -46,9 +46,10 @@ public sealed class GetProjectAuditHandler(IAppDbContext db) : IQueryHandler<Get
         }
 
         AuditFilter filter = query.Filter ?? new AuditFilter();
-        var pageSize = Math.Min(filter.PageSize, 100);
-        var page = Math.Max(filter.Page, 1);
-        var skip = (page - 1) * pageSize;
+        PageRequest paging = PageRequest.Normalize(filter.Page, filter.PageSize);
+        var page = paging.Page;
+        var pageSize = paging.PageSize;
+        var skip = paging.Skip;
 
         IDbConnection connection = db.GetDbConnection();
 

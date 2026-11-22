@@ -51,26 +51,28 @@ Feature: Pagination
         | 0    |
         | -1   |
 
+    Scenario: A page number far beyond the end returns an empty page
+      When Bob lists all tasks, page 2147483647 with 20 per page
+      Then 0 tasks are listed
+      And the total count is 45
+
+    # GAP-01 (fixed): every list normalizes paging through PageRequest; before,
+    # five of them passed 0 / negative sizes to SQL (a server error).
     Scenario Outline: A page size below 1 on <list> is treated as 1
       When Bob lists <list>, page 1 with <size> per page
       Then 1 entry is listed
 
-      Examples: Lists that clamp today
-        | list                         | size |
-        | the tasks of Bob             | 0    |
-        | the projects of organization "Acme" | 0 |
-
-      # GAP-01: these queries only cap the maximum, so 0 / negative sizes
-      # yield an empty page or a database error.
-      @gap
-      Examples: Lists that do not clamp yet
+      Examples:
         | list                                | size |
         | all tasks                           | 0    |
         | all tasks                           | -5   |
-        | the projects                        | 0    |
         | the tasks of project "Apollo"       | 0    |
         | the tasks of board "Sprint 1"       | 0    |
+        | the tasks of Bob                    | 0    |
+        | the projects                        | 0    |
+        | the projects of organization "Acme" | 0    |
         | the audit trail of project "Apollo" | 0    |
+        | the search results for "task"       | 0    |
 
   Rule: Every paged list reports its total
 
