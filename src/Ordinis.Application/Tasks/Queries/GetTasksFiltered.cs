@@ -141,10 +141,9 @@ internal sealed class GetTasksFilteredHandler(IAppDbContext db, ICurrentUserServ
         {
             ("title", false) => queryable.OrderBy(t => t.Title).ThenByStableId(),
             ("title", true) => queryable.OrderByDescending(t => t.Title).ThenByStableId(),
-            ("status", false) => queryable.OrderBy(t => t.Status).ThenByStableId(),
-            ("status", true) => queryable.OrderByDescending(t => t.Status).ThenByStableId(),
-            ("priority", false) => queryable.OrderBy(t => t.Priority).ThenByStableId(),
-            ("priority", true) => queryable.OrderByDescending(t => t.Priority).ThenByStableId(),
+            // Status/Priority are stored as strings: sort by declared enum order, not alphabetically.
+            ("status", var descending) => queryable.OrderByEnumValue(t => t.Status, descending).ThenByStableId(),
+            ("priority", var descending) => queryable.OrderByEnumValue(t => t.Priority, descending).ThenByStableId(),
             // Lowercase: SortBy is lowercased above, so a mixed-case pattern can never match.
             ("duedate", false) => queryable.OrderBy(t => t.DueDate).ThenByStableId(),
             ("duedate", true) => queryable.OrderByDescending(t => t.DueDate).ThenByStableId(),

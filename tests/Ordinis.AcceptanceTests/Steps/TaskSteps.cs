@@ -44,6 +44,36 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
         Assert.True(response.IsSuccess, $"Arrangement failed — {persona} could not reopen '{title}': {response}");
     }
 
+    [Given(@"^(\w+) has deleted the task ""([^""]+)""$")]
+    public async Task GivenPersonaHasDeletedTheTask(string persona, string title)
+    {
+        ApiResponse response = await api.SendAsync(persona, HttpMethod.Delete, $"/api/v1/tasks/{world.TaskNamed(title)}",
+            body: null, await CurrentVersionAsync(title));
+        Assert.True(response.IsSuccess, $"Arrangement failed — {persona} could not delete '{title}': {response}");
+    }
+
+    [Given(@"^(\w+) has renamed the task ""([^""]+)"" to ""([^""]+)""$")]
+    public async Task GivenPersonaHasRenamedTheTask(string persona, string title, string newTitle)
+    {
+        await WhenPersonaRenamesTheTask(persona, title, newTitle);
+        Assert.True(world.Response.IsSuccess, $"Arrangement failed — {persona} could not rename '{title}': {world.Response}");
+    }
+
+    [Given(@"^(\w+) has commented ""([^""]+)"" on the task ""([^""]+)""$")]
+    public async Task GivenPersonaHasCommented(string persona, string content, string title)
+    {
+        await WhenPersonaComments(persona, content, title);
+        Assert.True(world.Response.IsSuccess, $"Arrangement failed — {persona} could not comment on '{title}': {world.Response}");
+    }
+
+    [Given(@"^(\w+) has uploaded ""([^""]+)"" to the task ""([^""]+)""$")]
+    public async Task GivenPersonaHasUploaded(string persona, string fileName, string title)
+    {
+        ApiResponse response = await api.UploadAsync(persona, $"/api/v1/tasks/{world.TaskNamed(title)}/attachments",
+            fileName, "text/plain", System.Text.Encoding.UTF8.GetBytes($"contents of {fileName}"));
+        Assert.True(response.IsSuccess, $"Arrangement failed — {persona} could not upload '{fileName}': {response}");
+    }
+
     // ---- Actions ----
 
     [When(@"^(\w+) creates a task ""([^""]+)"" on board ""([^""]+)""$")]

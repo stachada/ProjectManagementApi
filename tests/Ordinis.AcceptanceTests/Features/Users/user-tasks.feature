@@ -82,8 +82,7 @@ Feature: A user's assigned tasks
         | createdAt | ascending  | Fix login bug, Write docs, Reply to Initech |
         | createdAt | descending | Reply to Initech, Write docs, Fix login bug |
 
-    # GAP-14: priority sorts alphabetically today.
-    @gap
+    # GAP-14 (fixed): priority sorts by severity, not alphabetically.
     Scenario: Sorting Bob's tasks by priority
       When Bob lists the tasks of Bob sorted by priority descending
       Then the listed tasks are "Fix login bug, Reply to Initech, Write docs"

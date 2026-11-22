@@ -105,9 +105,8 @@ internal sealed class GetUserTasksHandler(IAppDbContext db, ICurrentUserService 
             "title" => filter.SortDescending
                                 ? queryable.OrderByDescending(t => t.Title).ThenByStableId()
                                 : queryable.OrderBy(t => t.Title).ThenByStableId(),
-            "priority" => filter.SortDescending
-                                ? queryable.OrderByDescending(t => t.Priority).ThenByStableId()
-                                : queryable.OrderBy(t => t.Priority).ThenByStableId(),
+            // Priority is stored as a string: sort by severity (enum order), not alphabetically.
+            "priority" => queryable.OrderByEnumValue(t => t.Priority, filter.SortDescending).ThenByStableId(),
             "duedate" => filter.SortDescending
                                 ? queryable.OrderByDescending(t => t.DueDate).ThenByStableId()
                                 : queryable.OrderBy(t => t.DueDate).ThenByStableId(),

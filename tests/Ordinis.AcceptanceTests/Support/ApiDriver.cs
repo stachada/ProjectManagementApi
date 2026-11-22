@@ -44,13 +44,25 @@ internal sealed class ApiDriver(World world, Seeder seeder)
             request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
         }
 
-        using HttpResponseMessage response = await client.SendAsync(request);
-        var result = new ApiResponse(
-            response.StatusCode,
-            await response.Content.ReadAsStringAsync(),
-            response.Headers.ETag?.Tag,
-            response.Headers.Location);
+        ApiResponse result = await SendRawAsync(client, request);
+        world.LastResponse = result;
+        return result;
+    }
 
+    /// <summary>
+    /// Uploads a file as <c>multipart/form-data</c> (field <c>file</c>) and records the response.
+    /// </summary>
+    public async Task<ApiResponse> UploadAsync(string persona, string path, string fileName, string contentType, byte[] content)
+    {
+        using HttpClient client = TestHost.Factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await seeder.AccessTokenForAsync(world.PersonaNamed(persona).UserId));
+
+        var file = new ByteArrayContent(content);
+        file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        request.Content = new MultipartFormDataContent { { file, "file", fileName } };
+
+        ApiResponse result = await SendRawAsync(client, request);
         world.LastResponse = result;
         return result;
     }
@@ -61,18 +73,29 @@ internal sealed class ApiDriver(World world, Seeder seeder)
         using HttpClient client = TestHost.Factory.CreateClient();
         using var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await seeder.AccessTokenForAsync(userId));
+        return await SendRawAsync(client, request);
+    }
 
+    private static async Task<ApiResponse> SendRawAsync(HttpClient client, HttpRequestMessage request)
+    {
         using HttpResponseMessage response = await client.SendAsync(request);
+
+        int? totalCount = response.Headers.TryGetValues("X-Total-Count", out IEnumerable<string>? values)
+            && int.TryParse(values.FirstOrDefault(), out int count)
+                ? count
+                : null;
+
         return new ApiResponse(
             response.StatusCode,
             await response.Content.ReadAsStringAsync(),
             response.Headers.ETag?.Tag,
-            response.Headers.Location);
+            response.Headers.Location,
+            totalCount);
     }
 }
 
 /// <summary>A captured HTTP response, decoupled from the disposed <see cref="HttpResponseMessage"/>.</summary>
-internal sealed record ApiResponse(HttpStatusCode StatusCode, string Body, string? ETag, Uri? Location)
+internal sealed record ApiResponse(HttpStatusCode StatusCode, string Body, string? ETag, Uri? Location, int? TotalCount)
 {
     public bool IsSuccess => (int)StatusCode is >= 200 and < 300;
 

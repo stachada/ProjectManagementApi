@@ -20,6 +20,9 @@ internal sealed class World
 
     public Dictionary<string, Guid> Tasks { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>Task IDs in the order they were created, for "listed in creation order" checks.</summary>
+    public List<Guid> TaskCreationOrder { get; } = [];
+
     /// <summary>
     /// Hidden user that "created" each seeded project (the domain makes the creator its first
     /// Admin). Removed from the project as soon as a named Admin joins, so membership lists only

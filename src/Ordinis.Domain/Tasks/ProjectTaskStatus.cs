@@ -30,7 +30,9 @@ namespace Ordinis.Domain.Tasks;
 /// <b>EF Core mapping:</b> Stored as a <c>varchar</c> string column (not an integer)
 /// so the database values are readable without a lookup table, and reordering
 /// the enum numbers never corrupts data. Configured in <c>TaskConfiguration</c>
-/// via <c>.HasConversion<string>()</c>.
+/// via <c>.HasConversion<string>()</c>. Consequently <c>ORDER BY Status</c> would be alphabetical;
+/// queries sort by workflow position (the declared order) with
+/// <c>EntityQueryableExtensions.OrderByEnumValue</c>.
 /// </para>
 /// </remarks>
 public enum ProjectTaskStatus

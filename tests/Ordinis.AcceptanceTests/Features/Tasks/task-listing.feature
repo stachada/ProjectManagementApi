@@ -90,10 +90,8 @@ Feature: Task listing, filtering and sorting
         | title    | ascending  | Add dark mode, Fix login bug, Release 1.0, Write docs |
         | title    | descending | Write docs, Release 1.0, Fix login bug, Add dark mode |
 
-      # GAP-14: Status and Priority are persisted as strings, so the database
-      # sorts them alphabetically (e.g. Medium, Low, High, Critical) instead of
-      # by workflow position / severity.
-      @gap
+      # GAP-14 (fixed): Status and Priority are persisted as strings, so these
+      # must sort by workflow position / severity, not alphabetically.
       Examples: Sorting by workflow position and severity
         | field    | direction  | tasks                                                 |
         | priority | descending | Fix login bug, Release 1.0, Write docs, Add dark mode |
@@ -149,8 +147,7 @@ Feature: Task listing, filtering and sorting
         | status ToDo      | Write docs                 |
         | priority Low     | Add dark mode              |
 
-    # GAP-14: priority sorts alphabetically today.
-    @gap
+    # GAP-14 (fixed): priority sorts by severity, not alphabetically.
     Scenario: Project tasks sorted by priority
       When Bob lists the tasks of project "Apollo" sorted by priority descending
       Then the listed tasks are "Fix login bug, Release 1.0, Write docs, Add dark mode"
