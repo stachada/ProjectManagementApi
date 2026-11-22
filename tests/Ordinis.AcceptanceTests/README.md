@@ -170,7 +170,6 @@ moves to **Fixed gaps** below.
 | GAP-11 | Any project Member can remove any attachment | only the uploader, a project Admin or the org Admin |
 | GAP-12 | Users and organizations expose no version (ETag) and accept writes without If-Match | same optimistic concurrency as other aggregates |
 | GAP-13 | Two concurrent requests with the same Idempotency-Key both execute | only one executes; the other replays or is rejected as conflicting |
-| GAP-16 | `User.Create` lower-cases emails but `Login` compares the input as typed, so mixed-case sign-in works on SQL Server (CI collation) but fails on PostgreSQL | email matched case-insensitively on both providers |
 
 ### Fixed gaps
 
@@ -178,6 +177,7 @@ moves to **Fixed gaps** below.
 | --- | --- | --- |
 | GAP-14 | Task `Status`/`Priority` are stored as strings (`HasConversion<string>()`), so `sortBy=status/priority` ordered alphabetically (priority descending: Medium, Low, High, Critical) | `EntityQueryableExtensions.OrderByEnumValue` sorts by a `CASE` rank of the declared enum order in `GetTasksFiltered`, `GetProjectTasks`, `GetBoardTasks`, `GetUserTasks`; string storage kept. Regression specs: `task-listing.feature` sort scenarios; unit tests `EntityQueryableExtensionsTests` |
 | GAP-15 | Re-creating a deleted project's name passed validation (the soft-delete query filter hid it) but violated the unfiltered unique `(OrganizationId, Slug)` index → 500 | `CreateProjectValidator` checks slug uniqueness with `IgnoreQueryFilters()`, so a deleted project's slug stays reserved (422 on `name`). Regression tests: `ProjectsControllerTests.CreateProject_NameOfSoftDeletedProject_Returns422AndCreatesNothing`; `project-lifecycle.feature` "The name of a deleted project stays reserved" |
+| GAP-16 | `User.Create` / `Organization.Create` lower-case email and slug, but `Login` compared the input as typed (trim only), so mixed-case sign-in worked on SQL Server's case-insensitive collation and failed on PostgreSQL | `Login` normalizes email and slug with `Trim().ToLowerInvariant()`, matching how they are stored. Regression tests: `Ordinis.UnitTests/Application/Users/Commands/LoginHandlerTests` (InMemory compares case-sensitively, like PostgreSQL) |
 | GAP-17 | **Security (SSRF):** the `WebhookDelivery` HttpClient followed redirects (default `AllowAutoRedirect = true`), so a public receiver could redirect delivery to loopback / private / cloud-metadata addresses that `WebhookUrlGuard` never vets | primary handler `SocketsHttpHandler { AllowAutoRedirect = false }`; a 3xx is a failed attempt. Regression test: `Ordinis.IntegrationTests/Common/WebhookDeliveryHttpClientTests` |
 
 ## Out of scope (by design, not gaps)
