@@ -152,17 +152,19 @@ public sealed class CreateTaskValidatorTests
         TestValidationResult<CreateTask> result = await validator.TestValidateAsync(command);
 
         result.ShouldHaveValidationErrorFor(x => x.AssigneeId)
-            .WithErrorMessage("Assignee user does not exist.");
+            .WithErrorMessage("The assignee must be a Member or Admin of this task's project.");
     }
 
     [Fact]
-    public async Task TestValidateAsync_AssigneeExists_HasNoValidationErrorForAssigneeId()
+    public async Task TestValidateAsync_AssigneeIsProjectContributor_HasNoValidationErrorForAssigneeId()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        Board board = BoardBuilder.Create();
         User user = UserBuilder.Create();
-        db.Boards.Add(board);
+        Project project = ProjectBuilder.Create(organizationId: user.OrganizationId, createdByUserId: user.Id); // creator = Admin
+        Board board = BoardBuilder.Create(projectId: project.Id);
         db.Users.Add(user);
+        db.Projects.Add(project);
+        db.Boards.Add(board);
         await db.SaveChangesAsync();
         var validator = new CreateTaskValidator(db);
         CreateTask command = ValidCommand(board.Id, assigneeId: user.Id);
@@ -170,6 +172,26 @@ public sealed class CreateTaskValidatorTests
         TestValidationResult<CreateTask> result = await validator.TestValidateAsync(command);
 
         result.ShouldNotHaveValidationErrorFor(x => x.AssigneeId);
+    }
+
+    // GAP-04: an existing user who cannot work on the project is not a valid assignee.
+    [Fact]
+    public async Task TestValidateAsync_AssigneeExistsButNotProjectMember_HasValidationErrorForAssigneeId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        User outsider = UserBuilder.Create();
+        Project project = ProjectBuilder.Create(organizationId: outsider.OrganizationId);
+        Board board = BoardBuilder.Create(projectId: project.Id);
+        db.Users.Add(outsider);
+        db.Projects.Add(project);
+        db.Boards.Add(board);
+        await db.SaveChangesAsync();
+        var validator = new CreateTaskValidator(db);
+
+        TestValidationResult<CreateTask> result = await validator.TestValidateAsync(ValidCommand(board.Id, assigneeId: outsider.Id));
+
+        result.ShouldHaveValidationErrorFor(x => x.AssigneeId)
+            .WithErrorMessage("The assignee must be a Member or Admin of this task's project.");
     }
 
     [Fact]

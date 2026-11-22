@@ -87,8 +87,8 @@ Feature: Task creation
       When Bob creates a task "Write release notes" on board "Sprint 1" assigned to an unknown user
       Then the request is rejected as invalid on field "assigneeId"
 
-    # GAP-04: only existence of the assignee is validated today.
-    @gap @multi-tenant
+    # GAP-04 (fixed): users must belong to the project's organization and be able to work on it.
+    @multi-tenant
     Scenario Outline: The assignee must be a contributor of the project: <assignee>
       When Bob creates a task "Write release notes" on board "Sprint 1" assigned to <assignee>
       Then the request is rejected as invalid on field "assigneeId"

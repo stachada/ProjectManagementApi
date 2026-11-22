@@ -1,5 +1,7 @@
 using FluentValidation.TestHelper;
 using Ordinis.Application.Tasks.Commands;
+using Ordinis.Domain.Projects;
+using Ordinis.Domain.Tasks;
 using Ordinis.Domain.Users;
 using Ordinis.UnitTests.Common;
 using Ordinis.UnitTests.Common.Builders;
@@ -71,16 +73,93 @@ public sealed class AssignTaskValidatorTests
     public async Task TestValidateAsync_AssigneeDoesNotExist_HasValidationErrorForAssigneeId()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
+        (Guid taskId, _, _) = await SeedTaskInProjectAsync(db);
         var validator = new AssignTaskValidator(db);
 
         TestValidationResult<AssignTask> result = await validator.TestValidateAsync(
-            ValidCommand(
-                Guid.CreateVersion7(),
-                Guid.CreateVersion7(),
-                Guid.CreateVersion7()));
+            ValidCommand(taskId, Guid.CreateVersion7(), Guid.CreateVersion7()));
 
         result.ShouldHaveValidationErrorFor(x => x.AssigneeId)
-            .WithErrorMessage("Assignee does not exist.");
+            .WithErrorMessage("The assignee must be a Member or Admin of this task's project.");
+    }
+
+    // GAP-04: the assignee must be able to work on the task — authorization only checks the caller.
+    [Theory]
+    [InlineData(Role.Member, false)]
+    [InlineData(Role.Admin, false)]
+    [InlineData(Role.Viewer, true)]
+    public async Task TestValidateAsync_AssigneeProjectRole_DecidesValidity(Role role, bool expectError)
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        (Guid taskId, Project project, Guid organizationId) = await SeedTaskInProjectAsync(db);
+        User assignee = UserBuilder.Create(organizationId: organizationId, email: "assignee@example.com");
+        db.Users.Add(assignee);
+        project.AddMember(assignee.Id, role, DateTimeOffset.UtcNow);
+        await db.SaveChangesAsync();
+        var validator = new AssignTaskValidator(db);
+
+        TestValidationResult<AssignTask> result = await validator.TestValidateAsync(
+            ValidCommand(taskId, assignee.Id, Guid.CreateVersion7()));
+
+        if (expectError)
+        {
+            result.ShouldHaveValidationErrorFor(x => x.AssigneeId);
+        }
+        else
+        {
+            result.ShouldNotHaveValidationErrorFor(x => x.AssigneeId);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)] // same-organization user who is not a project member
+    [InlineData(true)]  // user of another organization
+    public async Task TestValidateAsync_AssigneeNotAProjectMember_HasValidationErrorForAssigneeId(bool otherOrganization)
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        (Guid taskId, _, Guid organizationId) = await SeedTaskInProjectAsync(db);
+        User outsider = UserBuilder.Create(
+            organizationId: otherOrganization ? Guid.CreateVersion7() : organizationId,
+            email: "outsider@example.com");
+        db.Users.Add(outsider);
+        await db.SaveChangesAsync();
+        var validator = new AssignTaskValidator(db);
+
+        TestValidationResult<AssignTask> result = await validator.TestValidateAsync(
+            ValidCommand(taskId, outsider.Id, Guid.CreateVersion7()));
+
+        result.ShouldHaveValidationErrorFor(x => x.AssigneeId);
+    }
+
+    [Fact]
+    public async Task TestValidateAsync_AssigneeIsOrgAdmin_HasNoValidationErrorForAssigneeId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        (Guid taskId, _, Guid organizationId) = await SeedTaskInProjectAsync(db);
+        User orgAdmin = UserBuilder.Create(organizationId: organizationId, email: "admin@example.com", orgRole: Role.Admin);
+        db.Users.Add(orgAdmin);
+        await db.SaveChangesAsync();
+        var validator = new AssignTaskValidator(db);
+
+        TestValidationResult<AssignTask> result = await validator.TestValidateAsync(
+            ValidCommand(taskId, orgAdmin.Id, Guid.CreateVersion7()));
+
+        result.ShouldNotHaveValidationErrorFor(x => x.AssigneeId);
+    }
+
+    /// <summary>A project (with its creator as Admin), a board and a task in it.</summary>
+    private static async Task<(Guid TaskId, Project Project, Guid OrganizationId)> SeedTaskInProjectAsync(TestAppDbContext db)
+    {
+        User creator = UserBuilder.Create(email: "creator@example.com");
+        Project project = ProjectBuilder.Create(organizationId: creator.OrganizationId, createdByUserId: creator.Id);
+        Board board = BoardBuilder.Create(projectId: project.Id, createdByUserId: creator.Id);
+        ProjectTask task = ProjectTask.Create(board.Id, creator.Id, "Fix login bug", DateTimeOffset.UtcNow);
+        db.Users.Add(creator);
+        db.Projects.Add(project);
+        db.Boards.Add(board);
+        db.Tasks.Add(task);
+        await db.SaveChangesAsync();
+        return (task.Id, project, creator.OrganizationId);
     }
 
     [Fact]

@@ -74,8 +74,8 @@ Feature: Project membership
       When Alice adds Nora to project "Apollo" with an unknown role
       Then the request is rejected as invalid on field "role"
 
-    # GAP-03: organization membership of the new project member is not checked today.
-    @gap @multi-tenant
+    # GAP-03 (fixed): users must belong to the project's organization and be able to work on it.
+    @multi-tenant
     Scenario: Users from another organization cannot be added
       When Alice adds Mallory to project "Apollo" as a Member
       Then the request is rejected as invalid on field "userId"

@@ -76,11 +76,15 @@ internal sealed class AssignTaskValidator : AbstractValidator<AssignTask>
         RuleFor(t => t.TaskId)
             .NotEmpty();
 
+        // The assignee must be able to work on the task: a contributor of the task's project
+        // (authorization only checks the caller). Also rejects unknown and cross-tenant users.
+        // An unknown task passes here so the handler can report 404.
         RuleFor(t => t.AssigneeId)
             .NotEmpty()
-            .MustAsync(async (assigneeId, ct) =>
-                await db.Users.AnyAsync(u => u.Id == assigneeId, ct))
-            .WithMessage("Assignee does not exist.");
+            .MustAsync(async (command, assigneeId, ct) =>
+                await ProjectAccessQueries.ProjectOfTaskAsync(db, command.TaskId, ct) is not Guid projectId
+                || await ProjectAccessQueries.CanContributeAsync(db, projectId, assigneeId, ct))
+            .WithMessage("The assignee must be a Member or Admin of this task's project.");
 
         RuleFor(t => t.RequestedByUserId)
             .NotEmpty();

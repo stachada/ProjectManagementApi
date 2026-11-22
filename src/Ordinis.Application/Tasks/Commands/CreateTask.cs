@@ -109,14 +109,15 @@ internal sealed class CreateTaskValidator : AbstractValidator<CreateTask>
             .IsInEnum()
             .WithMessage("Priority must be a valid Priority value.");
 
-        // AssigneeId is optional at creation; when provided, existence is verified
-        // Project-membership check is intentionally omitted here - that policy
-        // is enforced at the authorization layer, not in the domain command.
+        // AssigneeId is optional at creation. When given, the assignee must be able to work on the
+        // task — a contributor of the board's project (authorization only checks the caller).
+        // This also rejects unknown users and users of another organization.
         RuleFor(x => x.AssigneeId)
-            .MustAsync(async (assigneeId, ct) =>
-                await db.Users.AnyAsync(u => u.Id == assigneeId, ct))
+            .MustAsync(async (command, assigneeId, ct) =>
+                await ProjectAccessQueries.ProjectOfBoardAsync(db, command.BoardId, ct) is Guid projectId
+                && await ProjectAccessQueries.CanContributeAsync(db, projectId, assigneeId!.Value, ct))
             .When(x => x.AssigneeId.HasValue)
-            .WithMessage("Assignee user does not exist.");
+            .WithMessage("The assignee must be a Member or Admin of this task's project.");
 
         RuleFor(x => x.RequestedByUserId)
             .Cascade(CascadeMode.Stop)
@@ -124,40 +125,8 @@ internal sealed class CreateTaskValidator : AbstractValidator<CreateTask>
             .MustAsync(async (id, ct) => await db.Users.AnyAsync(u => u.Id == id, ct))
                 .WithMessage("User not found.")
             .MustAsync(async (command, requestedByUserId, ct) =>
-            {
-                var project = await db.Boards
-                    .Where(b => b.Id == command.BoardId)
-                    .Join(db.Projects, b => b.ProjectId, p => p.Id, (b, p) => new { p.Id, p.OrganizationId })
-                    .SingleOrDefaultAsync(ct);
-
-                if (project is null)
-                {
-                    return false;
-                }
-
-                // An org Admin of the project's own organization may create tasks in any of its
-                // projects - the same rule ProjectScopeAuthorizationHandler applies to every
-                // other project-scoped action.
-                bool isOrgAdmin = await db.Users.AnyAsync(
-                    u => u.Id == requestedByUserId
-                        && u.OrgRole == Role.Admin
-                        && u.OrganizationId == project.OrganizationId,
-                    ct);
-
-                if (isOrgAdmin)
-                {
-                    return true;
-                }
-
-                // Load the role, then compare in C#. Role is stored as a string, so ">=" inside the
-                // query would compare text ('Admin' < 'Member' < 'Viewer'), not enum order.
-                Role? role = await db.ProjectMembers
-                    .Where(m => m.ProjectId == project.Id && m.UserId == requestedByUserId)
-                    .Select(m => (Role?)m.Role)
-                    .SingleOrDefaultAsync(ct);
-
-                return role >= Role.Member;   // null >= Member is false, so non-members fail too
-            })
+                await ProjectAccessQueries.ProjectOfBoardAsync(db, command.BoardId, ct) is Guid projectId
+                && await ProjectAccessQueries.CanContributeAsync(db, projectId, requestedByUserId, ct))
             .WithMessage("You must be a Member or Admin of this task's project to create tasks on it.");
     }
 }

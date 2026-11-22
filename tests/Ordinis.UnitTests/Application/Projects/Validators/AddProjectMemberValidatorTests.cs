@@ -21,8 +21,8 @@ public sealed class AddProjectMemberValidatorTests
     public async Task TestValidateAsync_ValidCommand_HasNoValidationErrors()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        Project project = ProjectBuilder.Create();
         User user = UserBuilder.Create();
+        Project project = ProjectBuilder.Create(organizationId: user.OrganizationId);
         db.Projects.Add(project);
         db.Users.Add(user);
         await db.SaveChangesAsync();
@@ -66,8 +66,8 @@ public sealed class AddProjectMemberValidatorTests
     public async Task TestValidateAsync_ProjectExists_HasNoValidationErrorForProjectId()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        Project project = ProjectBuilder.Create();
         User user = UserBuilder.Create();
+        Project project = ProjectBuilder.Create(organizationId: user.OrganizationId);
         db.Projects.Add(project);
         db.Users.Add(user);
         await db.SaveChangesAsync();
@@ -111,8 +111,8 @@ public sealed class AddProjectMemberValidatorTests
     public async Task TestValidateAsync_UserExists_HasNoValidationErrorForUserId()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        Project project = ProjectBuilder.Create();
         User user = UserBuilder.Create();
+        Project project = ProjectBuilder.Create(organizationId: user.OrganizationId);
         db.Projects.Add(project);
         db.Users.Add(user);
         await db.SaveChangesAsync();
@@ -127,8 +127,8 @@ public sealed class AddProjectMemberValidatorTests
     public async Task TestValidateAsync_RoleNotAValidEnumValue_HasValidationErrorForRole()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        Project project = ProjectBuilder.Create();
         User user = UserBuilder.Create();
+        Project project = ProjectBuilder.Create(organizationId: user.OrganizationId);
         db.Projects.Add(project);
         db.Users.Add(user);
         await db.SaveChangesAsync();
@@ -147,8 +147,8 @@ public sealed class AddProjectMemberValidatorTests
     public async Task TestValidateAsync_RoleIsValidEnumValue_HasNoValidationErrorForRole(Role role)
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        Project project = ProjectBuilder.Create();
         User user = UserBuilder.Create();
+        Project project = ProjectBuilder.Create(organizationId: user.OrganizationId);
         db.Projects.Add(project);
         db.Users.Add(user);
         await db.SaveChangesAsync();
@@ -163,8 +163,8 @@ public sealed class AddProjectMemberValidatorTests
     public async Task TestValidateAsync_UserAlreadyAMember_HasValidationErrorForUserId()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        Project project = ProjectBuilder.Create();
         User user = UserBuilder.Create();
+        Project project = ProjectBuilder.Create(organizationId: user.OrganizationId);
         db.Projects.Add(project);
         db.Users.Add(user);
         db.ProjectMembers.Add(ProjectMember.Create(project.Id, user.Id, Role.Member, DateTimeOffset.UtcNow));
@@ -181,8 +181,8 @@ public sealed class AddProjectMemberValidatorTests
     public async Task TestValidateAsync_UserNotYetAMember_HasNoValidationErrorForUserId()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        Project project = ProjectBuilder.Create();
         User user = UserBuilder.Create();
+        Project project = ProjectBuilder.Create(organizationId: user.OrganizationId);
         db.Projects.Add(project);
         db.Users.Add(user);
         await db.SaveChangesAsync();
@@ -197,8 +197,8 @@ public sealed class AddProjectMemberValidatorTests
     public async Task TestValidateAsync_NullIfMatch_HasValidationErrorForIfMatch()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
-        Project project = ProjectBuilder.Create();
         User user = UserBuilder.Create();
+        Project project = ProjectBuilder.Create(organizationId: user.OrganizationId);
         db.Projects.Add(project);
         db.Users.Add(user);
         await db.SaveChangesAsync();
@@ -209,5 +209,24 @@ public sealed class AddProjectMemberValidatorTests
 
         result.ShouldHaveValidationErrorFor(x => x.IfMatch)
             .WithErrorMessage("If-Match header is required.");
+    }
+
+    // GAP-03: a user of another organization cannot join the project, and is reported exactly
+    // like a nonexistent user so tenants cannot be probed for user IDs.
+    [Fact]
+    public async Task TestValidateAsync_UserFromAnotherOrganization_HasValidationErrorForUserId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Project project = ProjectBuilder.Create(organizationId: Guid.CreateVersion7());
+        User outsider = UserBuilder.Create(organizationId: Guid.CreateVersion7());
+        db.Projects.Add(project);
+        db.Users.Add(outsider);
+        await db.SaveChangesAsync();
+        var validator = new AddProjectMemberValidator(db);
+
+        TestValidationResult<AddProjectMember> result = await validator.TestValidateAsync(ValidCommand(project.Id, outsider.Id));
+
+        result.ShouldHaveValidationErrorFor(x => x.UserId)
+            .WithErrorMessage("User not found.");
     }
 }

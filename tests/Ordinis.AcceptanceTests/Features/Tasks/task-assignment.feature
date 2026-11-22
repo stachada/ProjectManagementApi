@@ -40,8 +40,8 @@ Feature: Task assignment
       Then the request is rejected as invalid on field "assigneeId"
       And the task "Fix login bug" has no assignee
 
-    # GAP-04: only existence of the assignee is validated today.
-    @gap @multi-tenant
+    # GAP-04 (fixed): users must belong to the project's organization and be able to work on it.
+    @multi-tenant
     Scenario Outline: The assignee must be a contributor of the project: <assignee>
       When Alice assigns the task "Fix login bug" to <assignee>
       Then the request is rejected as invalid on field "assigneeId"

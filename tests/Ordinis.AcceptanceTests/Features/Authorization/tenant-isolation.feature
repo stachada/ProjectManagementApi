@@ -58,8 +58,7 @@ Feature: Tenant isolation
       When Mallory creates a project "Trojan" in "Acme"
       Then the request is rejected as invalid
 
-    # GAP-03 / GAP-04: cross-tenant users can currently be added or assigned.
-    @gap
+    # GAP-03 / GAP-04 (fixed): users must belong to the project's organization and be able to work on it.
     Scenario Outline: Another tenant's user cannot be pulled into a project: <action>
       Given Olivia is an Admin of project "Apollo"
       When Olivia <action>
