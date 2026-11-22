@@ -229,14 +229,30 @@ places, deliberately not just one:
 host that fails to resolve at all (fails closed rather than treating "unknown" as
 "allowed").
 
-**Not covered, and worth knowing:** this checks the URL's resolved IP address, not what
-happens after the TCP connection is established — it doesn't inspect HTTP redirects (a
-public URL that 302s to a private one on the delivery `HttpClient` would need
-`AllowAutoRedirect = false` plus a manual redirect-target re-check to close, not currently
-implemented) or IP-based access control lists narrower than the ranges above (e.g. an
-internal service the operator additionally wants excluded that happens to sit on a public
-IP). Reasonable ranges for a general-purpose API; a deployment with unusually strict
-requirements should treat this as a floor, not a ceiling.
+**Redirects are never followed.** The guard vets only the registered URL, so a delivery
+`HttpClient` that auto-followed redirects would let any public receiver answer `302 Location:
+http://169.254.169.254/...` and bounce the delivery `POST` (with `307`/`308`, the full payload
+too) past the guard to an internal address. The named `WebhookDelivery` client is therefore
+registered in `InfrastructureServiceExtensions` with a primary `SocketsHttpHandler { AllowAutoRedirect
+= false }`: a `3xx` is just a non-success status, recorded as `"Received HTTP 302 Found."` and
+retried/failed like any other error. Receivers must expose their final URL directly — the
+normal expectation for webhook endpoints. Covered by
+`tests/Ordinis.IntegrationTests/Common/WebhookDeliveryHttpClientTests.cs`, which resolves the
+real registered client and asserts `301`/`302`/`307`/`308` are returned rather than followed.
+
+**Not covered, and worth knowing:**
+
+- **Check-then-connect window.** The guard resolves the host, then `HttpClient` resolves it
+  again when connecting. A DNS server answering with a very short TTL could hand out a public
+  address to the guard and a private one to the connection a moment later. Closing that fully
+  means validating the address actually connected to, inside `SocketsHttpHandler.ConnectCallback`
+  — not currently implemented.
+- **Operator-specific exclusions.** Only the ranges below are blocked, not IP-based access
+  control lists narrower than them (e.g. an internal service the operator additionally wants
+  excluded that happens to sit on a public IP).
+
+Reasonable defences for a general-purpose API; a deployment with unusually strict requirements
+should treat this as a floor, not a ceiling.
 
 Verified live: registering a webhook pointed at `127.0.0.1`, an RFC 1918 address, and
 `169.254.169.254` each returned `422` with the expected message; a genuine public hostname
