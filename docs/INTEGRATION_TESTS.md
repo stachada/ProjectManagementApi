@@ -6,13 +6,23 @@ SQLite/InMemory were rejected because they can't faithfully exercise the `RowVer
 concurrency-token and provider-specific SQL behavior these tests exist to catch.
 
 ```
+tests/Ordinis.Testing/                 # shared library (not a test project)
+├── OrdinisApiFactory.cs               # WebApplicationFactory<Program> + SQL Server container lifecycle
+└── ConcurrencyRaceInterceptor.cs      # deterministic optimistic-concurrency race barrier
+
 tests/Ordinis.IntegrationTests/
 ├── Infrastructure/
-│   ├── OrdinisApiFactory.cs     # WebApplicationFactory<Program> + SQL Server container lifecycle
 │   ├── ApiCollection.cs         # xUnit collection definition — shares one factory across classes
 │   └── IntegrationTestBase.cs   # base class every test class inherits from
 └── SmokeTests.cs                # verifies the infra itself, not a feature
 ```
+
+`OrdinisApiFactory` and `ConcurrencyRaceInterceptor` live in `Ordinis.Testing` so that
+`Ordinis.AcceptanceTests` (Reqnroll) boots the API exactly the same way; `Ordinis.IntegrationTests`
+imports the namespace through a global `<Using Include="Ordinis.Testing" />`. The factory binds SQL
+Server to the fixed host port `14330` locally (handy for connecting a SQL client to the test
+database) via its overridable `LocalHostPort`; the acceptance project overrides it to a random port
+so both suites can run at the same time, as `dotnet test Ordinis.slnx` does.
 
 ## Packages
 
@@ -192,8 +202,9 @@ sequenceDiagram
    `Factory.ResetDatabaseAsync()` — so xUnit resets the database after every single test, not just
    once per class.
 5. After the last test in the collection finishes, xUnit calls `OrdinisApiFactory`'s explicit
-   `IAsyncLifetime.DisposeAsync()` once, which disposes the container and the underlying
-   `WebApplicationFactory`.
+   `IAsyncLifetime.DisposeAsync()` once, which disposes the underlying `WebApplicationFactory`
+   first — stopping the host's background services (outbox dispatcher, webhook delivery), which
+   poll the database — and only then the container, so no final poll hits a dead database.
 
 So there are two independent `IAsyncLifetime` implementations in play at different scopes:
 `OrdinisApiFactory` (collection-scoped, runs once) and `IntegrationTestBase` (test-scoped, runs
@@ -273,7 +284,7 @@ fix was to stop depending on timing at all.
 
 ### The mechanism: `ConcurrencyRaceInterceptor`
 
-`ConcurrencyRaceInterceptor` (`Infrastructure/ConcurrencyRaceInterceptor.cs`) is a test-only
+`ConcurrencyRaceInterceptor` (`tests/Ordinis.Testing/ConcurrencyRaceInterceptor.cs`) is a test-only
 `Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor`, registered as a DI singleton in
 `OrdinisApiFactory.ConfigureTestServices`:
 
