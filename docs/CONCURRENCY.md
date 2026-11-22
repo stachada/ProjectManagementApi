@@ -233,6 +233,26 @@ this feature added its second constructor.
 | `ProjectTask` | `PUT /tasks/{id}`, `POST /tasks/{id}/move`\|`assign`\|`unassign`\|`close`\|`reopen`, `DELETE /tasks/{id}` | Comments, attachments (see below) |
 | `Project` | `PUT /projects/{id}`, `POST /projects/{id}/archive`\|`unarchive`, `DELETE /projects/{id}`, `POST /projects/{id}/members`, `PUT .../members/{userId}/role`, `DELETE .../members/{userId}` | — |
 | `Board` | `PUT /boards/{id}/name`, `POST /boards/{id}/archive`\|`unarchive` | — |
+| `User` | `PUT /users/{id}`, `PUT /users/{id}/org-role`, `POST /users/{id}/deactivate`\|`reactivate` | — |
+| `Organization` | `PUT /organizations/{id}`, `POST /organizations/{id}/suspend`\|`reactivate` | — |
+
+**Users and organizations joined later (GAP-12).** Both aggregates always had a `RowVersion`
+concurrency token — so a write racing another write *within* one save was already a `409` — but
+their `GET`s sent no `ETag` and their writes ignored `If-Match`, so the read-modify-write lost
+update (two admins edit the same stale copy; the last save silently wins) was still possible.
+They now follow exactly the same contract as every other aggregate: `ETag` on `GET
+/users/{id}` and `GET /organizations/{id}`, `If-Match` required on the writes above (missing →
+`422`, stale → `409`). This was a breaking change for clients that called those endpoints
+without `If-Match`; it shipped before 1.0, with no external consumers.
+
+**Session bookkeeping does not change a user's version.** Sign-in, token refresh and logout
+rotate the user's stored refresh token, which would otherwise rotate `RowVersion` too — every
+15-minute refresh would change the user's `ETag`, and an admin editing that user would get
+spurious `409`s for a change the API never shows. `AppDbContext` therefore treats
+`User.RefreshToken` / `User.RefreshTokenExpiresAt` as *unversioned*: a save that changes only
+those properties neither rotates `RowVersion` nor bumps `UpdatedAt` (the row is still
+concurrency-checked on save). Covered by
+`UserAndOrganizationConcurrencyTests.UserVersion_ChangesOnRealChanges_ButNotOnSessionBookkeeping`.
 
 **Comment and attachment endpoints are deliberately excluded**, even though they mutate
 their owning `ProjectTask` row. `EditCommentHandler`'s own remarks explain why: only the
