@@ -34,6 +34,13 @@ public sealed class ChangeMemberRoleHandler(IAppDbContext db) : ICommandHandler<
 
         ConcurrencyGuard.EnsureMatch(project.RowVersion, command.IfMatch, nameof(Project), command.ProjectId);
 
+        // A non-member is a missing sub-resource (/projects/{id}/members/{userId}) → 404, not a
+        // business-rule violation. The domain's project.member-not-found guard remains as a backstop.
+        if (!project.Members.Any(m => m.UserId == command.UserId))
+        {
+            throw new NotFoundException(nameof(ProjectMember), command.UserId);
+        }
+
         project.ChangeMemberRole(command.UserId, command.NewRole);
 
         try

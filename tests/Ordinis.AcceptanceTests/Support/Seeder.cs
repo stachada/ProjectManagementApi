@@ -24,11 +24,13 @@ internal sealed class Seeder(World world)
     /// is deliberately slow (BCrypt), and a scenario seeds several users. A salted hash stays
     /// valid for every user it is assigned to, so sign-in still goes through real verification.
     /// </summary>
-    private static readonly Lazy<string> DefaultPasswordHash = new(() =>
+    private static readonly Lazy<string> DefaultPasswordHash = new(() => HashPassword(DefaultPassword));
+
+    private static string HashPassword(string password)
     {
         using IServiceScope scope = TestHost.Factory.Services.CreateScope();
-        return scope.ServiceProvider.GetRequiredService<IPasswordHasher>().Hash(DefaultPassword);
-    });
+        return scope.ServiceProvider.GetRequiredService<IPasswordHasher>().Hash(password);
+    }
 
     /// <summary>
     /// The shortest legal path from Backlog to each status, used to put a seeded task into a
@@ -58,13 +60,30 @@ internal sealed class Seeder(World world)
         return id;
     }
 
-    public async Task<World.Persona> CreatePersonaAsync(string name, Guid organizationId, Role orgRole)
+    public async Task<World.Persona> CreatePersonaAsync(string name, Guid organizationId, Role orgRole, string? password = null)
     {
-        Guid userId = await CreateUserAsync(organizationId, name, orgRole);
+        Guid userId = await CreateUserAsync(organizationId, name, orgRole, password);
         var persona = new World.Persona(name, userId, organizationId);
         world.Personas[name] = persona;
         return persona;
     }
+
+    public Task SuspendOrganizationAsync(Guid organizationId) => WithDbAsync(async db =>
+    {
+        Organization organization = await db.Organizations.SingleAsync(o => o.Id == organizationId);
+        organization.Suspend();
+        await db.SaveChangesAsync();
+        return true;
+    });
+
+    public Task<User> FindUserAsync(Guid userId) =>
+        WithDbAsync(db => db.Users.AsNoTracking().SingleAsync(u => u.Id == userId));
+
+    public Task<Project?> FindProjectAsync(Guid projectId) =>
+        WithDbAsync(db => db.Projects.AsNoTracking().SingleOrDefaultAsync(p => p.Id == projectId));
+
+    public Task<Organization> FindOrganizationAsync(Guid organizationId) =>
+        WithDbAsync(db => db.Organizations.AsNoTracking().SingleAsync(o => o.Id == organizationId));
 
     public async Task<Guid> CreateProjectWithBoardsAsync(Guid organizationId, string projectName, params string[] boardNames)
     {
@@ -249,15 +268,20 @@ internal sealed class Seeder(World world)
             .Select(m => m.UserId)
             .FirstAsync());
 
-    private async Task<Guid> CreateUserAsync(Guid organizationId, string displayName, Role orgRole)
+    private async Task<Guid> CreateUserAsync(Guid organizationId, string displayName, Role orgRole, string? password = null)
     {
         string orgSlug = await WithDbAsync(db =>
             db.Organizations.Where(o => o.Id == organizationId).Select(o => o.Slug).SingleAsync());
 
+        // Only a non-default password pays for its own (deliberately slow) hash.
+        string passwordHash = password is null || password == DefaultPassword
+            ? DefaultPasswordHash.Value
+            : HashPassword(password);
+
         return await WithDbAsync(async db =>
         {
             string email = $"{Slugify(displayName)}@{orgSlug}.example";
-            User user = User.Create(organizationId, displayName, email, DefaultPasswordHash.Value, orgRole);
+            User user = User.Create(organizationId, displayName, email, passwordHash, orgRole);
             db.Users.Add(user);
             await db.SaveChangesAsync();
             return user.Id;

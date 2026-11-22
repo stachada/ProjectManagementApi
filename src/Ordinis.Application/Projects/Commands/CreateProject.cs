@@ -64,7 +64,8 @@ public sealed class CreateProjectValidator : AbstractValidator<CreateProject>
     {
         RuleFor(x => x.OrganizationId)
             .NotEmpty()
-            .MustAsync(async (id, ct) => await db.Organizations.AnyAsync(o => o.Id == id, ct))
+            // A suspended organization is frozen: no new projects (as with new users in CreateUser).
+            .MustAsync(async (id, ct) => await db.Organizations.AnyAsync(o => o.Id == id && o.IsActive, ct))
             .WithMessage("Organization does not exist or is inactive.");
 
         RuleFor(x => x.CreatedByUserId)
@@ -76,18 +77,11 @@ public sealed class CreateProjectValidator : AbstractValidator<CreateProject>
             .Cascade(CascadeMode.Stop)
             .NotEmpty()
             .MaximumLength(100)
+            // Soft-deleted projects count (their slugs stay reserved), and so do the current names
+            // of renamed projects — see NameUniquenessQueries.
             .MustAsync(async (command, name, ct) =>
-            {
-                var slug = slugGenerator.Slugify(name);
-
-                // IgnoreQueryFilters: soft-deleted projects keep their slug. Slugs are permanent
-                // identifiers (external links/integrations), and the unique (OrganizationId, Slug)
-                // index covers deleted rows too — checking only live projects let a deleted
-                // project's name pass validation and then fail the INSERT with a 500.
-                return !await db.Projects
-                    .IgnoreQueryFilters()
-                    .AnyAsync(p => p.OrganizationId == command.OrganizationId && p.Slug == slug, ct);
-            })
+                !await NameUniquenessQueries.IsProjectNameTakenAsync(
+                    db, slugGenerator, command.OrganizationId, name, excludeProjectId: null, ct))
             .WithMessage("A project with the same name already exists in this organization, or existed and was deleted (project names are never reused).");
 
         RuleFor(x => x.Description)

@@ -130,8 +130,8 @@ Feature: Organizations
         | 101-character name          | with a 101-character name         |
         | 1,001-character description | with a 1001-character description |
 
-    # GAP-10: name uniqueness is only checked on creation.
-    @gap @multi-tenant
+    # GAP-10 (fixed): renames are checked for name clashes like creation.
+    @multi-tenant
     Scenario: Renaming to the name of another organization is rejected
       When Olivia renames the organization "Acme" to "Globex"
       Then the request is rejected as invalid

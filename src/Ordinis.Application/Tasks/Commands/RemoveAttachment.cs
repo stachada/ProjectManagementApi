@@ -48,9 +48,15 @@ internal sealed class RemoveAttachmentHandler(
             ?? throw new NotFoundException(nameof(Attachment), command.AttachmentId);
         string storageUrl = attachment.StorageUrl;
 
+        // Only the uploader or a moderator may remove an attachment (mirrors RemoveComment).
+        bool requesterIsModerator =
+            await ProjectAccessQueries.ProjectOfBoardAsync(db, task.BoardId, cancellationToken) is Guid projectId
+            && await ProjectAccessQueries.CanModerateAsync(db, projectId, command.RemovedByUserId, cancellationToken);
+
         task.RemoveAttachment(
             attachmentId: command.AttachmentId,
             removedByUserId: command.RemovedByUserId,
+            requesterIsModerator: requesterIsModerator,
             now: timeProvider.GetUtcNow());
 
         await db.SaveChangesAsync(cancellationToken);

@@ -38,6 +38,42 @@ internal sealed class ProjectSteps(World world, Seeder seeder, ApiDriver api)
         Assert.True(world.Response.IsSuccess, $"Arrangement failed — {persona} could not add {member}: {world.Response}");
     }
 
+    [When("^" + Actor + @" renames the project ""([^""]+)"" to ""([^""]+)""$")]
+    public async Task WhenPersonaRenamesTheProject(string persona, string project, string newName)
+    {
+        Guid projectId = world.ProjectNamed(project);
+        string? description = (await seeder.FindProjectAsync(projectId))?.Description;
+
+        ApiResponse response = await api.SendAsync(persona, HttpMethod.Put, $"/api/v1/projects/{projectId}",
+            new { newName, newDescription = description },
+            await seeder.CurrentProjectVersionAsync(projectId));
+
+        if (response.IsSuccess)
+        {
+            world.Projects[newName] = projectId;
+        }
+    }
+
+    [When("^" + Actor + @" changes the role of (\w+) in project ""([^""]+)"" to (Viewer|Member|Admin)$")]
+    public async Task WhenPersonaChangesAMembersRole(string persona, string member, string project, Role newRole)
+    {
+        Guid projectId = world.ProjectNamed(project);
+        await api.SendAsync(persona, HttpMethod.Put,
+            $"/api/v1/projects/{projectId}/members/{world.PersonaNamed(member).UserId}/role",
+            new { newRole },
+            await seeder.CurrentProjectVersionAsync(projectId));
+    }
+
+    [When("^" + Actor + @" removes (\w+) from project ""([^""]+)""$")]
+    public async Task WhenPersonaRemovesAMember(string persona, string member, string project)
+    {
+        Guid projectId = world.ProjectNamed(project);
+        await api.SendAsync(persona, HttpMethod.Delete,
+            $"/api/v1/projects/{projectId}/members/{world.PersonaNamed(member).UserId}",
+            body: null,
+            await seeder.CurrentProjectVersionAsync(projectId));
+    }
+
     [When("^" + Actor + @" creates a project ""([^""]+)"" in ""([^""]+)""$")]
     public Task WhenPersonaCreatesAProject(string persona, string project, string organization) =>
         CreateProjectAsync(persona, project, organization, description: null);

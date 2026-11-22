@@ -174,8 +174,7 @@ Feature: User management
       When Olivia changes the org role of Nora to an unknown role
       Then the request is rejected as invalid on field "newOrgRole"
 
-    # GAP-05: nothing prevents removing the last org Admin today.
-    @gap
+    # GAP-05 (fixed): an organization always keeps an active Admin.
     Scenario: The last org Admin cannot be demoted
       When Olivia changes the org role of Olivia to Member
       Then the request is rejected as invalid

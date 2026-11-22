@@ -274,4 +274,41 @@ public sealed class CreateProjectValidatorTests
 
         result.ShouldNotHaveValidationErrorFor(x => x.Description);
     }
+
+
+    // GAP-07: a suspended organization is frozen — no new projects.
+    [Fact]
+    public async Task TestValidateAsync_OrganizationSuspended_HasValidationErrorForOrganizationId()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Organization organization = OrganizationBuilder.Create();
+        organization.Suspend();
+        User user = UserBuilder.Create(organizationId: organization.Id);
+        db.Organizations.Add(organization);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        var validator = new CreateProjectValidator(db, SlugGenerator);
+
+        TestValidationResult<CreateProject> result = await validator.TestValidateAsync(ValidCommand(organization.Id) with { CreatedByUserId = user.Id });
+
+        result.ShouldHaveValidationErrorFor(x => x.OrganizationId);
+    }
+
+    // GAP-10: the current name of a renamed project is taken, even though its slug differs.
+    [Fact]
+    public async Task TestValidateAsync_NameOfRenamedProject_HasValidationErrorForName()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        Organization organization = OrganizationBuilder.Create();
+        Project renamed = ProjectBuilder.Create(organizationId: organization.Id, name: "Apollo", slug: "apollo");
+        renamed.Rename("Apollo Platform");
+        db.Organizations.Add(organization);
+        db.Projects.Add(renamed);
+        await db.SaveChangesAsync();
+        var validator = new CreateProjectValidator(db, SlugGenerator);
+
+        TestValidationResult<CreateProject> result = await validator.TestValidateAsync(ValidCommand(organization.Id, name: "apollo platform"));
+
+        result.ShouldHaveValidationErrorFor(x => x.Name);
+    }
 }

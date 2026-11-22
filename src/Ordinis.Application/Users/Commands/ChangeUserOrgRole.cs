@@ -39,6 +39,8 @@ internal sealed class ChangeUserOrgRoleHandler(IAppDbContext db)
             .SingleOrDefaultAsync(u => u.Id == command.UserId, ct)
                 ?? throw new NotFoundException(nameof(User), command.UserId);
 
+        await OrganizationAdminGuard.EnsureNotLastAdminBeforeDemotionAsync(db, user, command.NewOrgRole, ct);
+
         user.ChangeOrgRole(command.NewOrgRole);
 
         try

@@ -69,9 +69,38 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
     [Given(@"^(\w+) has uploaded ""([^""]+)"" to the task ""([^""]+)""$")]
     public async Task GivenPersonaHasUploaded(string persona, string fileName, string title)
     {
-        ApiResponse response = await api.UploadAsync(persona, $"/api/v1/tasks/{world.TaskNamed(title)}/attachments",
+        Guid taskId = world.TaskNamed(title);
+        ApiResponse response = await api.UploadAsync(persona, $"/api/v1/tasks/{taskId}/attachments",
             fileName, "text/plain", System.Text.Encoding.UTF8.GetBytes($"contents of {fileName}"));
         Assert.True(response.IsSuccess, $"Arrangement failed — {persona} could not upload '{fileName}': {response}");
+        world.Attachments[(taskId, fileName)] = response.Json.GetProperty("id").GetGuid();
+    }
+
+    [When("^" + Actor + @" removes the attachment ""([^""]+)"" from the task ""([^""]+)""$")]
+    public async Task WhenPersonaRemovesTheAttachment(string persona, string fileName, string title)
+    {
+        Guid taskId = world.TaskNamed(title);
+        Guid attachmentId = world.Attachments.TryGetValue((taskId, fileName), out Guid id)
+            ? id
+            : throw new InvalidOperationException($"No attachment '{fileName}' was uploaded to '{title}' in this scenario.");
+        await api.SendAsync(persona, HttpMethod.Delete, $"/api/v1/tasks/{taskId}/attachments/{attachmentId}");
+    }
+
+    [Then(@"^the task ""([^""]+)"" has (\d+) attachments?$")]
+    public async Task ThenTheTaskHasAttachments(string title, int expected)
+    {
+        ApiResponse attachments = await api.SendAsUserAsync(
+            await ObserverOfTaskAsync(title), HttpMethod.Get, $"/api/v1/tasks/{world.TaskNamed(title)}/attachments");
+        Assert.True(attachments.IsSuccess, attachments.ToString());
+        Assert.Equal(expected, attachments.Json.GetArrayLength());
+    }
+
+    private async Task<Guid> ObserverOfTaskAsync(string title)
+    {
+        ProjectTask task = await seeder.FindTaskAsync(world.TaskNamed(title))
+            ?? throw new InvalidOperationException($"Task '{title}' no longer exists.");
+        Guid projectId = world.BoardProjects[task.BoardId];
+        return await seeder.ObserverForOrganizationAsync(world.ProjectOrganizations[projectId]);
     }
 
     // ---- Actions ----

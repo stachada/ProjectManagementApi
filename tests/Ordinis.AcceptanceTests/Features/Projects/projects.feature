@@ -68,8 +68,7 @@ Feature: Projects
       When Mallory creates a project "Trojan" in "Acme"
       Then the request is rejected as invalid
 
-    # GAP-07: the validator message says "or is inactive" but suspension is not checked.
-    @gap
+    # GAP-07 (fixed): a suspended organization gets no new projects.
     Scenario: Projects cannot be created in a suspended organization
       Given the organization "Acme" is suspended
       When Nora creates a project "Hermes" in "Acme"
@@ -189,8 +188,7 @@ Feature: Projects
         | 101-character name          | with a 101-character name            |
         | 1,001-character description | with a 1001-character description    |
 
-    # GAP-10: name uniqueness is only checked on creation.
-    @gap
+    # GAP-10 (fixed): renames are checked for name clashes like creation.
     Scenario: Renaming to the name of another project is rejected
       Given a project "Hermes" in "Acme" where Alice is an Admin
       When Alice renames the project "Hermes" to "Apollo"

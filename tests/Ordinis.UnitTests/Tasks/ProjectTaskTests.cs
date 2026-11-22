@@ -376,7 +376,7 @@ public class ProjectTaskTests
     }
 
     [Fact]
-    public void RemoveAttachment_ExistingAttachment_RemovesItAndRaisesEvent()
+    public void RemoveAttachment_ByModerator_RemovesItAndRaisesEvent()
     {
         ProjectTask task = TaskBuilder.Create(now: Now);
         var uploaderId = Guid.CreateVersion7();
@@ -384,12 +384,40 @@ public class ProjectTaskTests
         Attachment attachment = task.Attachments.Single();
         var removerId = Guid.CreateVersion7();
 
-        task.RemoveAttachment(attachment.Id, removerId, Now);
+        task.RemoveAttachment(attachment.Id, removerId, requesterIsModerator: true, Now);
 
         Assert.Empty(task.Attachments);
         AttachmentRemoved evt = Assert.Single(task.DomainEvents.OfType<AttachmentRemoved>());
         Assert.Equal(attachment.Id, evt.AttachmentId);
         Assert.Equal(removerId, evt.RemovedByUserId);
+    }
+
+    [Fact]
+    public void RemoveAttachment_ByUploader_RemovesIt()
+    {
+        ProjectTask task = TaskBuilder.Create(now: Now);
+        var uploaderId = Guid.CreateVersion7();
+        task.AddAttachment("report.pdf", "application/pdf", 1, "blobs/x", uploaderId, Now);
+
+        task.RemoveAttachment(task.Attachments.Single().Id, uploaderId, requesterIsModerator: false, Now);
+
+        Assert.Empty(task.Attachments);
+    }
+
+    // GAP-11: the same author-or-moderator rule as RemoveComment.
+    [Fact]
+    public void RemoveAttachment_ByOtherNonModerator_ThrowsAndKeepsAttachment()
+    {
+        ProjectTask task = TaskBuilder.Create(now: Now);
+        task.AddAttachment("report.pdf", "application/pdf", 1, "blobs/x", Guid.CreateVersion7(), Now);
+        Guid attachmentId = task.Attachments.Single().Id;
+
+        DomainException ex = Assert.Throws<DomainException>(() =>
+            task.RemoveAttachment(attachmentId, Guid.CreateVersion7(), requesterIsModerator: false, Now));
+
+        Assert.Equal("task.attachment-not-uploader", ex.ErrorCode);
+        Assert.Single(task.Attachments);
+        Assert.Empty(task.DomainEvents.OfType<AttachmentRemoved>());
     }
     #endregion
 

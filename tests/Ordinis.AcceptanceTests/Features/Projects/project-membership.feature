@@ -125,8 +125,7 @@ Feature: Project membership
       When Alice changes the role of Alice in project "Apollo" to Member
       Then the request succeeds
 
-    # GAP-09: reported as 422 "project.member-not-found" today.
-    @gap
+    # GAP-09 (fixed): a non-member is a missing sub-resource (404).
     Scenario: Changing the role of a non-member is rejected as not found
       When Alice changes the role of Nora in project "Apollo" to Member
       Then the request is rejected as not found
@@ -167,8 +166,7 @@ Feature: Project membership
       When Bob removes Alice from project "Apollo"
       Then the request succeeds
 
-    # GAP-09: reported as 422 "project.member-not-found" today.
-    @gap
+    # GAP-09 (fixed): a non-member is a missing sub-resource (404).
     Scenario: Removing a non-member is rejected as not found
       When Alice removes Nora from project "Apollo"
       Then the request is rejected as not found
