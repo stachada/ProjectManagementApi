@@ -109,8 +109,7 @@ Feature: Task creation
       When Bob creates a task "Write release notes" on board "Sprint 1"
       Then the request is rejected as invalid on field "boardId"
 
-    # GAP-08: CreateTask checks the board but not the project.
-    @gap
+    # GAP-08 (fixed): an archived board or project makes its tasks read-only.
     Scenario: The project must not be archived
       Given the project "Apollo" is archived
       When Bob creates a task "Write release notes" on board "Sprint 1"

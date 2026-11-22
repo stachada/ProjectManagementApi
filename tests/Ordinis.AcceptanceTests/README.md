@@ -26,7 +26,7 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-963 scenarios (outline rows expanded): **191 pass, 772 skipped, 0 fail.**
+963 scenarios (outline rows expanded): **210 pass, 753 skipped, 0 fail.**
 
 | Feature | Status |
 | --- | --- |
@@ -164,7 +164,6 @@ moves to **Fixed gaps** below.
 | GAP-05 | The last org Admin can demote or deactivate themselves | rejected as invalid |
 | GAP-06 | A deactivated user's access token keeps working until expiry | rejected immediately |
 | GAP-07 | A project can be created in a suspended organization | rejected as invalid |
-| GAP-08 | Tasks on an archived board/project can still be edited, moved, assigned | rejected as invalid |
 | GAP-09 | Changing the role of / removing a non-member returns 422 `project.member-not-found` | 404 not found |
 | GAP-10 | Renaming a project/organization skips the name-uniqueness check | rejected as invalid on clash |
 | GAP-11 | Any project Member can remove any attachment | only the uploader, a project Admin or the org Admin |
@@ -176,6 +175,7 @@ moves to **Fixed gaps** below.
 | Id | Was | Fix |
 | --- | --- | --- |
 | GAP-01 | Five list queries (`GetTasksFiltered`, `GetProjectsFiltered`, `GetProjectTasks`, `GetBoardTasks`, `GetProjectAudit`) only capped `pageSize` at 100, so 0 / negative sizes reached SQL (`FETCH NEXT 0 ROWS`, negative `Take`) → 500; all seven list queries could also overflow `(page - 1) * pageSize` | One shared `PageRequest.Normalize` (`pageSize` 1..100, `page` ≥ 1 and capped so the offset fits an `int`) used by all seven list queries. Regression specs: `pagination.feature` (bound, 28 scenarios); unit tests `PageRequestTests` |
+| GAP-08 | Archiving a board or project didn't lock its tasks: only `CreateTask` checked (the board only); every other task, comment and attachment mutation went through | `TaskContainerGuard.EnsureWritableAsync` (one query for both flags) is called by all 11 task command handlers; archived = fully read-only, rejected with `422` `project.archived` / `board.archived`. Reads keep working. Regression tests: `Ordinis.IntegrationTests/Tasks/ArchivedContainerTests` (13 mutations × board/project); GAP-08 scenarios in `task-creation`, `task-editing`, `project-lifecycle`, `boards` |
 | GAP-14 | Task `Status`/`Priority` are stored as strings (`HasConversion<string>()`), so `sortBy=status/priority` ordered alphabetically (priority descending: Medium, Low, High, Critical) | `EntityQueryableExtensions.OrderByEnumValue` sorts by a `CASE` rank of the declared enum order in `GetTasksFiltered`, `GetProjectTasks`, `GetBoardTasks`, `GetUserTasks`; string storage kept. Regression specs: `task-listing.feature` sort scenarios; unit tests `EntityQueryableExtensionsTests` |
 | GAP-15 | Re-creating a deleted project's name passed validation (the soft-delete query filter hid it) but violated the unfiltered unique `(OrganizationId, Slug)` index → 500 | `CreateProjectValidator` checks slug uniqueness with `IgnoreQueryFilters()`, so a deleted project's slug stays reserved (422 on `name`). Regression tests: `ProjectsControllerTests.CreateProject_NameOfSoftDeletedProject_Returns422AndCreatesNothing`; `project-lifecycle.feature` "The name of a deleted project stays reserved" |
 | GAP-16 | `User.Create` / `Organization.Create` lower-case email and slug, but `Login` compared the input as typed (trim only), so mixed-case sign-in worked on SQL Server's case-insensitive collation and failed on PostgreSQL | `Login` normalizes email and slug with `Trim().ToLowerInvariant()`, matching how they are stored. Regression tests: `Ordinis.UnitTests/Application/Users/Commands/LoginHandlerTests` (InMemory compares case-sensitively, like PostgreSQL) |

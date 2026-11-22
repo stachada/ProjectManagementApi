@@ -49,6 +49,9 @@ internal sealed class EditCommentHandler(
             .FirstOrDefaultAsync(t => t.Id == command.TaskId, cancellationToken)
                 ?? throw new NotFoundException(nameof(ProjectTask), command.TaskId);
 
+        // Archived board/project = read-only tasks (see TaskContainerGuard).
+        await TaskContainerGuard.EnsureWritableAsync(db, task.BoardId, cancellationToken);
+
         Comment comment = task.Comments.FirstOrDefault(c => c.Id == command.CommentId)
             ?? throw new NotFoundException(nameof(Comment), command.CommentId);
 

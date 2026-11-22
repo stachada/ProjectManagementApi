@@ -41,6 +41,9 @@ internal sealed class AssignTaskHandler(
 
         ConcurrencyGuard.EnsureMatch(task.RowVersion, command.IfMatch, "Task", command.TaskId);
 
+        // Archived board/project = read-only tasks (see TaskContainerGuard).
+        await TaskContainerGuard.EnsureWritableAsync(db, task.BoardId, cancellationToken);
+
         task.Assign(command.AssigneeId, command.RequestedByUserId, timeProvider.GetUtcNow());
 
         try

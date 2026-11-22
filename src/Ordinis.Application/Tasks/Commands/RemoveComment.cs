@@ -44,6 +44,9 @@ internal sealed class RemoveCommentHandler(
             .FirstOrDefaultAsync(t => t.Id == command.TaskId, cancellationToken)
                 ?? throw new NotFoundException(nameof(ProjectTask), command.TaskId);
 
+        // Archived board/project = read-only tasks (see TaskContainerGuard).
+        await TaskContainerGuard.EnsureWritableAsync(db, task.BoardId, cancellationToken);
+
         bool requesterIsModerator = await IsModeratorAsync(task.BoardId, command.RequestedByUserId, cancellationToken);
 
         task.RemoveComment(command.CommentId, command.RequestedByUserId, requesterIsModerator, timeProvider.GetUtcNow());

@@ -119,7 +119,8 @@ internal sealed class Seeder(World world)
     });
 
     /// <param name="dueInDays">Due date relative to now, or <see langword="null"/> for none.</param>
-    public async Task<Guid> CreateTaskAsync(Guid boardId, string title, Priority priority = Priority.Medium, int? dueInDays = null)
+    public async Task<Guid> CreateTaskAsync(
+        Guid boardId, string title, Priority priority = Priority.Medium, int? dueInDays = null, string? description = null)
     {
         Guid projectId = world.BoardProjects[boardId];
         Guid reporterId = await AnyProjectUserAsync(projectId);
@@ -128,7 +129,7 @@ internal sealed class Seeder(World world)
         {
             DateTimeOffset now = Now(db);
             ProjectTask task = ProjectTask.Create(
-                boardId, reporterId, title, now, priority,
+                boardId, reporterId, title, now, priority, description,
                 dueDate: dueInDays is int days ? now.AddDays(days) : null);
             db.Tasks.Add(task);
             await db.SaveChangesAsync();
@@ -163,6 +164,22 @@ internal sealed class Seeder(World world)
     {
         ProjectTask task = await db.Tasks.SingleAsync(t => t.Id == taskId);
         task.Assign(assigneeId, task.ReporterId, Now(db));
+        await db.SaveChangesAsync();
+        return true;
+    });
+
+    public Task ArchiveBoardAsync(Guid boardId) => WithDbAsync(async db =>
+    {
+        Board board = await db.Boards.SingleAsync(b => b.Id == boardId);
+        board.Archive();
+        await db.SaveChangesAsync();
+        return true;
+    });
+
+    public Task ArchiveProjectAsync(Guid projectId) => WithDbAsync(async db =>
+    {
+        Project project = await db.Projects.SingleAsync(p => p.Id == projectId);
+        project.Archive();
         await db.SaveChangesAsync();
         return true;
     });

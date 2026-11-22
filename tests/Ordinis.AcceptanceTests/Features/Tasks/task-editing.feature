@@ -66,8 +66,7 @@ Feature: Task editing and deletion
       When Bob renames the task "Fix login bug" to "Fix login bug (iOS)"
       Then the request is rejected as invalid with error "task.terminal-state"
 
-    # GAP-08: archived boards/projects do not lock their tasks today.
-    @gap
+    # GAP-08 (fixed): an archived board or project makes its tasks read-only.
     Scenario Outline: A task on an archived <container> cannot be updated
       Given the <container> is archived
       When Bob renames the task "Fix login bug" to "Fix login bug (iOS)"

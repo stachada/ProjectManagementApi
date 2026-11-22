@@ -94,9 +94,38 @@ internal sealed class SetupSteps(World world, Seeder seeder)
         await seeder.AddProjectMemberAsync(projectId, member.UserId, role);
     }
 
+    [Given(@"^the board ""([^""]+)"" is archived$")]
+    public Task GivenTheBoardIsArchived(string board) =>
+        seeder.ArchiveBoardAsync(world.BoardNamed(board));
+
+    [Given(@"^the project ""([^""]+)"" is archived$")]
+    public Task GivenTheProjectIsArchived(string project) =>
+        seeder.ArchiveProjectAsync(world.ProjectNamed(project));
+
     [Given(@"^a task ""([^""]+)"" on board ""([^""]+)""$")]
     public Task GivenATask(string title, string board) =>
         seeder.CreateTaskAsync(world.BoardNamed(board), title);
+
+    /// <summary>
+    /// A task with details given as a two-column "field | value" table without a header row
+    /// (Reqnroll reads the first line as the header, so it is included). Fields: description,
+    /// priority, due date ("N days from now").
+    /// </summary>
+    [Given(@"^a task ""([^""]+)"" on board ""([^""]+)"" with:$")]
+    public Task GivenATaskWithDetails(string title, string board, DataTable details)
+    {
+        Dictionary<string, string> fields = new[] { (details.Header.ElementAt(0), details.Header.ElementAt(1)) }
+            .Concat(details.Rows.Select(r => (r[0], r[1])))
+            .ToDictionary(f => f.Item1.Trim(), f => f.Item2.Trim(), StringComparer.Ordinal);
+
+        Priority priority = fields.TryGetValue("priority", out string? p) ? Enum.Parse<Priority>(p) : Priority.Medium;
+        int? dueInDays = fields.TryGetValue("due date", out string? due)
+            ? int.Parse(due.Split(' ')[0], System.Globalization.CultureInfo.InvariantCulture)
+            : null;
+
+        return seeder.CreateTaskAsync(world.BoardNamed(board), title, priority, dueInDays,
+            fields.GetValueOrDefault("description"));
+    }
 
     [Given(@"^the task ""([^""]+)"" has status (\w+)$")]
     public Task GivenTaskHasStatus(string title, ProjectTaskStatus status) =>

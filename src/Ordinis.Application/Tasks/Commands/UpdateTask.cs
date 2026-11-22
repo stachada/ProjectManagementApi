@@ -67,6 +67,9 @@ internal sealed class UpdateTaskHandler(
 
         ConcurrencyGuard.EnsureMatch(task.RowVersion, command.IfMatch, "Task", command.TaskId);
 
+        // Archived board/project = read-only tasks (see TaskContainerGuard).
+        await TaskContainerGuard.EnsureWritableAsync(db, task.BoardId, cancellationToken);
+
         DateTimeOffset now = timeProvider.GetUtcNow();
 
         task.Update(command.Title, command.Description, command.Priority, command.DueDate, command.RequestedByUserId, now);
