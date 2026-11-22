@@ -369,7 +369,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
 
         await AuthenticateAsUserAsync(adminId); // Ensure Client is authenticated as the organization's admin for subsequent requests
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/users/{userId}", request);
+        HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Put, userId, $"/api/v1/users/{userId}", request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}");
@@ -392,8 +392,8 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         await AuthenticateAsUserAsync(adminId); // Ensure Client is authenticated as the organization's admin for subsequent requests
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PutAsJsonAsync($"/api/v1/users/{userId}", new UpdateUserRequest("Name from request 1")),
-            () => Client.PutAsJsonAsync($"/api/v1/users/{userId}", new UpdateUserRequest("Name from request 2")));
+            () => SendWithCurrentUserVersionAsync(HttpMethod.Put, userId, $"/api/v1/users/{userId}", new UpdateUserRequest("Name from request 1")),
+            () => SendWithCurrentUserVersionAsync(HttpMethod.Put, userId, $"/api/v1/users/{userId}", new UpdateUserRequest("Name from request 2")));
     }
 
     [Fact]
@@ -413,7 +413,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
     {
         Guid userId = await AuthenticateAsNewUserAsync();
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/users/{userId}", new UpdateUserRequest("Alice Renamed"));
+        HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Put, userId, $"/api/v1/users/{userId}", new UpdateUserRequest("Alice Renamed"));
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}");
@@ -429,7 +429,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         Guid bobId = await SeedUserAsync(organizationId, "Bob", "bob@example.com");
         await AuthenticateAsUserAsync(bobId);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/users/{aliceId}", new UpdateUserRequest("Renamed by Bob"));
+        HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Put, aliceId, $"/api/v1/users/{aliceId}", new UpdateUserRequest("Renamed by Bob"));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         UserDto? alice = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{aliceId}");
@@ -449,7 +449,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
 
         await AuthenticateAsUserAsync(adminId); // Ensure Client is authenticated as the organization's admin for subsequent requests
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/users/{userId}", request);
+        HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Put, userId, $"/api/v1/users/{userId}", request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -467,7 +467,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
 
         await AuthenticateAsUserAsync(adminId); // Ensure Client is authenticated as the organization's admin for subsequent requests
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/users/{userId}", request);
+        HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Put, userId, $"/api/v1/users/{userId}", request);
 
         await AssertValidationProblemAsync(response, "DisplayName");
     }
@@ -485,7 +485,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
 
         await AuthenticateAsUserAsync(adminId); // Ensure Client is authenticated as the organization's admin for subsequent requests
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/users/{userId}/org-role", request);
+        HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Put, userId, $"/api/v1/users/{userId}/org-role", request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}");
@@ -508,8 +508,8 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         await AuthenticateAsUserAsync(adminId); // Ensure Client is authenticated as the organization's admin for subsequent requests
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PutAsJsonAsync($"/api/v1/users/{userId}/org-role", new ChangeUserOrgRoleRequest(Role.Admin)),
-            () => Client.PutAsJsonAsync($"/api/v1/users/{userId}/org-role", new ChangeUserOrgRoleRequest(Role.Viewer)));
+            () => SendWithCurrentUserVersionAsync(HttpMethod.Put, userId, $"/api/v1/users/{userId}/org-role", new ChangeUserOrgRoleRequest(Role.Admin)),
+            () => SendWithCurrentUserVersionAsync(HttpMethod.Put, userId, $"/api/v1/users/{userId}/org-role", new ChangeUserOrgRoleRequest(Role.Viewer)));
     }
 
     [Fact]
@@ -525,7 +525,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
 
         await AuthenticateAsUserAsync(adminId); // Ensure Client is authenticated as the organization's admin for subsequent requests
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/users/{userId}/org-role", request);
+        HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Put, userId, $"/api/v1/users/{userId}/org-role", request);
 
         await AssertValidationProblemAsync(response, "NewOrgRole");
     }
@@ -554,7 +554,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
 
         await AuthenticateAsUserAsync(adminId); // Ensure Client is authenticated as the organization's admin for subsequent requests
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/users/{userId}/deactivate", null);
+        HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Post, userId, $"/api/v1/users/{userId}/deactivate");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}");
@@ -578,8 +578,8 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         await AuthenticateAsUserAsync(adminId); // Ensure Client is authenticated as the organization's admin for subsequent requests
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PostAsync($"/api/v1/users/{userId}/deactivate", null),
-            () => Client.PostAsync($"/api/v1/users/{userId}/deactivate", null));
+            () => SendWithCurrentUserVersionAsync(HttpMethod.Post, userId, $"/api/v1/users/{userId}/deactivate"),
+            () => SendWithCurrentUserVersionAsync(HttpMethod.Post, userId, $"/api/v1/users/{userId}/deactivate"));
     }
 
     [Fact]
@@ -602,7 +602,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         Guid otherOrganizationId = await SeedOrganizationAsync();
         Guid otherUserId = await SeedUserAsync(otherOrganizationId, "Eve", "eve@example.com");
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/users/{otherUserId}/deactivate", null);
+        HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Post, otherUserId, $"/api/v1/users/{otherUserId}/deactivate");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         bool isActive = await SeedAsync(db => db.Users.Where(u => u.Id == otherUserId).Select(u => u.IsActive).SingleAsync());
@@ -616,7 +616,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         Guid otherOrganizationId = await SeedOrganizationAsync();
         Guid otherUserId = await SeedUserAsync(otherOrganizationId, "Eve", "eve@example.com");
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/users/{otherUserId}/org-role", new ChangeUserOrgRoleRequest(Role.Admin));
+        HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Put, otherUserId, $"/api/v1/users/{otherUserId}/org-role", new ChangeUserOrgRoleRequest(Role.Admin));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -633,9 +633,9 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
 
         await AuthenticateAsUserAsync(adminId); // Ensure Client is authenticated as the organization's admin for subsequent requests
 
-        await Client.PostAsync($"/api/v1/users/{userId}/deactivate", null);
+        await SendWithCurrentUserVersionAsync(HttpMethod.Post, userId, $"/api/v1/users/{userId}/deactivate");
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/users/{userId}/deactivate", null);
+        HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Post, userId, $"/api/v1/users/{userId}/deactivate");
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -652,9 +652,9 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
 
         await AuthenticateAsUserAsync(adminId); // Ensure Client is authenticated as the organization's admin for subsequent requests
 
-        await Client.PostAsync($"/api/v1/users/{userId}/deactivate", null);
+        await SendWithCurrentUserVersionAsync(HttpMethod.Post, userId, $"/api/v1/users/{userId}/deactivate");
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/users/{userId}/reactivate", null);
+        HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Post, userId, $"/api/v1/users/{userId}/reactivate");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}");
@@ -674,11 +674,11 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
 
         await AuthenticateAsUserAsync(adminId); // Ensure Client is authenticated as the organization's admin for subsequent requests
 
-        await Client.PostAsync($"/api/v1/users/{userId}/deactivate", null);
+        await SendWithCurrentUserVersionAsync(HttpMethod.Post, userId, $"/api/v1/users/{userId}/deactivate");
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PostAsync($"/api/v1/users/{userId}/reactivate", null),
-            () => Client.PostAsync($"/api/v1/users/{userId}/reactivate", null));
+            () => SendWithCurrentUserVersionAsync(HttpMethod.Post, userId, $"/api/v1/users/{userId}/reactivate"),
+            () => SendWithCurrentUserVersionAsync(HttpMethod.Post, userId, $"/api/v1/users/{userId}/reactivate"));
     }
 
     [Fact]
@@ -704,7 +704,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
 
         await AuthenticateAsUserAsync(adminId); // Ensure Client is authenticated as the organization's admin for subsequent requests
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/users/{userId}/reactivate", null);
+        HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Post, userId, $"/api/v1/users/{userId}/reactivate");
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }

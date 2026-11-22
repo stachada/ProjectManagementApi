@@ -15,7 +15,7 @@ public sealed class UpdateOrganizationValidatorTests
 
     private static UpdateOrganization ValidCommand(
         Guid? organizationId = null, string newName = "New Name", string? newDescription = "Updated description")
-        => new(organizationId ?? Guid.CreateVersion7(), newName, newDescription);
+        => new(organizationId ?? Guid.CreateVersion7(), newName, newDescription, [1, 2, 3, 4]);
 
     [Fact]
     public async Task TestValidateAsync_ValidCommand_HasNoValidationErrors()

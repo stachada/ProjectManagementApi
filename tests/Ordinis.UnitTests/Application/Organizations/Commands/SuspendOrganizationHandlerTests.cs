@@ -23,7 +23,7 @@ public class SuspendOrganizationHandlerTests
         await db.SaveChangesAsync();
 
         await new SuspendOrganizationHandler(db)
-            .HandleAsync(new SuspendOrganization(org.Id));
+            .HandleAsync(new SuspendOrganization(org.Id, IfMatch: null));
 
         Organization reloaded = await db.Organizations.SingleAsync(o => o.Id == org.Id);
         Assert.False(reloaded.IsActive);
@@ -36,7 +36,7 @@ public class SuspendOrganizationHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(
             () => new SuspendOrganizationHandler(db)
-                .HandleAsync(new SuspendOrganization(Guid.CreateVersion7())));
+                .HandleAsync(new SuspendOrganization(Guid.CreateVersion7(), IfMatch: null)));
     }
 
     [Fact]
@@ -50,6 +50,6 @@ public class SuspendOrganizationHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(
             () => new SuspendOrganizationHandler(db)
-                .HandleAsync(new SuspendOrganization(org.Id)));
+                .HandleAsync(new SuspendOrganization(org.Id, IfMatch: null)));
     }
 }

@@ -14,8 +14,8 @@ GET {{Ordinis.Api_HostAddress}}/health
 
 ###
 # Create an organization. Copy the "id" from the response into @organizationId below
-# to run the rest of the requests against it. Organization is not RowVersion-guarded
-# (see docs/CONCURRENCY.md's "what's guarded" table), so no If-Match header here.
+# to run the rest of the requests against it. Creates need no If-Match; the organization's
+# update / suspend / reactivate below do (see docs/CONCURRENCY.md's "what's guarded" table).
 POST {{Ordinis.Api_HostAddress}}/api/v1/organizations
 Content-Type: {{contentType}}
 Idempotency-Key: {{idempotencyKey}}
@@ -37,8 +37,16 @@ GET {{Ordinis.Api_HostAddress}}/api/v1/organizations/11111111-1111-1111-1111-111
 ### List an organization's projects (paged)
 GET {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}/projects?page=1&pageSize=20&sortBy=createdAt&sortDescending=false
 
+### Refresh the ETag - copy the ETag response header value (with quotes) into @organizationEtag
+# before running the next request; every successful write changes it.
+GET {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}
+
+###
+@organizationEtag = "AAAAAAAAB9E="
+
 ### Rename + update description
 PUT {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}
+If-Match: {{organizationEtag}}
 Content-Type: {{contentType}}
 
 {
@@ -46,17 +54,37 @@ Content-Type: {{contentType}}
   "description": "Updated description"
 }
 
+### Refresh the ETag - copy the ETag response header value (with quotes) into @organizationEtag
+# before running the next request; every successful write changes it.
+GET {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}
+
 ### Suspend
 POST {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}/suspend
+If-Match: {{organizationEtag}}
+
+### Refresh the ETag - copy the ETag response header value (with quotes) into @organizationEtag
+# before running the next request; every successful write changes it.
+GET {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}
 
 ### Suspend again - expect 422 organization.already-suspended
 POST {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}/suspend
+If-Match: {{organizationEtag}}
+
+### Refresh the ETag - copy the ETag response header value (with quotes) into @organizationEtag
+# before running the next request; every successful write changes it.
+GET {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}
 
 ### Reactivate
 POST {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}/reactivate
+If-Match: {{organizationEtag}}
+
+### Refresh the ETag - copy the ETag response header value (with quotes) into @organizationEtag
+# before running the next request; every successful write changes it.
+GET {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}
 
 ### Reactivate again - expect 422 organization.already-active
 POST {{Ordinis.Api_HostAddress}}/api/v1/organizations/{{organizationId}}/reactivate
+If-Match: {{organizationEtag}}
 
 ### Create with empty name - expect 422 validation errors
 POST {{Ordinis.Api_HostAddress}}/api/v1/organizations
@@ -115,7 +143,7 @@ Content-Type: {{contentType}}
 # UsersController requests below reuse @organizationId from above.
 # Create two users - the first becomes @createdByUserId (used to create the
 # project below), the second becomes @memberUserId (added as a project member).
-# User is not RowVersion-guarded, so no If-Match header on these.
+# Creates need no If-Match; the user writes further below do (see docs/CONCURRENCY.md).
 POST {{Ordinis.Api_HostAddress}}/api/v1/users
 Content-Type: {{contentType}}
 Idempotency-Key: {{idempotencyKey}}
@@ -156,8 +184,16 @@ GET {{Ordinis.Api_HostAddress}}/api/v1/users/11111111-1111-1111-1111-11111111111
 ### List a user's assigned tasks (paged)
 GET {{Ordinis.Api_HostAddress}}/api/v1/users/{{createdByUserId}}/tasks?page=1&pageSize=20
 
+### Refresh the ETag - copy the ETag response header value (with quotes) into @memberUserEtag
+# before running the next request; every successful write changes it.
+GET {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}
+
+###
+@memberUserEtag = "AAAAAAAAB9E="
+
 ### Update display name
 PUT {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}
+If-Match: {{memberUserEtag}}
 Content-Type: {{contentType}}
 
 {
@@ -165,8 +201,13 @@ Content-Type: {{contentType}}
   "requestedByUserId": "{{memberUserId}}"
 }
 
+### Refresh the ETag - copy the ETag response header value (with quotes) into @memberUserEtag
+# before running the next request; every successful write changes it.
+GET {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}
+
 ### Change organization-level role (Role: 0 = Viewer, 1 = Member, 2 = Admin)
 PUT {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}/org-role
+If-Match: {{memberUserEtag}}
 Content-Type: {{contentType}}
 
 {
@@ -174,32 +215,52 @@ Content-Type: {{contentType}}
   "requestedByUserId": "{{createdByUserId}}"
 }
 
+### Refresh the ETag - copy the ETag response header value (with quotes) into @memberUserEtag
+# before running the next request; every successful write changes it.
+GET {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}
+
 ### Deactivate
 POST {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}/deactivate
+If-Match: {{memberUserEtag}}
 Content-Type: {{contentType}}
 
 {
   "requestedByUserId": "{{createdByUserId}}"
 }
+
+### Refresh the ETag - copy the ETag response header value (with quotes) into @memberUserEtag
+# before running the next request; every successful write changes it.
+GET {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}
 
 ### Deactivate again - expect 422 user.already-inactive
 POST {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}/deactivate
+If-Match: {{memberUserEtag}}
 Content-Type: {{contentType}}
 
 {
   "requestedByUserId": "{{createdByUserId}}"
 }
+
+### Refresh the ETag - copy the ETag response header value (with quotes) into @memberUserEtag
+# before running the next request; every successful write changes it.
+GET {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}
 
 ### Reactivate
 POST {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}/reactivate
+If-Match: {{memberUserEtag}}
 Content-Type: {{contentType}}
 
 {
   "requestedByUserId": "{{createdByUserId}}"
 }
 
+### Refresh the ETag - copy the ETag response header value (with quotes) into @memberUserEtag
+# before running the next request; every successful write changes it.
+GET {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}
+
 ### Reactivate again - expect 422 user.already-active
 POST {{Ordinis.Api_HostAddress}}/api/v1/users/{{memberUserId}}/reactivate
+If-Match: {{memberUserEtag}}
 Content-Type: {{contentType}}
 
 {

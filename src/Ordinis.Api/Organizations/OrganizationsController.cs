@@ -48,6 +48,11 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
         OrganizationDto dto = await _dispatcher.QueryAsync<GetOrganizationById, OrganizationDto>(
             new GetOrganizationById(id), cancellationToken);
 
+        if (!string.IsNullOrEmpty(dto.ConcurrencyToken))
+        {
+            Response.Headers.ETag = $"\"{dto.ConcurrencyToken}\"";
+        }
+
         return Ok(dto);
     }
 
@@ -153,7 +158,7 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
         [FromBody] UpdateOrganizationRequest request,
         CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new UpdateOrganization(id, request.Name, request.Description), cancellationToken);
+        await _dispatcher.SendAsync(new UpdateOrganization(id, request.Name, request.Description, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]), cancellationToken);
 
         return NoContent();
     }
@@ -178,7 +183,7 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Suspend(Guid id, CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new SuspendOrganization(id), cancellationToken);
+        await _dispatcher.SendAsync(new SuspendOrganization(id, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]), cancellationToken);
         return NoContent();
     }
 
@@ -201,7 +206,7 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Reactivate(Guid id, CancellationToken cancellationToken)
     {
-        await _dispatcher.SendAsync(new ReactivateOrganization(id), cancellationToken);
+        await _dispatcher.SendAsync(new ReactivateOrganization(id, HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]), cancellationToken);
         return NoContent();
     }
 }

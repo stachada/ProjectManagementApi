@@ -121,8 +121,8 @@ Feature: Optimistic concurrency
         | Bob uploads "crash.log" to the task "Fix login bug"       |
         | Bob creates a board "Sprint 2" in project "Apollo"        |
 
-  # GAP-12: users and organizations are not versioned today.
-  @gap
+  # GAP-12 (fixed): users and organizations are versioned like every other aggregate
+  # (ETag on GET, required If-Match on writes).
   Rule: Users and organizations are versioned like every other aggregate
 
     Scenario Outline: Reading <resource> as org Admin returns its version

@@ -153,7 +153,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         (Guid orgId, _) = await AuthenticateAsOrgAdminAsync();
         var request = new UpdateOrganizationRequest("Updated Name", "Updated Description");
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/organizations/{orgId}", request);
+        HttpResponseMessage response = await SendWithCurrentOrganizationVersionAsync(HttpMethod.Put, orgId, $"/api/v1/organizations/{orgId}", request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         OrganizationDto? updatedOrganization = await Client.GetFromJsonAsync<OrganizationDto>($"/api/v1/organizations/{orgId}");
@@ -171,8 +171,8 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         (Guid orgId, _) = await AuthenticateAsOrgAdminAsync();
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PutAsJsonAsync($"/api/v1/organizations/{orgId}", new UpdateOrganizationRequest("Name from request 1", "Description 1")),
-            () => Client.PutAsJsonAsync($"/api/v1/organizations/{orgId}", new UpdateOrganizationRequest("Name from request 2", "Description 2")));
+            () => SendWithCurrentOrganizationVersionAsync(HttpMethod.Put, orgId, $"/api/v1/organizations/{orgId}", new UpdateOrganizationRequest("Name from request 1", "Description 1")),
+            () => SendWithCurrentOrganizationVersionAsync(HttpMethod.Put, orgId, $"/api/v1/organizations/{orgId}", new UpdateOrganizationRequest("Name from request 2", "Description 2")));
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
 
         await AuthenticateAsOrgAdminAsync(); // we need to be authenticated to get a 404 instead of a 401
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/organizations/{nonExistingId}", request);
+        HttpResponseMessage response = await SendWithCurrentOrganizationVersionAsync(HttpMethod.Put, nonExistingId, $"/api/v1/organizations/{nonExistingId}", request);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -195,7 +195,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         string longDescription = new string('A', 1001);
         var request = new UpdateOrganizationRequest("Valid Name", longDescription);
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/organizations/{orgId}", request);
+        HttpResponseMessage response = await SendWithCurrentOrganizationVersionAsync(HttpMethod.Put, orgId, $"/api/v1/organizations/{orgId}", request);
 
         await AssertValidationProblemAsync(response, "NewDescription");
     }
@@ -206,7 +206,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         Guid orgId1 = await SeedOrganizationAsync(isSuspended: true);
         var request = new UpdateOrganizationRequest("Acme", "Updated Description");
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/organizations/{orgId1}", request);
+        HttpResponseMessage response = await SendWithCurrentOrganizationVersionAsync(HttpMethod.Put, orgId1, $"/api/v1/organizations/{orgId1}", request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -223,7 +223,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         Guid orgId = await SeedOrganizationAsync();
         var request = new UpdateOrganizationRequest("New Name", new string('a', 1001));
 
-        HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/organizations/{orgId}", request);
+        HttpResponseMessage response = await SendWithCurrentOrganizationVersionAsync(HttpMethod.Put, orgId, $"/api/v1/organizations/{orgId}", request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         OrganizationDto? organization = await Client.GetFromJsonAsync<OrganizationDto>($"/api/v1/organizations/{orgId}");
@@ -236,7 +236,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     {
         Guid orgId = await SeedOrganizationAsync();
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/organizations/{orgId}/suspend", null);
+        HttpResponseMessage response = await SendWithCurrentOrganizationVersionAsync(HttpMethod.Post, orgId, $"/api/v1/organizations/{orgId}/suspend");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         OrganizationDto? updatedOrganization = await Client.GetFromJsonAsync<OrganizationDto>($"/api/v1/organizations/{orgId}");
@@ -254,8 +254,8 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         Guid orgId = await SeedOrganizationAsync();
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PostAsync($"/api/v1/organizations/{orgId}/suspend", null),
-            () => Client.PostAsync($"/api/v1/organizations/{orgId}/suspend", null));
+            () => SendWithCurrentOrganizationVersionAsync(HttpMethod.Post, orgId, $"/api/v1/organizations/{orgId}/suspend"),
+            () => SendWithCurrentOrganizationVersionAsync(HttpMethod.Post, orgId, $"/api/v1/organizations/{orgId}/suspend"));
     }
 
     [Fact]
@@ -273,7 +273,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     {
         Guid orgId = await SeedOrganizationAsync(isSuspended: true);
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/organizations/{orgId}/suspend", null);
+        HttpResponseMessage response = await SendWithCurrentOrganizationVersionAsync(HttpMethod.Post, orgId, $"/api/v1/organizations/{orgId}/suspend");
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -283,7 +283,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     {
         Guid orgId = await SeedOrganizationAsync(isSuspended: true);
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/organizations/{orgId}/reactivate", null);
+        HttpResponseMessage response = await SendWithCurrentOrganizationVersionAsync(HttpMethod.Post, orgId, $"/api/v1/organizations/{orgId}/reactivate");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         OrganizationDto? updatedOrganization = await Client.GetFromJsonAsync<OrganizationDto>($"/api/v1/organizations/{orgId}");
@@ -298,8 +298,8 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         Guid orgId = await SeedOrganizationAsync(isSuspended: true);
 
         await AssertConcurrentRequestsConflictAsync(
-            () => Client.PostAsync($"/api/v1/organizations/{orgId}/reactivate", null),
-            () => Client.PostAsync($"/api/v1/organizations/{orgId}/reactivate", null));
+            () => SendWithCurrentOrganizationVersionAsync(HttpMethod.Post, orgId, $"/api/v1/organizations/{orgId}/reactivate"),
+            () => SendWithCurrentOrganizationVersionAsync(HttpMethod.Post, orgId, $"/api/v1/organizations/{orgId}/reactivate"));
     }
 
     [Fact]
@@ -317,7 +317,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
     {
         Guid orgId = await SeedOrganizationAsync(isSuspended: false);
 
-        HttpResponseMessage response = await Client.PostAsync($"/api/v1/organizations/{orgId}/reactivate", null);
+        HttpResponseMessage response = await SendWithCurrentOrganizationVersionAsync(HttpMethod.Post, orgId, $"/api/v1/organizations/{orgId}/reactivate");
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }

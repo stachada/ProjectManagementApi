@@ -23,7 +23,7 @@ public class DeactivateUserHandlerTests
         await db.SaveChangesAsync();
 
         await new DeactivateUserHandler(db).HandleAsync(
-            new DeactivateUser(user.Id, Guid.CreateVersion7()), CancellationToken.None);
+            new DeactivateUser(user.Id, Guid.CreateVersion7(), IfMatch: null), CancellationToken.None);
 
         User reloaded = await db.Users.SingleAsync(u => u.Id == user.Id);
         Assert.False(reloaded.IsActive);
@@ -36,7 +36,7 @@ public class DeactivateUserHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(
             () => new DeactivateUserHandler(db).HandleAsync(
-                new DeactivateUser(Guid.CreateVersion7(), Guid.CreateVersion7()),
+                new DeactivateUser(Guid.CreateVersion7(), Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 
@@ -51,7 +51,7 @@ public class DeactivateUserHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(
             () => new DeactivateUserHandler(db).HandleAsync(
-                new DeactivateUser(user.Id, Guid.CreateVersion7()),
+                new DeactivateUser(user.Id, Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 }

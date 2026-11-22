@@ -11,7 +11,7 @@ namespace Ordinis.UnitTests.Application.Users.Validators;
 public sealed class ChangeUserOrgRoleValidatorTests
 {
     private static ChangeUserOrgRole ValidCommand(Guid? userId = null, Role newOrgRole = Role.Admin, Guid? requestedByUserId = null)
-        => new(userId ?? Guid.CreateVersion7(), newOrgRole, requestedByUserId ?? Guid.CreateVersion7());
+        => new(userId ?? Guid.CreateVersion7(), newOrgRole, requestedByUserId ?? Guid.CreateVersion7(), [1, 2, 3, 4]);
 
     [Fact]
     public async Task TestValidateAsync_ValidCommand_HasNoValidationErrors()

@@ -22,7 +22,7 @@ public class ChangeUserOrgRoleHandlerTests
         await db.SaveChangesAsync();
 
         await new ChangeUserOrgRoleHandler(db).HandleAsync(
-            new ChangeUserOrgRole(user.Id, Role.Admin, Guid.CreateVersion7()),
+            new ChangeUserOrgRole(user.Id, Role.Admin, Guid.CreateVersion7(), IfMatch: null),
             CancellationToken.None);
 
         User reloaded = await db.Users.SingleAsync(u => u.Id == user.Id);
@@ -36,7 +36,7 @@ public class ChangeUserOrgRoleHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(
             () => new ChangeUserOrgRoleHandler(db).HandleAsync(
-                new ChangeUserOrgRole(Guid.CreateVersion7(), Role.Viewer, Guid.CreateVersion7()),
+                new ChangeUserOrgRole(Guid.CreateVersion7(), Role.Viewer, Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 
@@ -52,7 +52,7 @@ public class ChangeUserOrgRoleHandlerTests
 
         await Assert.ThrowsAsync<ConcurrencyException>(
             () => new ChangeUserOrgRoleHandler(db).HandleAsync(
-                new ChangeUserOrgRole(user.Id, Role.Admin, Guid.CreateVersion7()),
+                new ChangeUserOrgRole(user.Id, Role.Admin, Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 }
