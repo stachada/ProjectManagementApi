@@ -26,7 +26,7 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-963 scenarios (outline rows expanded): **279 pass, 684 skipped, 0 fail.**
+963 scenarios (outline rows expanded): **283 pass, 680 skipped, 0 fail.**
 
 | Feature | Status |
 | --- | --- |
@@ -158,7 +158,6 @@ moves to **Fixed gaps** below.
 
 | Id | Current behaviour | Intended behaviour |
 | --- | --- | --- |
-| GAP-06 | A deactivated user's access token keeps working until expiry | rejected immediately |
 | GAP-12 | Users and organizations expose no version (ETag) and accept writes without If-Match | same optimistic concurrency as other aggregates |
 | GAP-13 | Two concurrent requests with the same Idempotency-Key both execute | only one executes; the other replays or is rejected as conflicting |
 
@@ -171,6 +170,7 @@ moves to **Fixed gaps** below.
 | GAP-03 | `AddProjectMemberValidator` only checked that the user existed, so a user of another organization could be added to a project | The user must belong to the project's organization; a cross-tenant ID gets the same "User not found." as a nonexistent one (no tenant probing). Regression tests: `AddProjectMemberValidatorTests`; `project-membership.feature`, `tenant-isolation.feature` |
 | GAP-04 | Assignees (`CreateTask`, `AssignTask`) were only checked for existence — a Viewer, a non-member or another tenant's user could be assigned (authorization only checks the caller) | The assignee must be a project contributor (project Member/Admin, or org Admin of the project's organization), via the shared `ProjectAccessQueries.CanContributeAsync`, also reused for `CreateTask`'s caller check. Regression tests: `AssignTaskValidatorTests`, `CreateTaskValidatorTests`; `task-assignment`, `task-creation`, `tenant-isolation` features |
 | GAP-05 | The last org Admin could demote or deactivate themselves, leaving the organization unadministrable | `OrganizationAdminGuard` (called by `ChangeUserOrgRole` and `DeactivateUser`) requires another **active** org Admin first; `422` `organization.last-admin-demotion` / `organization.last-admin-deactivation`. Regression tests: `LastOrgAdminRuleTests`; `user-management`, `user-lifecycle` features |
+| GAP-06 | Access tokens were only checked cryptographically, so a deactivated user kept full access — and a demoted org Admin kept Admin authority (the role was read from the token) — until the token expired (up to 15 minutes) | `JwtBearerEvents.OnTokenValidated` calls `ITokenPrincipalRevalidator` on every authenticated request: unknown/inactive user → `401`; otherwise the role claim is replaced with the user's current org role, so demotions and promotions apply immediately. One primary-key lookup per request, deliberately uncached. Regression tests: `Ordinis.IntegrationTests/Auth/TokenRevalidationTests`; `user-lifecycle.feature` |
 | GAP-07 | A project could be created in a suspended organization (the validator message already claimed otherwise) | `CreateProjectValidator` requires an active organization. Regression tests: `CreateProjectValidatorTests`; `projects`, `organization-lifecycle` features |
 | GAP-08 | Archiving a board or project didn't lock its tasks: only `CreateTask` checked (the board only); every other task, comment and attachment mutation went through | `TaskContainerGuard.EnsureWritableAsync` (one query for both flags) is called by all 11 task command handlers; archived = fully read-only, rejected with `422` `project.archived` / `board.archived`. Reads keep working. Regression tests: `Ordinis.IntegrationTests/Tasks/ArchivedContainerTests` (13 mutations × board/project); GAP-08 scenarios in `task-creation`, `task-editing`, `project-lifecycle`, `boards` |
 | GAP-09 | Changing the role of / removing a non-member returned `422` `project.member-not-found` | Handlers check membership first and return `404` (a missing `/members/{userId}` sub-resource); the domain guard stays as a backstop. Regression tests: handler unit tests, `ProjectsControllerTests.*_NotAMember_Returns404`; `project-membership.feature` |

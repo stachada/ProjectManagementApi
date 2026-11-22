@@ -47,6 +47,8 @@ public static class InfrastructureServiceExtensions
 
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
+        // Scoped: uses the request's AppDbContext. Called from JwtBearerEvents.OnTokenValidated.
+        services.AddScoped<ITokenPrincipalRevalidator, TokenPrincipalRevalidator>();
 
         // MemoryCacheOptions has no TimeProvider-based clock override in the referenced package
         // version, so cache expiry runs on the wall clock rather than the app's TimeProvider

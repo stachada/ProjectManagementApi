@@ -65,6 +65,7 @@ internal sealed class Seeder(World world)
         Guid userId = await CreateUserAsync(organizationId, name, orgRole, password);
         var persona = new World.Persona(name, userId, organizationId);
         world.Personas[name] = persona;
+        world.PersonaPasswords[name] = password ?? DefaultPassword;
         return persona;
     }
 

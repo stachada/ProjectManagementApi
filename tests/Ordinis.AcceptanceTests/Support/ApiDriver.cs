@@ -30,8 +30,10 @@ internal sealed class ApiDriver(World world, Seeder seeder)
 
         if (persona != Anonymous)
         {
-            Guid userId = world.PersonaNamed(persona).UserId;
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await seeder.AccessTokenForAsync(userId));
+            string token = world.SessionTokens.TryGetValue(persona, out string? sessionToken)
+                ? sessionToken
+                : await seeder.AccessTokenForAsync(world.PersonaNamed(persona).UserId);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         }
 
         if (body is not null)

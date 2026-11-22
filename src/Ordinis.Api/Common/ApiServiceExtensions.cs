@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Ordinis.Domain.Users;
+using Ordinis.Infrastructure.Security;
 using Ordinis.Infrastructure.Security.Authorization;
 
 namespace Ordinis.Api.Common;
@@ -142,6 +143,20 @@ public static class ApiServiceExtensions
                 // Problem Details shape as every other error response in this API.
                 options.Events = new JwtBearerEvents
                 {
+                    // A signature-valid token is not enough: re-check the user's current state so a
+                    // deactivated user is locked out and a role change applies immediately, not after
+                    // the token expires. See ITokenPrincipalRevalidator.
+                    OnTokenValidated = async context =>
+                    {
+                        ITokenPrincipalRevalidator revalidator =
+                            context.HttpContext.RequestServices.GetRequiredService<ITokenPrincipalRevalidator>();
+
+                        if (context.Principal is null
+                            || !await revalidator.RevalidateAsync(context.Principal, context.HttpContext.RequestAborted))
+                        {
+                            context.Fail("The user is unknown or no longer active.");
+                        }
+                    },
                     OnChallenge = async context =>
                     {
                         context.HandleResponse();
