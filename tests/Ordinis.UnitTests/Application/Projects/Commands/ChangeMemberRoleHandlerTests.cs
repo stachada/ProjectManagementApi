@@ -42,14 +42,15 @@ public class ChangeMemberRoleHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_NotAMember_ThrowsDomainException()
+    public async Task HandleAsync_NotAMember_ThrowsNotFoundException()
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
         Project project = ProjectBuilder.Create();
         db.Projects.Add(project);
         await db.SaveChangesAsync();
 
-        await Assert.ThrowsAsync<DomainException>(() =>
+        // GAP-09: a non-member is a missing sub-resource → 404.
+        await Assert.ThrowsAsync<NotFoundException>(() =>
             new ChangeMemberRoleHandler(db)
                 .HandleAsync(new ChangeMemberRole(project.Id, Guid.CreateVersion7(), Role.Member, project.RowVersion)));
     }

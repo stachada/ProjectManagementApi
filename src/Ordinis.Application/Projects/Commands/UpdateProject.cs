@@ -62,14 +62,25 @@ public sealed class UpdateProjectHandler(IAppDbContext db) : ICommandHandler<Upd
 /// </summary>
 public sealed class UpdateProjectValidator : AbstractValidator<UpdateProject>
 {
-    public UpdateProjectValidator(IAppDbContext db)
+    public UpdateProjectValidator(IAppDbContext db, ISlugGenerator slugGenerator)
     {
         RuleFor(x => x.ProjectId)
             .NotEmpty();
 
+        // A rename must not clash with another project of the same organization (same rule as
+        // creation; see NameUniquenessQueries). An unknown project passes, so the handler can 404.
         RuleFor(x => x.NewName)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty()
-            .MaximumLength(100);
+            .MaximumLength(100)
+            .MustAsync(async (command, newName, ct) =>
+                await db.Projects
+                    .Where(p => p.Id == command.ProjectId)
+                    .Select(p => (Guid?)p.OrganizationId)
+                    .SingleOrDefaultAsync(ct) is not Guid organizationId
+                || !await NameUniquenessQueries.IsProjectNameTakenAsync(
+                    db, slugGenerator, organizationId, newName, command.ProjectId, ct))
+            .WithMessage("Another project in this organization already has this name, or had it and was deleted.");
 
         RuleFor(x => x.NewDescription)
             .MaximumLength(1000)

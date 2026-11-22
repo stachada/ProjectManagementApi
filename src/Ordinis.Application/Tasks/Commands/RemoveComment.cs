@@ -47,41 +47,12 @@ internal sealed class RemoveCommentHandler(
         // Archived board/project = read-only tasks (see TaskContainerGuard).
         await TaskContainerGuard.EnsureWritableAsync(db, task.BoardId, cancellationToken);
 
-        bool requesterIsModerator = await IsModeratorAsync(task.BoardId, command.RequestedByUserId, cancellationToken);
+        bool requesterIsModerator =
+            await ProjectAccessQueries.ProjectOfBoardAsync(db, task.BoardId, cancellationToken) is Guid projectId
+            && await ProjectAccessQueries.CanModerateAsync(db, projectId, command.RequestedByUserId, cancellationToken);
 
         task.RemoveComment(command.CommentId, command.RequestedByUserId, requesterIsModerator, timeProvider.GetUtcNow());
 
         await db.SaveChangesAsync(cancellationToken);
-    }
-
-    /// <summary>
-    /// Whether <paramref name="userId"/> is an Admin of the board's project, or an org-level
-    /// Admin of the project's organization.
-    /// </summary>
-    private async Task<bool> IsModeratorAsync(Guid boardId, Guid userId, CancellationToken cancellationToken)
-    {
-        var project = await db.Boards
-            .Where(b => b.Id == boardId)
-            .Join(db.Projects, b => b.ProjectId, p => p.Id, (b, p) => new { p.Id, p.OrganizationId })
-            .SingleOrDefaultAsync(cancellationToken);
-
-        if (project is null)
-        {
-            return false;
-        }
-
-        bool isOrgAdmin = await db.Users.AnyAsync(
-            u => u.Id == userId && u.OrgRole == Role.Admin && u.OrganizationId == project.OrganizationId,
-            cancellationToken);
-
-        if (isOrgAdmin)
-        {
-            return true;
-        }
-
-        // Equality (not ordering) on the string-stored Role translates correctly in SQL.
-        return await db.ProjectMembers.AnyAsync(
-            m => m.ProjectId == project.Id && m.UserId == userId && m.Role == Role.Admin,
-            cancellationToken);
     }
 }

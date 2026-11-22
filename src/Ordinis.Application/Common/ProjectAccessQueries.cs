@@ -50,6 +50,37 @@ public static class ProjectAccessQueries
         return role >= Role.Member; // null >= Member is false, so non-members fail too
     }
 
+    /// <summary>
+    /// Whether <paramref name="userId"/> may moderate the project's content (remove other people's
+    /// comments and attachments): a project Admin, or an org Admin of the project's organization.
+    /// </summary>
+    public static async Task<bool> CanModerateAsync(IAppDbContext db, Guid projectId, Guid userId, CancellationToken cancellationToken)
+    {
+        Guid? organizationId = await db.Projects
+            .Where(p => p.Id == projectId)
+            .Select(p => (Guid?)p.OrganizationId)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (organizationId is null)
+        {
+            return false;
+        }
+
+        bool isOrgAdmin = await db.Users.AnyAsync(
+            u => u.Id == userId && u.OrgRole == Role.Admin && u.OrganizationId == organizationId,
+            cancellationToken);
+
+        if (isOrgAdmin)
+        {
+            return true;
+        }
+
+        // Equality (not ordering) on the string-stored Role translates correctly in SQL.
+        return await db.ProjectMembers.AnyAsync(
+            m => m.ProjectId == projectId && m.UserId == userId && m.Role == Role.Admin,
+            cancellationToken);
+    }
+
     /// <summary>The project a board belongs to, or <see langword="null"/> if the board does not exist.</summary>
     public static Task<Guid?> ProjectOfBoardAsync(IAppDbContext db, Guid boardId, CancellationToken cancellationToken) =>
         db.Boards.Where(b => b.Id == boardId).Select(b => (Guid?)b.ProjectId).SingleOrDefaultAsync(cancellationToken);

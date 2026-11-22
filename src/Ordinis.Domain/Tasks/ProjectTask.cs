@@ -516,19 +516,34 @@ public class ProjectTask : AggregateRoot
     /// </summary>
     /// <param name="attachmentId">The Id of the attachment to remove.</param>
     /// <param name="removedByUserId">The user performing the removal.</param>
+    /// <param name="requesterIsModerator">
+    /// Whether <paramref name="removedByUserId"/> is a project Admin or org Admin — resolved by the
+    /// Application layer, since the task aggregate cannot see project membership. Mirrors
+    /// <see cref="RemoveComment"/>.
+    /// </param>
     /// <param name="now">The date and time when the attachment is being removed. Carried in the domain event.</param>
-    /// <exception cref="DomainException">Thrown if the attachment is not found on this task.</exception>
+    /// <exception cref="DomainException">
+    /// Thrown if the attachment is not found on this task, or if the remover is neither the
+    /// uploader nor a moderator (<c>task.attachment-not-uploader</c>).
+    /// </exception>
     /// <remarks>
     /// This method removes the metadata record only. The Application layer is
     /// responsible for also deleting the file from blob storage after calling this.
     /// </remarks>
-    public void RemoveAttachment(Guid attachmentId, Guid removedByUserId, DateTimeOffset now)
+    public void RemoveAttachment(Guid attachmentId, Guid removedByUserId, bool requesterIsModerator, DateTimeOffset now)
     {
         Attachment attachment = _attachments.FirstOrDefault(a => a.Id == attachmentId)
             ?? throw new DomainException(
                 "Attachment not found on this task.",
                 "attachment.not-found"
             );
+
+        if (attachment.UploadedByUserId != removedByUserId && !requesterIsModerator)
+        {
+            throw new DomainException(
+                "Only the attachment's uploader or a project admin can remove this attachment.",
+                "task.attachment-not-uploader");
+        }
 
         _attachments.Remove(attachment);
 

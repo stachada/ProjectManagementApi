@@ -23,6 +23,9 @@ internal sealed class World
     /// <summary>Task IDs in the order they were created, for "listed in creation order" checks.</summary>
     public List<Guid> TaskCreationOrder { get; } = [];
 
+    /// <summary>Uploaded attachments: (task ID, file name) → attachment ID.</summary>
+    public Dictionary<(Guid TaskId, string FileName), Guid> Attachments { get; } = new();
+
     /// <summary>
     /// Hidden user that "created" each seeded project (the domain makes the creator its first
     /// Admin). Removed from the project as soon as a named Admin joins, so membership lists only

@@ -54,8 +54,7 @@ Feature: User deactivation
         | Olivia  | the request succeeds                 |
         | Mallory | the request is rejected as not found |
 
-    # GAP-05: an org Admin can deactivate themselves even when they are the last one.
-    @gap
+    # GAP-05 (fixed): an organization always keeps an active Admin.
     Scenario: The last org Admin cannot deactivate themselves
       When Olivia deactivates the user Olivia
       Then the request is rejected as invalid

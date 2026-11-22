@@ -34,6 +34,29 @@ internal sealed class SetupSteps(World world, Seeder seeder)
     public Task GivenUserInOrganization(string user, string organization) =>
         seeder.CreatePersonaAsync(user, world.OrganizationNamed(organization), Role.Member);
 
+    [Given(@"^(\w+) is a user in ""([^""]+)"" with password ""([^""]+)""$")]
+    public Task GivenUserWithPassword(string user, string organization, string password) =>
+        seeder.CreatePersonaAsync(user, world.OrganizationNamed(organization), Role.Member, password);
+
+    [Given(@"^the organization ""([^""]+)"" is suspended$")]
+    public Task GivenTheOrganizationIsSuspended(string organization) =>
+        seeder.SuspendOrganizationAsync(world.OrganizationNamed(organization));
+
+    /// <summary>A project without boards whose (first) member is the named persona.</summary>
+    [Given(@"^a project ""([^""]+)"" in ""([^""]+)"" where (\w+) is an? (Viewer|Member|Admin)$")]
+    public async Task GivenAProjectWithMember(string project, string organization, string persona, Role role)
+    {
+        Guid organizationId = world.OrganizationNamed(organization);
+        Guid projectId = await seeder.CreateProjectWithBoardsAsync(organizationId, project);
+
+        if (!world.Personas.TryGetValue(persona, out World.Persona? member))
+        {
+            member = await seeder.CreatePersonaAsync(persona, organizationId, Role.Member);
+        }
+
+        await seeder.AddProjectMemberAsync(projectId, member.UserId, role);
+    }
+
     [Given(@"^a project ""([^""]+)"" in ""([^""]+)"" with a board ""([^""]+)""$")]
     public Task GivenAProjectWithBoard(string project, string organization, string board) =>
         seeder.CreateProjectWithBoardsAsync(world.OrganizationNamed(organization), project, board);

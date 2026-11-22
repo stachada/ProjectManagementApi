@@ -67,14 +67,20 @@ public sealed class UpdateOrganizationHandler(IAppDbContext db) : ICommandHandle
 /// </summary>
 public sealed class UpdateOrganizationValidator : AbstractValidator<UpdateOrganization>
 {
-    public UpdateOrganizationValidator()
+    public UpdateOrganizationValidator(IAppDbContext db, ISlugGenerator slugGenerator)
     {
         RuleFor(x => x.OrganizationId)
             .NotEmpty();
 
+        // A rename must not clash with another organization (same global rule as creation; see
+        // NameUniquenessQueries).
         RuleFor(x => x.NewName)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty()
-            .MaximumLength(100);
+            .MaximumLength(100)
+            .MustAsync(async (command, newName, ct) =>
+                !await NameUniquenessQueries.IsOrganizationNameTakenAsync(db, slugGenerator, newName, command.OrganizationId, ct))
+            .WithMessage("Another organization already has this name.");
 
         RuleFor(x => x.NewDescription)
             .MaximumLength(1000)

@@ -60,8 +60,7 @@ Feature: Organization suspension
       When Olivia renames the organization "Acme" to "Acme Corp"
       Then the request is rejected as invalid with error "organization.suspended"
 
-    # GAP-07: project creation does not check suspension today.
-    @gap
+    # GAP-07 (fixed): a suspended organization gets no new projects.
     Scenario: No projects can be created in a suspended organization
       When Nora creates a project "Hermes" in "Acme"
       Then the request is rejected as invalid on field "organizationId"

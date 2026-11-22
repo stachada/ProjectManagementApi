@@ -37,6 +37,8 @@ internal sealed class DeactivateUserHandler(IAppDbContext db)
             .SingleOrDefaultAsync(u => u.Id == command.UserId, ct)
             ?? throw new NotFoundException(nameof(User), command.UserId);
 
+        await OrganizationAdminGuard.EnsureNotLastAdminBeforeDeactivationAsync(db, user, ct);
+
         // Domain guards: throws DomainException if already inactive.
         user.Deactivate();
 

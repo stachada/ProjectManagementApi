@@ -59,12 +59,9 @@ public sealed class CreateOrganizationValidator : AbstractValidator<CreateOrgani
             .Cascade(CascadeMode.Stop)
             .NotEmpty()
             .MaximumLength(100)
+            // Also catches the current names of renamed organizations — see NameUniquenessQueries.
             .MustAsync(async (name, ct) =>
-            {
-                var slug = slugGenerator.Slugify(name);
-
-                return !await db.Organizations.AnyAsync(o => o.Slug == slug, ct);
-            })
+                !await NameUniquenessQueries.IsOrganizationNameTakenAsync(db, slugGenerator, name, excludeOrganizationId: null, ct))
             .WithMessage("An organization with this name already exists.");
 
         RuleFor(x => x.Description)

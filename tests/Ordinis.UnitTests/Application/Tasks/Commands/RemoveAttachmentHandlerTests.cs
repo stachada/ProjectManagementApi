@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Ordinis.Application.Common;
 using Ordinis.Application.Tasks.Commands;
+using Ordinis.Domain.Common;
 using Ordinis.Domain.Tasks;
 using Ordinis.UnitTests.Common;
 using Ordinis.UnitTests.Common.Builders;
@@ -20,14 +21,14 @@ public class RemoveAttachmentHandlerTests
     {
         using TestAppDbContext db = TestDbContextFactory.Create();
         ProjectTask task = TaskBuilder.Create(now: Now);
+        var removerId = Guid.CreateVersion7(); // the uploader may always remove their own attachment
         Attachment attachment = task.AddAttachment(
-            "report.pdf", "application/pdf", 12_345, "https://storage.test/files/report.pdf", Guid.CreateVersion7(), Now);
+            "report.pdf", "application/pdf", 12_345, "https://storage.test/files/report.pdf", removerId, Now);
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
 
         var fileStorage = new FakeFileStorageService();
         var handler = new RemoveAttachmentHandler(db, fileStorage, new FakeTimeProvider(Now));
-        var removerId = Guid.CreateVersion7();
 
         await handler.HandleAsync(
             new RemoveAttachment(task.Id, attachment.Id, removerId),
@@ -73,5 +74,30 @@ public class RemoveAttachmentHandlerTests
                 CancellationToken.None));
 
         Assert.Null(fileStorage.DeletedDownloadUrl);
+    }
+
+    // GAP-11: someone who neither uploaded the attachment nor moderates the project cannot remove
+    // it — and the stored file must survive the rejected request.
+    [Fact]
+    public async Task HandleAsync_RemoverIsNeitherUploaderNorModerator_ThrowsAndKeepsFile()
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        ProjectTask task = TaskBuilder.Create(now: Now);
+        Attachment attachment = task.AddAttachment(
+            "report.pdf", "application/pdf", 12_345, "https://storage.test/files/report.pdf", Guid.CreateVersion7(), Now);
+        db.Tasks.Add(task);
+        await db.SaveChangesAsync();
+
+        var fileStorage = new FakeFileStorageService();
+        var handler = new RemoveAttachmentHandler(db, fileStorage, new FakeTimeProvider(Now));
+
+        DomainException ex = await Assert.ThrowsAsync<DomainException>(() =>
+            handler.HandleAsync(
+                new RemoveAttachment(task.Id, attachment.Id, Guid.CreateVersion7()),
+                CancellationToken.None));
+
+        Assert.Equal("task.attachment-not-uploader", ex.ErrorCode);
+        Assert.Null(fileStorage.DeletedDownloadUrl);
+        Assert.Single((await db.Tasks.Include(t => t.Attachments).SingleAsync(t => t.Id == task.Id)).Attachments);
     }
 }

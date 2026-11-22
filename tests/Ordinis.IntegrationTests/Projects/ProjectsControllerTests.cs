@@ -825,7 +825,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     }
 
     [Fact]
-    public async Task ChangeMemberRole_NotAMember_Returns422()
+    public async Task ChangeMemberRole_NotAMember_Returns404()
     {
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
@@ -836,7 +836,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}/members/{nonMemberId}/role", ifMatch, request);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        // GAP-09: a non-member is a missing sub-resource → 404.
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -916,7 +917,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
     }
 
     [Fact]
-    public async Task RemoveMember_NotAMember_Returns422()
+    public async Task RemoveMember_NotAMember_Returns404()
     {
         Guid organizationId = await SeedOrganizationAsync();
         Guid userId = await SeedUserAsync(organizationId);
@@ -926,7 +927,8 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
 
         HttpResponseMessage response = await SendAsync(HttpMethod.Delete, $"/api/v1/projects/{projectId}/members/{nonMemberId}", ifMatch);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        // GAP-09: a non-member is a missing sub-resource → 404.
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]

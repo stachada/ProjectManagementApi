@@ -96,11 +96,10 @@ Feature: Task attachments
         | Alice   |
         | Olivia  |
 
-    # GAP-11: there is no uploader check today; any Member may remove any attachment.
-    @gap
+    # GAP-11 (fixed): same uploader-or-moderator rule (and 422 + error code) as comment removal.
     Scenario: Another member cannot remove an attachment
       When Carol removes the attachment "crash.log" from the task "Fix login bug"
-      Then the request is rejected as forbidden
+      Then the request is rejected as invalid with error "task.attachment-not-uploader"
       And the task "Fix login bug" has 1 attachment
 
     Scenario: Removing an unknown attachment is rejected
