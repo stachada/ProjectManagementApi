@@ -188,6 +188,14 @@ internal sealed class Seeder(World world)
         return $"\"{Convert.ToBase64String(rowVersion ?? [])}\"";
     }
 
+    /// <summary>The current version of a project, formatted exactly like the API's ETag.</summary>
+    public async Task<string> CurrentProjectVersionAsync(Guid projectId)
+    {
+        byte[]? rowVersion = await WithDbAsync(db =>
+            db.Projects.Where(p => p.Id == projectId).Select(p => p.RowVersion).SingleAsync());
+        return $"\"{Convert.ToBase64String(rowVersion ?? [])}\"";
+    }
+
     /// <summary>Issues a real access token for a user, signed exactly as the API signs them.</summary>
     public async Task<string> AccessTokenForAsync(Guid userId)
     {

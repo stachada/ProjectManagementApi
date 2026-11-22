@@ -130,9 +130,7 @@ Feature: Project archiving and deletion
       When Alice deletes the project "Apollo"
       Then the request is rejected as not found
 
-    # GAP-15: the slug-uniqueness validator ignores soft-deleted projects, but the
-    # unique (OrganizationId, Slug) index does not, so this fails with a server error.
-    @gap
+    # GAP-15 (fixed): slugs are permanent, so a deleted project's name stays reserved.
     Scenario: The name of a deleted project stays reserved
       Given Alice has deleted the project "Apollo"
       When Nora creates a project "Apollo" in "Acme"

@@ -190,7 +190,7 @@ public sealed class CreateProjectValidatorTests
         TestValidationResult<CreateProject> result = await validator.TestValidateAsync(command);
 
         result.ShouldHaveValidationErrorFor(x => x.Name)
-            .WithErrorMessage("A project with the same name already exists in this organization.");
+            .WithErrorMessage("A project with the same name already exists in this organization, or existed and was deleted (project names are never reused).");
     }
 
     [Fact]
