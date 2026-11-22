@@ -58,6 +58,13 @@ public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Glob
             await WriteAsync(context, ProblemDetailsFactory.Create(
                 context, StatusCodes.Status409Conflict, "Idempotency key conflict", ex.Message));
         }
+        catch (IdempotencyRequestInProgressException ex)
+        {
+            _logger.LogInformation(ex, "Idempotent request still in progress for {Method} {Path}", context.Request.Method, context.Request.Path);
+            context.Response.Headers.RetryAfter = "1";
+            await WriteAsync(context, ProblemDetailsFactory.Create(
+                context, StatusCodes.Status409Conflict, "Request in progress", ex.Message));
+        }
         catch (DomainException ex)
         {
             _logger.LogWarning(ex, "Domain rule violated for {Method} {Path}: {ErrorCode}",
