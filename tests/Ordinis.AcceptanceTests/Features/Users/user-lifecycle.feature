@@ -75,9 +75,8 @@ Feature: User deactivation
       When Nora refreshes the session
       Then the request is rejected as unauthenticated
 
-    # GAP-06: access tokens are not re-checked against the user's status today;
-    # they keep working until they expire (up to 15 minutes).
-    @gap
+    # GAP-06 (fixed): every authenticated request re-checks the user's current status
+    # (and org role), so an existing token stops working the moment the user is deactivated.
     Scenario: An inactive user's current session stops working immediately
       When Nora views the organization "Acme"
       Then the request is rejected as unauthenticated

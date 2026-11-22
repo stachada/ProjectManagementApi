@@ -23,6 +23,15 @@ internal sealed class World
     /// <summary>Task IDs in the order they were created, for "listed in creation order" checks.</summary>
     public List<Guid> TaskCreationOrder { get; } = [];
 
+    /// <summary>Passwords of personas created with a specific one (others use <see cref="Seeder.DefaultPassword"/>).</summary>
+    public Dictionary<string, string> PersonaPasswords { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Access tokens obtained by a real sign-in ("Nora has signed in"). When present, requests as
+    /// that persona use this token instead of a freshly minted one — the same token a client keeps.
+    /// </summary>
+    public Dictionary<string, string> SessionTokens { get; } = new(StringComparer.Ordinal);
+
     /// <summary>Uploaded attachments: (task ID, file name) → attachment ID.</summary>
     public Dictionary<(Guid TaskId, string FileName), Guid> Attachments { get; } = new();
 
