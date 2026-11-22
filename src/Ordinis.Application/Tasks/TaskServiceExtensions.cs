@@ -28,6 +28,7 @@ internal static class TaskServiceExtensions
         services.AddScoped<ICommandHandler<UpdateTask>, UpdateTaskHandler>();
         services.AddScoped<ICommandHandler<DeleteTask>, DeleteTaskHandler>();
         services.AddScoped<ICommandHandler<MoveTask>, MoveTaskHandler>();
+        services.AddScoped<ICommandHandler<ReopenTask>, ReopenTaskHandler>();
         services.AddScoped<ICommandHandler<AssignTask>, AssignTaskHandler>();
         services.AddScoped<ICommandHandler<UnassignTask>, UnassignTaskHandler>();
 
