@@ -143,7 +143,11 @@ correct than fetching everything and filtering client-side); sorting makes "page
 something stable and repeatable.
 
 **How Ordinis does it:** offset-based pagination (`?page=`, 1-based, default 1; `?pageSize=`,
-default 20, server-clamped to a max of 100) on every list endpoint, returning a
+default 20) on every list endpoint. Every list query normalizes the request through one shared
+rule, `PageRequest.Normalize` (`Ordinis.Application/Common/PageRequest.cs`): `pageSize` is clamped
+to `1..100` and `page` to at least 1 (and to the largest page whose offset still fits in an
+`int`), so out-of-range values return a valid — possibly empty — page instead of a database error.
+Each list returns a
 `PagedResult<T>` (`Ordinis.Application/Common/PagedResult.cs`) and an `X-Total-Count`
 response header carrying the total row count across all pages (so a client can compute
 total page count without a second request). Sorting via `?sortBy=`/`?sortDescending=`,
