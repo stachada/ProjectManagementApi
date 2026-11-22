@@ -51,6 +51,9 @@ internal sealed class CreateTaskHandler(
 {
     public async Task<Guid> HandleAsync(CreateTask command, CancellationToken cancellationToken)
     {
+        // The validator rejects an archived board; this also covers an archived project.
+        await TaskContainerGuard.EnsureWritableAsync(db, command.BoardId, cancellationToken);
+
         DateTimeOffset now = timeProvider.GetUtcNow();
 
         var task = ProjectTask.Create(

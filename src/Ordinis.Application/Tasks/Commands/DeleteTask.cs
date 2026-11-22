@@ -57,6 +57,9 @@ internal sealed class DeleteTaskHandler(
 
         ConcurrencyGuard.EnsureMatch(task.RowVersion, command.IfMatch, "Task", command.TaskId);
 
+        // Archived board/project = read-only tasks (see TaskContainerGuard).
+        await TaskContainerGuard.EnsureWritableAsync(db, task.BoardId, cancellationToken);
+
         DateTimeOffset now = timeProvider.GetUtcNow();
 
         task.Delete(command.RequestedByUserId, now);

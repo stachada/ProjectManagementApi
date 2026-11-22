@@ -85,8 +85,7 @@ Feature: Project archiving and deletion
       When Alice creates a board "Sprint 2" in project "Apollo"
       Then the request is rejected as invalid on field "projectId"
 
-    # GAP-08: archived projects do not lock their tasks today.
-    @gap
+    # GAP-08 (fixed): an archived board or project makes its tasks read-only.
     Scenario Outline: Tasks of an archived project cannot be changed: <change>
       When Bob <change>
       Then the request is rejected as invalid

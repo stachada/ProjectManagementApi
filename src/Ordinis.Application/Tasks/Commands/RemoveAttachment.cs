@@ -41,6 +41,9 @@ internal sealed class RemoveAttachmentHandler(
             .FirstOrDefaultAsync(t => t.Id == command.TaskId, cancellationToken)
                 ?? throw new NotFoundException(nameof(ProjectTask), command.TaskId);
 
+        // Archived board/project = read-only tasks (see TaskContainerGuard).
+        await TaskContainerGuard.EnsureWritableAsync(db, task.BoardId, cancellationToken);
+
         Attachment attachment = task.Attachments.FirstOrDefault(a => a.Id == command.AttachmentId)
             ?? throw new NotFoundException(nameof(Attachment), command.AttachmentId);
         string storageUrl = attachment.StorageUrl;

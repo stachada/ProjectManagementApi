@@ -168,8 +168,7 @@ Feature: Boards
       When Bob creates a task "Write docs" on board "Sprint 1"
       Then the request is rejected as invalid on field "boardId"
 
-    # GAP-08: existing tasks on an archived board are not locked today.
-    @gap
+    # GAP-08 (fixed): an archived board or project makes its tasks read-only.
     Scenario: Tasks on an archived board cannot be moved
       Given a task "Fix login bug" on board "Sprint 1"
       And the board "Sprint 1" is archived
