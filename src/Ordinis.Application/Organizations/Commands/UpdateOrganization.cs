@@ -12,10 +12,15 @@ namespace Ordinis.Application.Organizations.Commands;
 /// <param name="OrganizationId">The organization to update.</param>
 /// <param name="NewName">The new display name.</param>
 /// <param name="NewDescription">The new description, or <c>null</c> to clear it.</param>
+/// <param name="IfMatch">
+/// The expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// Compared against the current one before the change is applied (stale → 409).
+/// </param>
 public sealed record UpdateOrganization(
     Guid OrganizationId,
     string NewName,
-    string? NewDescription) : ICommand;
+    string? NewDescription,
+    byte[]? IfMatch) : ICommand;
 
 // Handler
 /// <summary>
@@ -43,6 +48,8 @@ public sealed class UpdateOrganizationHandler(IAppDbContext db) : ICommandHandle
         Organization organization = await db.Organizations
             .SingleOrDefaultAsync(o => o.Id == command.OrganizationId, cancellationToken)
                 ?? throw new NotFoundException(nameof(Organization), command.OrganizationId);
+
+        ConcurrencyGuard.EnsureMatch(organization.RowVersion, command.IfMatch, nameof(Organization), command.OrganizationId);
 
         organization.Rename(command.NewName);
         organization.UpdateDescription(command.NewDescription);
@@ -85,5 +92,9 @@ public sealed class UpdateOrganizationValidator : AbstractValidator<UpdateOrgani
         RuleFor(x => x.NewDescription)
             .MaximumLength(1000)
             .When(x => x.NewDescription is not null);
+
+        RuleFor(x => x.IfMatch)
+            .NotNull()
+            .WithMessage("If-Match header is required.");
     }
 }

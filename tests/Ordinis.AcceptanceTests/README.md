@@ -156,9 +156,17 @@ Scenarios tagged `@gap` carry a `# GAP-nn` comment pointing here. When a gap is 
 its `@gap` tags are removed (the scenarios become ordinary regression specs) and the row
 moves to **Fixed gaps** below.
 
-| Id | Current behaviour | Intended behaviour |
-| --- | --- | --- |
-| GAP-12 | Users and organizations expose no version (ETag) and accept writes without If-Match | same optimistic concurrency as other aggregates |
+*No open gaps — all 17 found by the specs are fixed (see below).*
+
+### Known edge cases (documented, not fixed)
+
+- **Simultaneous last-admin demotion.** If an organization's only two org Admins demote (or
+  deactivate) *each other* within the same instant, both requests can pass
+  `OrganizationAdminGuard`'s "another active Admin exists" check, leaving no active Admin. Each
+  request changes a *different* user row, so `If-Match` cannot detect it; closing it would need
+  an organization-level lock or a serializable transaction around the check. Requires two
+  Admins acting within milliseconds of each other, and an operator can restore an Admin
+  directly in the database — accepted as a documented edge case.
 
 ### Fixed gaps
 
@@ -175,6 +183,7 @@ moves to **Fixed gaps** below.
 | GAP-09 | Changing the role of / removing a non-member returned `422` `project.member-not-found` | Handlers check membership first and return `404` (a missing `/members/{userId}` sub-resource); the domain guard stays as a backstop. Regression tests: handler unit tests, `ProjectsControllerTests.*_NotAMember_Returns404`; `project-membership.feature` |
 | GAP-10 | Renaming a project/organization skipped the name-uniqueness check | Shared `NameUniquenessQueries`: a name clashes by slug **or** by another resource's current name (ignoring case, since renames don't change slugs), on create and rename; soft-deleted projects count. Regression tests: `UpdateProjectValidatorTests`, `UpdateOrganizationValidatorTests`, `CreateProjectValidatorTests`; `projects`, `organizations` features |
 | GAP-11 | Any project Member could remove any attachment | `ProjectTask.RemoveAttachment` requires the uploader or a moderator (project/org Admin), mirroring comment removal: `422` `task.attachment-not-uploader`; the stored file is kept. Moderator check shared via `ProjectAccessQueries.CanModerateAsync`. Regression tests: `ProjectTaskTests`, `RemoveAttachmentHandlerTests`; `task-attachments.feature` |
+| GAP-12 | Users and organizations had a `RowVersion` but exposed no `ETag` and ignored `If-Match`, so a read-modify-write lost update was possible | Same contract as every other aggregate: `ETag` on `GET /users/{id}` and `/organizations/{id}`; `If-Match` required on their 7 writes (missing → `422`, stale → `409`) — a pre-1.0 breaking change. Session bookkeeping (refresh-token rotation) no longer rotates a user's version. Regression tests: `UserAndOrganizationConcurrencyTests`, `IfMatchRequiredValidatorTests` |
 | GAP-13 | Two concurrent requests with the same `Idempotency-Key` both executed: the middleware looked the key up, and only cached the result *after* running | `IIdempotencyStore.TryReserveAsync` atomically reserves the key before the request runs; an identical request meanwhile gets `409` "Request in progress" + `Retry-After` and is not executed; the reservation is completed on `2xx` or released otherwise. Regression tests: `IdempotencyInFlightTests` (deterministic, via `ConcurrencyRaceInterceptor`), `InMemoryIdempotencyStoreTests` |
 | GAP-14 | Task `Status`/`Priority` are stored as strings (`HasConversion<string>()`), so `sortBy=status/priority` ordered alphabetically (priority descending: Medium, Low, High, Critical) | `EntityQueryableExtensions.OrderByEnumValue` sorts by a `CASE` rank of the declared enum order in `GetTasksFiltered`, `GetProjectTasks`, `GetBoardTasks`, `GetUserTasks`; string storage kept. Regression specs: `task-listing.feature` sort scenarios; unit tests `EntityQueryableExtensionsTests` |
 | GAP-15 | Re-creating a deleted project's name passed validation (the soft-delete query filter hid it) but violated the unfiltered unique `(OrganizationId, Slug)` index → 500 | `CreateProjectValidator` checks slug uniqueness with `IgnoreQueryFilters()`, so a deleted project's slug stays reserved (422 on `name`). Regression tests: `ProjectsControllerTests.CreateProject_NameOfSoftDeletedProject_Returns422AndCreatesNothing`; `project-lifecycle.feature` "The name of a deleted project stays reserved" |

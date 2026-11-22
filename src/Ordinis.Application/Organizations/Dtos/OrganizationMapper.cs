@@ -27,6 +27,10 @@ public static class OrganizationMapper
             Description = organization.Description,
             IsActive = organization.IsActive,
             CreatedAt = organization.CreatedAt,
-            ProjectCount = projectCount
+            ProjectCount = projectCount,
+            // Empty for an unpersisted instance (unit tests); EF Core sets RowVersion on save.
+            ConcurrencyToken = organization.RowVersion is { Length: > 0 }
+                ? Convert.ToBase64String(organization.RowVersion)
+                : string.Empty
         };
 }

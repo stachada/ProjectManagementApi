@@ -32,6 +32,10 @@ public static class UserMapper
             OrganizationId = user.OrganizationId,
             OrganizationName = organizationName,
             CreatedAt = user.CreatedAt,
-            UpdatedAt = user.UpdatedAt
+            UpdatedAt = user.UpdatedAt,
+            // Empty for an unpersisted instance (unit tests); EF Core sets RowVersion on save.
+            ConcurrencyToken = user.RowVersion is { Length: > 0 }
+                ? Convert.ToBase64String(user.RowVersion)
+                : string.Empty
         };
 }

@@ -21,10 +21,15 @@ namespace Ordinis.Application.Users.Commands;
 /// projects and inviting users. Project-level permissions are separate and live
 /// on <c>ProjectMember</c>.
 /// </remarks>
+/// <param name="IfMatch">
+/// The expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// Compared against the current one before the change is applied (stale → 409).
+/// </param>
 public sealed record ChangeUserOrgRole(
     Guid UserId,
     Role NewOrgRole,
-    Guid RequestedByUserId) : ICommand;
+    Guid RequestedByUserId,
+    byte[]? IfMatch) : ICommand;
 
 // Handler
 /// <summary>
@@ -38,6 +43,8 @@ internal sealed class ChangeUserOrgRoleHandler(IAppDbContext db)
         User user = await db.Users
             .SingleOrDefaultAsync(u => u.Id == command.UserId, ct)
                 ?? throw new NotFoundException(nameof(User), command.UserId);
+
+        ConcurrencyGuard.EnsureMatch(user.RowVersion, command.IfMatch, nameof(User), command.UserId);
 
         await OrganizationAdminGuard.EnsureNotLastAdminBeforeDemotionAsync(db, user, command.NewOrgRole, ct);
 
@@ -73,5 +80,9 @@ internal sealed class ChangeUserOrgRoleValidator : AbstractValidator<ChangeUserO
 
         RuleFor(x => x.RequestedByUserId)
             .NotEmpty();
+
+        RuleFor(x => x.IfMatch)
+            .NotNull()
+            .WithMessage("If-Match header is required.");
     }
 }

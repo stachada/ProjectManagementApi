@@ -56,4 +56,10 @@ public sealed record UserDto
     /// When the user account was last updated (UTC).
     /// </summary>
     public required DateTimeOffset UpdatedAt { get; init; }
+
+    /// <summary>
+    /// Base64-encoded <c>RowVersion</c>. Returned as the <c>ETag</c> response header by the API
+    /// layer; clients echo it back via <c>If-Match</c> on mutating requests.
+    /// </summary>
+    public string ConcurrencyToken { get; init; } = string.Empty;
 }

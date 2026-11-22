@@ -24,7 +24,7 @@ public class ReactivateUserHandlerTests
         await db.SaveChangesAsync();
 
         await new ReactivateUserHandler(db).HandleAsync(
-            new ReactivateUser(user.Id, Guid.CreateVersion7()), CancellationToken.None);
+            new ReactivateUser(user.Id, Guid.CreateVersion7(), IfMatch: null), CancellationToken.None);
 
         User reloaded = await db.Users.SingleAsync(u => u.Id == user.Id);
         Assert.True(reloaded.IsActive);
@@ -37,7 +37,7 @@ public class ReactivateUserHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(
             () => new ReactivateUserHandler(db).HandleAsync(
-                new ReactivateUser(Guid.CreateVersion7(), Guid.CreateVersion7()),
+                new ReactivateUser(Guid.CreateVersion7(), Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 
@@ -51,7 +51,7 @@ public class ReactivateUserHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(
             () => new ReactivateUserHandler(db).HandleAsync(
-                new ReactivateUser(user.Id, Guid.CreateVersion7()),
+                new ReactivateUser(user.Id, Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 }

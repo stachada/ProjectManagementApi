@@ -20,9 +20,14 @@ namespace Ordinis.Application.Users.Commands;
 /// suggestions, but their historical contributions (tasks, comments) remain
 /// intact and attributed.
 /// </remarks>
+/// <param name="IfMatch">
+/// The expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// Compared against the current one before the change is applied (stale → 409).
+/// </param>
 public sealed record DeactivateUser(
     Guid UserId,
-    Guid RequestedByUserId) : ICommand;
+    Guid RequestedByUserId,
+    byte[]? IfMatch) : ICommand;
 
 // Handler
 /// <summary>
@@ -36,6 +41,8 @@ internal sealed class DeactivateUserHandler(IAppDbContext db)
         User user = await db.Users
             .SingleOrDefaultAsync(u => u.Id == command.UserId, ct)
             ?? throw new NotFoundException(nameof(User), command.UserId);
+
+        ConcurrencyGuard.EnsureMatch(user.RowVersion, command.IfMatch, nameof(User), command.UserId);
 
         await OrganizationAdminGuard.EnsureNotLastAdminBeforeDeactivationAsync(db, user, ct);
 
@@ -66,5 +73,9 @@ internal sealed class DeactivateUserValidator : AbstractValidator<DeactivateUser
 
         RuleFor(x => x.RequestedByUserId)
             .NotEmpty();
+
+        RuleFor(x => x.IfMatch)
+            .NotNull()
+            .WithMessage("If-Match header is required.");
     }
 }

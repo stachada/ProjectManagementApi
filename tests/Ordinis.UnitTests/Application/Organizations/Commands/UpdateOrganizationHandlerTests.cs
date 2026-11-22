@@ -24,7 +24,7 @@ public class UpdateOrganizationHandlerTests
         await db.SaveChangesAsync();
 
         await new UpdateOrganizationHandler(db)
-            .HandleAsync(new UpdateOrganization(org.Id, "New Name", "New description"));
+            .HandleAsync(new UpdateOrganization(org.Id, "New Name", "New description", IfMatch: null));
 
         Organization reloaded = await db.Organizations.SingleAsync(o => o.Id == org.Id);
         Assert.Equal("New Name", reloaded.Name);
@@ -40,7 +40,7 @@ public class UpdateOrganizationHandlerTests
         await db.SaveChangesAsync();
 
         await new UpdateOrganizationHandler(db)
-            .HandleAsync(new UpdateOrganization(org.Id, "Completely Different Name", null));
+            .HandleAsync(new UpdateOrganization(org.Id, "Completely Different Name", null, IfMatch: null));
 
         Organization reloaded = await db.Organizations.SingleAsync(o => o.Id == org.Id);
         Assert.Equal("old-name", reloaded.Slug);
@@ -55,7 +55,7 @@ public class UpdateOrganizationHandlerTests
         await db.SaveChangesAsync();
 
         await new UpdateOrganizationHandler(db)
-            .HandleAsync(new UpdateOrganization(org.Id, "New Name", null));
+            .HandleAsync(new UpdateOrganization(org.Id, "New Name", null, IfMatch: null));
 
         Organization reloaded = await db.Organizations.SingleAsync(o => o.Id == org.Id);
         Assert.Null(reloaded.Description);
@@ -68,7 +68,7 @@ public class UpdateOrganizationHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(
             () => new UpdateOrganizationHandler(db)
-                .HandleAsync(new UpdateOrganization(Guid.CreateVersion7(), "New Name", null)));
+                .HandleAsync(new UpdateOrganization(Guid.CreateVersion7(), "New Name", null, IfMatch: null)));
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class UpdateOrganizationHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(
             () => new UpdateOrganizationHandler(db)
-                .HandleAsync(new UpdateOrganization(org.Id, "Any Name", "Any description")));
+                .HandleAsync(new UpdateOrganization(org.Id, "Any Name", "Any description", IfMatch: null)));
 
         Organization reloaded = await db.Organizations.SingleAsync(o => o.Id == org.Id);
         Assert.Equal("Original Name", reloaded.Name);
@@ -105,6 +105,6 @@ public class UpdateOrganizationHandlerTests
 
         await Assert.ThrowsAsync<ConcurrencyException>(
             () => new UpdateOrganizationHandler(db)
-                .HandleAsync(new UpdateOrganization(org.Id, "New Name", null)));
+                .HandleAsync(new UpdateOrganization(org.Id, "New Name", null, IfMatch: null)));
     }
 }

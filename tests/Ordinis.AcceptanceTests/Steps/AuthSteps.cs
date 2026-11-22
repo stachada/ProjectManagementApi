@@ -26,8 +26,9 @@ internal sealed class AuthSteps(World world, Seeder seeder, ApiDriver api)
     [Given(@"^(\w+) has deactivated the user (\w+)$")]
     public async Task GivenPersonaHasDeactivatedTheUser(string persona, string user)
     {
+        Guid userId = world.PersonaNamed(user).UserId;
         ApiResponse response = await api.SendAsync(persona, HttpMethod.Post,
-            $"/api/v1/users/{world.PersonaNamed(user).UserId}/deactivate");
+            $"/api/v1/users/{userId}/deactivate", body: null, await seeder.CurrentUserVersionAsync(userId));
         Assert.True(response.IsSuccess, $"Arrangement failed — {persona} could not deactivate {user}: {response}");
     }
 

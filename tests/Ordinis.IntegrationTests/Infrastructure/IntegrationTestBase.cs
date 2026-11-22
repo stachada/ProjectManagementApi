@@ -98,6 +98,24 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         db => db.Boards.Where(b => b.Id == boardId).Select(b => b.RowVersion).SingleAsync());
 
     /// <summary>
+    /// Sends a request to a user write endpoint with the user's <i>current</i> <c>RowVersion</c>
+    /// as <c>If-Match</c>, read at send time (so back-to-back writes each get a fresh token). An
+    /// unknown user gets <see cref="PlaceholderIfMatch"/>, so not-found tests still reach the handler.
+    /// </summary>
+    protected async Task<HttpResponseMessage> SendWithCurrentUserVersionAsync(HttpMethod method, Guid userId, string requestUri, object? body = null)
+    {
+        byte[]? version = await SeedAsync(db => db.Users.Where(u => u.Id == userId).Select(u => u.RowVersion).SingleOrDefaultAsync());
+        return await SendAsync(method, requestUri, version ?? PlaceholderIfMatch, body);
+    }
+
+    /// <summary>Organization counterpart of <see cref="SendWithCurrentUserVersionAsync"/>.</summary>
+    protected async Task<HttpResponseMessage> SendWithCurrentOrganizationVersionAsync(HttpMethod method, Guid organizationId, string requestUri, object? body = null)
+    {
+        byte[]? version = await SeedAsync(db => db.Organizations.Where(o => o.Id == organizationId).Select(o => o.RowVersion).SingleOrDefaultAsync());
+        return await SendAsync(method, requestUri, version ?? PlaceholderIfMatch, body);
+    }
+
+    /// <summary>
     /// A stand-in <c>If-Match</c> token for tests that only need a non-null value to get past the
     /// <c>IfMatch.NotNull()</c> validation rule (e.g. a nonexistent-entity 404 test, where the
     /// actual RowVersion comparison in <c>ConcurrencyGuard.EnsureMatch</c> never runs because the

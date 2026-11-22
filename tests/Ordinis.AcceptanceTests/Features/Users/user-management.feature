@@ -148,8 +148,8 @@ Feature: User management
       When Bob changes the display name of Bob to "Robert"
       Then the task "Fix login bug" shows the assignee name "Robert"
 
-    # GAP-12: users expose no version and accept writes without one.
-    @gap
+    # GAP-12 (fixed): users and organizations are versioned like every other aggregate
+    # (ETag on GET, required If-Match on writes).
     Scenario: Updating with a stale version is rejected
       Given Olivia has read the user Bob
       And Bob has since changed the display name of Bob to "Robert"

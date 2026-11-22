@@ -22,7 +22,7 @@ public class UpdateUserHandlerTests
         await db.SaveChangesAsync();
 
         await new UpdateUserHandler(db).HandleAsync(
-            new UpdateUser(user.Id, "New Name", Guid.CreateVersion7()),
+            new UpdateUser(user.Id, "New Name", Guid.CreateVersion7(), IfMatch: null),
             CancellationToken.None);
 
         User reloaded = await db.Users.SingleAsync(u => u.Id == user.Id);
@@ -36,7 +36,7 @@ public class UpdateUserHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(
             () => new UpdateUserHandler(db).HandleAsync(
-                new UpdateUser(Guid.CreateVersion7(), "Name", Guid.CreateVersion7()),
+                new UpdateUser(Guid.CreateVersion7(), "Name", Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 
@@ -50,7 +50,7 @@ public class UpdateUserHandlerTests
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => new UpdateUserHandler(db).HandleAsync(
-                new UpdateUser(user.Id, "", Guid.CreateVersion7()),
+                new UpdateUser(user.Id, "", Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 
@@ -66,7 +66,7 @@ public class UpdateUserHandlerTests
 
         await Assert.ThrowsAsync<ConcurrencyException>(
             () => new UpdateUserHandler(db).HandleAsync(
-                new UpdateUser(user.Id, "Updated Name", Guid.CreateVersion7()),
+                new UpdateUser(user.Id, "Updated Name", Guid.CreateVersion7(), IfMatch: null),
                 CancellationToken.None));
     }
 }

@@ -152,8 +152,8 @@ Feature: Organizations
         | Nora    | the request is rejected as forbidden |
         | Mallory | the request is rejected as not found |
 
-    # GAP-12: organizations expose no version and accept writes without one.
-    @gap
+    # GAP-12 (fixed): users and organizations are versioned like every other aggregate
+    # (ETag on GET, required If-Match on writes).
     Scenario: Updating with a stale version is rejected
       Given Olivia has read the organization "Acme"
       And another Acme admin has since renamed the organization "Acme" to "Acme Corp"

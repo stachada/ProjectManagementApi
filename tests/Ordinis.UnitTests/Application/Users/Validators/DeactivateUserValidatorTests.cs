@@ -10,7 +10,7 @@ namespace Ordinis.UnitTests.Application.Users.Validators;
 public sealed class DeactivateUserValidatorTests
 {
     private static DeactivateUser ValidCommand(Guid? userId = null, Guid? requestedByUserId = null)
-        => new(userId ?? Guid.CreateVersion7(), requestedByUserId ?? Guid.CreateVersion7());
+        => new(userId ?? Guid.CreateVersion7(), requestedByUserId ?? Guid.CreateVersion7(), [1, 2, 3, 4]);
 
     [Fact]
     public async Task TestValidateAsync_ValidCommand_HasNoValidationErrors()

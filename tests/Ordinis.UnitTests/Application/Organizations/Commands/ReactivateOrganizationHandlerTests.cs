@@ -24,7 +24,7 @@ public class ReactivateOrganizationHandlerTests
         await db.SaveChangesAsync();
 
         await new ReactivateOrganizationHandler(db)
-            .HandleAsync(new ReactivateOrganization(org.Id));
+            .HandleAsync(new ReactivateOrganization(org.Id, IfMatch: null));
 
         Organization reloaded = await db.Organizations.SingleAsync(o => o.Id == org.Id);
         Assert.True(reloaded.IsActive);
@@ -37,7 +37,7 @@ public class ReactivateOrganizationHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(
             () => new ReactivateOrganizationHandler(db)
-                .HandleAsync(new ReactivateOrganization(Guid.CreateVersion7())));
+                .HandleAsync(new ReactivateOrganization(Guid.CreateVersion7(), IfMatch: null)));
     }
 
     [Fact]
@@ -50,6 +50,6 @@ public class ReactivateOrganizationHandlerTests
 
         await Assert.ThrowsAsync<DomainException>(
             () => new ReactivateOrganizationHandler(db)
-                .HandleAsync(new ReactivateOrganization(org.Id)));
+                .HandleAsync(new ReactivateOrganization(org.Id, IfMatch: null)));
     }
 }

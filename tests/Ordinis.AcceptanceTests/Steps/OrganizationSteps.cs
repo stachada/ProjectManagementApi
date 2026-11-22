@@ -17,7 +17,8 @@ internal sealed class OrganizationSteps(World world, Seeder seeder, ApiDriver ap
         string? description = (await seeder.FindOrganizationAsync(organizationId)).Description;
 
         ApiResponse response = await api.SendAsync(persona, HttpMethod.Put, $"/api/v1/organizations/{organizationId}",
-            new { name = newName, description });
+            new { name = newName, description },
+            await seeder.CurrentOrganizationVersionAsync(organizationId));
 
         if (response.IsSuccess)
         {
@@ -26,12 +27,20 @@ internal sealed class OrganizationSteps(World world, Seeder seeder, ApiDriver ap
     }
 
     [When("^" + Actor + @" changes the org role of (\w+) to (Viewer|Member|Admin)$")]
-    public Task WhenPersonaChangesTheOrgRole(string persona, string user, Role newOrgRole) =>
-        api.SendAsync(persona, HttpMethod.Put, $"/api/v1/users/{world.PersonaNamed(user).UserId}/org-role", new { newOrgRole });
+    public async Task WhenPersonaChangesTheOrgRole(string persona, string user, Role newOrgRole)
+    {
+        Guid userId = world.PersonaNamed(user).UserId;
+        await api.SendAsync(persona, HttpMethod.Put, $"/api/v1/users/{userId}/org-role", new { newOrgRole },
+            await seeder.CurrentUserVersionAsync(userId));
+    }
 
     [When("^" + Actor + @" deactivates the user (\w+)$")]
-    public Task WhenPersonaDeactivatesTheUser(string persona, string user) =>
-        api.SendAsync(persona, HttpMethod.Post, $"/api/v1/users/{world.PersonaNamed(user).UserId}/deactivate");
+    public async Task WhenPersonaDeactivatesTheUser(string persona, string user)
+    {
+        Guid userId = world.PersonaNamed(user).UserId;
+        await api.SendAsync(persona, HttpMethod.Post, $"/api/v1/users/{userId}/deactivate", body: null,
+            await seeder.CurrentUserVersionAsync(userId));
+    }
 
     [Then(@"^the user (\w+) has org role (Viewer|Member|Admin)$")]
     public async Task ThenTheUserHasOrgRole(string user, Role expected)

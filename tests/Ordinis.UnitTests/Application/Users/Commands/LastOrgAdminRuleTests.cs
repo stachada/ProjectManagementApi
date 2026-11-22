@@ -24,7 +24,7 @@ public sealed class LastOrgAdminRuleTests
         User admin = await AddUserAsync(db, "admin@acme.example", Role.Admin);
 
         DomainException ex = await Assert.ThrowsAsync<DomainException>(() =>
-            new ChangeUserOrgRoleHandler(db).HandleAsync(new ChangeUserOrgRole(admin.Id, newRole, admin.Id), CancellationToken.None));
+            new ChangeUserOrgRoleHandler(db).HandleAsync(new ChangeUserOrgRole(admin.Id, newRole, admin.Id, IfMatch: null), CancellationToken.None));
 
         Assert.Equal("organization.last-admin-demotion", ex.ErrorCode);
         Assert.Equal(Role.Admin, (await db.Users.FindAsync(admin.Id))!.OrgRole);
@@ -37,7 +37,7 @@ public sealed class LastOrgAdminRuleTests
         User admin = await AddUserAsync(db, "admin@acme.example", Role.Admin);
         await AddUserAsync(db, "second-admin@acme.example", Role.Admin);
 
-        await new ChangeUserOrgRoleHandler(db).HandleAsync(new ChangeUserOrgRole(admin.Id, Role.Member, admin.Id), CancellationToken.None);
+        await new ChangeUserOrgRoleHandler(db).HandleAsync(new ChangeUserOrgRole(admin.Id, Role.Member, admin.Id, IfMatch: null), CancellationToken.None);
 
         Assert.Equal(Role.Member, (await db.Users.FindAsync(admin.Id))!.OrgRole);
     }
@@ -52,7 +52,7 @@ public sealed class LastOrgAdminRuleTests
         await db.SaveChangesAsync();
 
         await Assert.ThrowsAsync<DomainException>(() =>
-            new ChangeUserOrgRoleHandler(db).HandleAsync(new ChangeUserOrgRole(admin.Id, Role.Member, admin.Id), CancellationToken.None));
+            new ChangeUserOrgRoleHandler(db).HandleAsync(new ChangeUserOrgRole(admin.Id, Role.Member, admin.Id, IfMatch: null), CancellationToken.None));
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public sealed class LastOrgAdminRuleTests
         await db.SaveChangesAsync();
 
         await Assert.ThrowsAsync<DomainException>(() =>
-            new ChangeUserOrgRoleHandler(db).HandleAsync(new ChangeUserOrgRole(admin.Id, Role.Member, admin.Id), CancellationToken.None));
+            new ChangeUserOrgRoleHandler(db).HandleAsync(new ChangeUserOrgRole(admin.Id, Role.Member, admin.Id, IfMatch: null), CancellationToken.None));
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public sealed class LastOrgAdminRuleTests
         using TestAppDbContext db = TestDbContextFactory.Create();
         User admin = await AddUserAsync(db, "admin@acme.example", Role.Admin);
 
-        await new ChangeUserOrgRoleHandler(db).HandleAsync(new ChangeUserOrgRole(admin.Id, Role.Admin, admin.Id), CancellationToken.None);
+        await new ChangeUserOrgRoleHandler(db).HandleAsync(new ChangeUserOrgRole(admin.Id, Role.Admin, admin.Id, IfMatch: null), CancellationToken.None);
 
         Assert.Equal(Role.Admin, (await db.Users.FindAsync(admin.Id))!.OrgRole);
     }
@@ -85,7 +85,7 @@ public sealed class LastOrgAdminRuleTests
         User admin = await AddUserAsync(db, "admin@acme.example", Role.Admin);
 
         DomainException ex = await Assert.ThrowsAsync<DomainException>(() =>
-            new DeactivateUserHandler(db).HandleAsync(new DeactivateUser(admin.Id, admin.Id), CancellationToken.None));
+            new DeactivateUserHandler(db).HandleAsync(new DeactivateUser(admin.Id, admin.Id, IfMatch: null), CancellationToken.None));
 
         Assert.Equal("organization.last-admin-deactivation", ex.ErrorCode);
         Assert.True((await db.Users.FindAsync(admin.Id))!.IsActive);
@@ -98,7 +98,7 @@ public sealed class LastOrgAdminRuleTests
         User admin = await AddUserAsync(db, "admin@acme.example", Role.Admin);
         await AddUserAsync(db, "second-admin@acme.example", Role.Admin);
 
-        await new DeactivateUserHandler(db).HandleAsync(new DeactivateUser(admin.Id, admin.Id), CancellationToken.None);
+        await new DeactivateUserHandler(db).HandleAsync(new DeactivateUser(admin.Id, admin.Id, IfMatch: null), CancellationToken.None);
 
         Assert.False((await db.Users.FindAsync(admin.Id))!.IsActive);
     }
@@ -110,7 +110,7 @@ public sealed class LastOrgAdminRuleTests
         await AddUserAsync(db, "admin@acme.example", Role.Admin);
         User member = await AddUserAsync(db, "member@acme.example", Role.Member);
 
-        await new DeactivateUserHandler(db).HandleAsync(new DeactivateUser(member.Id, member.Id), CancellationToken.None);
+        await new DeactivateUserHandler(db).HandleAsync(new DeactivateUser(member.Id, member.Id, IfMatch: null), CancellationToken.None);
 
         Assert.False((await db.Users.FindAsync(member.Id))!.IsActive);
     }

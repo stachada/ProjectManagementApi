@@ -50,6 +50,12 @@ public sealed class UsersController(IDispatcher dispatcher, ICurrentUserService 
         CancellationToken cancellationToken = default)
     {
         UserDto dto = await _dispatcher.QueryAsync<GetUserById, UserDto>(new GetUserById(id), cancellationToken);
+
+        if (!string.IsNullOrEmpty(dto.ConcurrencyToken))
+        {
+            Response.Headers.ETag = $"\"{dto.ConcurrencyToken}\"";
+        }
+
         return Ok(dto);
     }
 
@@ -173,7 +179,8 @@ public sealed class UsersController(IDispatcher dispatcher, ICurrentUserService 
         var command = new UpdateUser(
             UserId: id,
             DisplayName: request.DisplayName,
-            RequestedByUserId: _currentUser.UserId);
+            RequestedByUserId: _currentUser.UserId,
+            IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 
@@ -206,7 +213,8 @@ public sealed class UsersController(IDispatcher dispatcher, ICurrentUserService 
         var command = new ChangeUserOrgRole(
             UserId: id,
             NewOrgRole: request.NewOrgRole,
-            RequestedByUserId: _currentUser.UserId);
+            RequestedByUserId: _currentUser.UserId,
+            IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 
@@ -236,7 +244,8 @@ public sealed class UsersController(IDispatcher dispatcher, ICurrentUserService 
     {
         var command = new DeactivateUser(
             UserId: id,
-            RequestedByUserId: _currentUser.UserId);
+            RequestedByUserId: _currentUser.UserId,
+            IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 
@@ -266,7 +275,8 @@ public sealed class UsersController(IDispatcher dispatcher, ICurrentUserService 
     {
         var command = new ReactivateUser(
             UserId: id,
-            RequestedByUserId: _currentUser.UserId);
+            RequestedByUserId: _currentUser.UserId,
+            IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 
         await _dispatcher.SendAsync(command, cancellationToken);
 

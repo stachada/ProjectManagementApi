@@ -10,7 +10,7 @@ namespace Ordinis.UnitTests.Application.Users.Validators;
 public sealed class UpdateUserValidatorTests
 {
     private static UpdateUser ValidCommand(Guid? userId = null, string displayName = "New Name", Guid? requestedByUserId = null)
-        => new(userId ?? Guid.CreateVersion7(), displayName, requestedByUserId ?? Guid.CreateVersion7());
+        => new(userId ?? Guid.CreateVersion7(), displayName, requestedByUserId ?? Guid.CreateVersion7(), [1, 2, 3, 4]);
 
     [Fact]
     public async Task TestValidateAsync_ValidCommand_HasNoValidationErrors()

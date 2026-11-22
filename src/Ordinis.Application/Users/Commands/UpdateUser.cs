@@ -20,10 +20,15 @@ namespace Ordinis.Application.Users.Commands;
 /// Password changes go through a dedicated command in Phase 8.
 /// Role changes go through <c>ChangeUserOrgRole</c>.
 /// </remarks>
+/// <param name="IfMatch">
+/// The expected <c>RowVersion</c>, decoded from the request's <c>If-Match</c> header.
+/// Compared against the current one before the change is applied (stale → 409).
+/// </param>
 public sealed record UpdateUser(
     Guid UserId,
     string DisplayName,
-    Guid RequestedByUserId) : ICommand;
+    Guid RequestedByUserId,
+    byte[]? IfMatch) : ICommand;
 
 // Validator
 /// <summary>
@@ -37,6 +42,8 @@ internal sealed class UpdateUserHandler(IAppDbContext db)
         var user = await db.Users
             .SingleOrDefaultAsync(u => u.Id == command.UserId, ct)
             ?? throw new NotFoundException(nameof(User), command.UserId);
+
+        ConcurrencyGuard.EnsureMatch(user.RowVersion, command.IfMatch, nameof(User), command.UserId);
 
         user.UpdateDisplayName(command.DisplayName);
 
@@ -71,5 +78,9 @@ internal sealed class UpdateUserValidator : AbstractValidator<UpdateUser>
 
         RuleFor(x => x.RequestedByUserId)
             .NotEmpty();
+
+        RuleFor(x => x.IfMatch)
+            .NotNull()
+            .WithMessage("If-Match header is required.");
     }
 }

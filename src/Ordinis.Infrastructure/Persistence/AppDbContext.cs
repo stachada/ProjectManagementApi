@@ -130,6 +130,23 @@ public sealed class AppDbContext : DbContext, IAppDbContext
         return await base.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Server-side bookkeeping properties that are not part of any resource representation. A save
+    /// that changes <i>only</i> these neither bumps <c>UpdatedAt</c> nor rotates <c>RowVersion</c>:
+    /// otherwise every sign-in and 15-minute token refresh would change a user's ETag, and an admin
+    /// editing that user would get spurious <c>409</c>s for changes the API never shows. The row is
+    /// still concurrency-checked on save — the token just isn't rotated.
+    /// </summary>
+    private static readonly Dictionary<Type, HashSet<string>> UnversionedProperties = new()
+    {
+        [typeof(User)] = [nameof(User.RefreshToken), nameof(User.RefreshTokenExpiresAt)],
+    };
+
+    private static bool ChangesOnlyUnversionedProperties(EntityEntry entry) =>
+        entry.State == EntityState.Modified
+        && UnversionedProperties.TryGetValue(entry.Metadata.ClrType, out HashSet<string>? unversioned)
+        && entry.Properties.Where(p => p.IsModified).All(p => unversioned.Contains(p.Metadata.Name));
+
     private void SetAuditTimestamps(DateTimeOffset now)
     {
         foreach (var entry in ChangeTracker.Entries<AuditableEntity>())
@@ -137,7 +154,8 @@ public sealed class AppDbContext : DbContext, IAppDbContext
             if (entry.State == EntityState.Added)
                 entry.Entity.CreatedAt = now;
 
-            if (entry.State is EntityState.Added or EntityState.Modified)
+            if (entry.State is EntityState.Added
+                || (entry.State == EntityState.Modified && !ChangesOnlyUnversionedProperties(entry)))
                 entry.Entity.UpdatedAt = now;
         }
     }
@@ -154,7 +172,8 @@ public sealed class AppDbContext : DbContext, IAppDbContext
 
         foreach (var entry in ChangeTracker.Entries<AggregateRoot>())
         {
-            if (entry.State is EntityState.Added or EntityState.Modified)
+            if (entry.State is EntityState.Added
+                || (entry.State == EntityState.Modified && !ChangesOnlyUnversionedProperties(entry)))
                 entry.Entity.RowVersion = Guid.CreateVersion7().ToByteArray();
         }
     }
