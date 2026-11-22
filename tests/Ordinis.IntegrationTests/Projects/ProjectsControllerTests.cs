@@ -135,6 +135,32 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response2.StatusCode);
     }
 
+    /// <summary>
+    /// Regression for GAP-15: the slug-uniqueness check used to skip soft-deleted projects (global
+    /// query filter) while the unique (OrganizationId, Slug) index still counts them, so re-using a
+    /// deleted project's name passed validation and failed the INSERT with a 500.
+    /// </summary>
+    [Fact]
+    public async Task CreateProject_NameOfSoftDeletedProject_Returns422AndCreatesNothing()
+    {
+        Guid organizationId = await SeedOrganizationAsync();
+        Guid userId = await SeedUserAsync(organizationId);
+        await AuthenticateAsUserAsync(userId);
+
+        HttpResponseMessage created = await Client.PostAsJsonAsync("/api/v1/projects", new CreateProjectRequest(organizationId, "Apollo"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        Guid projectId = (await created.Content.ReadFromJsonAsync<ProjectDto>())!.Id;
+
+        HttpResponseMessage deleted = await SendAsync(HttpMethod.Delete, $"/api/v1/projects/{projectId}", await GetProjectRowVersionAsync(projectId));
+        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+
+        HttpResponseMessage recreated = await Client.PostAsJsonAsync("/api/v1/projects", new CreateProjectRequest(organizationId, "Apollo"));
+
+        await AssertValidationProblemAsync(recreated, "Name", "deleted");
+        int projectsWithSlug = await SeedAsync(db => db.Projects.IgnoreQueryFilters().CountAsync(p => p.OrganizationId == organizationId && p.Slug == "apollo"));
+        Assert.Equal(1, projectsWithSlug);
+    }
+
     [Fact]
     public async Task CreateProject_DescriptionTooLong_Returns422()
     {

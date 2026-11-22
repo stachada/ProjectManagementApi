@@ -80,9 +80,15 @@ public sealed class CreateProjectValidator : AbstractValidator<CreateProject>
             {
                 var slug = slugGenerator.Slugify(name);
 
-                return !await db.Projects.AnyAsync(p => p.OrganizationId == command.OrganizationId && p.Slug == slug, ct);
+                // IgnoreQueryFilters: soft-deleted projects keep their slug. Slugs are permanent
+                // identifiers (external links/integrations), and the unique (OrganizationId, Slug)
+                // index covers deleted rows too — checking only live projects let a deleted
+                // project's name pass validation and then fail the INSERT with a 500.
+                return !await db.Projects
+                    .IgnoreQueryFilters()
+                    .AnyAsync(p => p.OrganizationId == command.OrganizationId && p.Slug == slug, ct);
             })
-            .WithMessage("A project with the same name already exists in this organization.");
+            .WithMessage("A project with the same name already exists in this organization, or existed and was deleted (project names are never reused).");
 
         RuleFor(x => x.Description)
             .MaximumLength(1000)
