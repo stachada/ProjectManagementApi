@@ -27,10 +27,10 @@ Feature: Signing in
       When Nora views the organization "Acme" using the access token
       Then the request succeeds
 
-    # GAP-16: emails are stored lower-cased but Login compares the input as typed
-    # (trim only), so this passes on SQL Server's case-insensitive collation and
-    # fails on PostgreSQL.
-    @gap
+    # GAP-16 (fixed): Login normalizes email and organization slug like the domain
+    # stores them, so matching no longer depends on the database collation.
+    # (On SQL Server this passed even before the fix; the regression guard is
+    # LoginHandlerTests in Ordinis.UnitTests, whose InMemory provider is case-sensitive.)
     Scenario: Email addresses are matched case-insensitively
       When someone signs in to "acme" with "NORA@ACME.EXAMPLE" and "nora-secret-1"
       Then the request succeeds

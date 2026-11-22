@@ -50,8 +50,11 @@ internal sealed class LoginHandler(
         Login command,
         CancellationToken cancellationToken)
     {
-        var normalizedEmail = command.Email.Trim();
-        var normalizedSlug = command.OrganizationSlug.Trim();
+        // Normalize exactly as the domain does when storing (User.Create / Organization.Create
+        // both Trim().ToLowerInvariant()), so matching never depends on the database collation:
+        // SQL Server's default collation is case-insensitive, PostgreSQL's is not.
+        var normalizedEmail = command.Email.Trim().ToLowerInvariant();
+        var normalizedSlug = command.OrganizationSlug.Trim().ToLowerInvariant();
 
         User? user = await db.Users
             .Where(u => u.Organization!.Slug == normalizedSlug
