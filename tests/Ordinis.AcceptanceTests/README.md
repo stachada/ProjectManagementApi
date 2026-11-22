@@ -26,7 +26,7 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-963 scenarios (outline rows expanded): **210 pass, 753 skipped, 0 fail.**
+963 scenarios (outline rows expanded): **228 pass, 735 skipped, 0 fail.**
 
 | Feature | Status |
 | --- | --- |
@@ -159,8 +159,6 @@ moves to **Fixed gaps** below.
 | Id | Current behaviour | Intended behaviour |
 | --- | --- | --- |
 | GAP-02 | Reopen is a plain move to ToDo, so it also succeeds from Backlog and InProgress (confirmed by the bound `task-workflow.feature`) | reopen only from Done |
-| GAP-03 | A user from another organization can be added to a project | rejected as invalid |
-| GAP-04 | An assignee need not be a project member | assignee must be a Member or Admin of the project |
 | GAP-05 | The last org Admin can demote or deactivate themselves | rejected as invalid |
 | GAP-06 | A deactivated user's access token keeps working until expiry | rejected immediately |
 | GAP-07 | A project can be created in a suspended organization | rejected as invalid |
@@ -175,6 +173,8 @@ moves to **Fixed gaps** below.
 | Id | Was | Fix |
 | --- | --- | --- |
 | GAP-01 | Five list queries (`GetTasksFiltered`, `GetProjectsFiltered`, `GetProjectTasks`, `GetBoardTasks`, `GetProjectAudit`) only capped `pageSize` at 100, so 0 / negative sizes reached SQL (`FETCH NEXT 0 ROWS`, negative `Take`) → 500; all seven list queries could also overflow `(page - 1) * pageSize` | One shared `PageRequest.Normalize` (`pageSize` 1..100, `page` ≥ 1 and capped so the offset fits an `int`) used by all seven list queries. Regression specs: `pagination.feature` (bound, 28 scenarios); unit tests `PageRequestTests` |
+| GAP-03 | `AddProjectMemberValidator` only checked that the user existed, so a user of another organization could be added to a project | The user must belong to the project's organization; a cross-tenant ID gets the same "User not found." as a nonexistent one (no tenant probing). Regression tests: `AddProjectMemberValidatorTests`; `project-membership.feature`, `tenant-isolation.feature` |
+| GAP-04 | Assignees (`CreateTask`, `AssignTask`) were only checked for existence — a Viewer, a non-member or another tenant's user could be assigned (authorization only checks the caller) | The assignee must be a project contributor (project Member/Admin, or org Admin of the project's organization), via the shared `ProjectAccessQueries.CanContributeAsync`, also reused for `CreateTask`'s caller check. Regression tests: `AssignTaskValidatorTests`, `CreateTaskValidatorTests`; `task-assignment`, `task-creation`, `tenant-isolation` features |
 | GAP-08 | Archiving a board or project didn't lock its tasks: only `CreateTask` checked (the board only); every other task, comment and attachment mutation went through | `TaskContainerGuard.EnsureWritableAsync` (one query for both flags) is called by all 11 task command handlers; archived = fully read-only, rejected with `422` `project.archived` / `board.archived`. Reads keep working. Regression tests: `Ordinis.IntegrationTests/Tasks/ArchivedContainerTests` (13 mutations × board/project); GAP-08 scenarios in `task-creation`, `task-editing`, `project-lifecycle`, `boards` |
 | GAP-14 | Task `Status`/`Priority` are stored as strings (`HasConversion<string>()`), so `sortBy=status/priority` ordered alphabetically (priority descending: Medium, Low, High, Critical) | `EntityQueryableExtensions.OrderByEnumValue` sorts by a `CASE` rank of the declared enum order in `GetTasksFiltered`, `GetProjectTasks`, `GetBoardTasks`, `GetUserTasks`; string storage kept. Regression specs: `task-listing.feature` sort scenarios; unit tests `EntityQueryableExtensionsTests` |
 | GAP-15 | Re-creating a deleted project's name passed validation (the soft-delete query filter hid it) but violated the unfiltered unique `(OrganizationId, Slug)` index → 500 | `CreateProjectValidator` checks slug uniqueness with `IgnoreQueryFilters()`, so a deleted project's slug stays reserved (422 on `name`). Regression tests: `ProjectsControllerTests.CreateProject_NameOfSoftDeletedProject_Returns422AndCreatesNothing`; `project-lifecycle.feature` "The name of a deleted project stays reserved" |

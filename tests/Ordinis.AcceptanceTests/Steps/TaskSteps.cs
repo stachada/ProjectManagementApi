@@ -77,18 +77,32 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
     // ---- Actions ----
 
     [When(@"^(\w+) creates a task ""([^""]+)"" on board ""([^""]+)""$")]
-    public async Task WhenPersonaCreatesATask(string persona, string title, string board)
+    public Task WhenPersonaCreatesATask(string persona, string title, string board) =>
+        CreateTaskAsync(persona, title, board, assigneeId: null);
+
+    [When(@"^(\w+) creates a task ""([^""]+)"" on board ""([^""]+)"" assigned to (\w+)$")]
+    public Task WhenPersonaCreatesAnAssignedTask(string persona, string title, string board, string assignee) =>
+        CreateTaskAsync(persona, title, board, world.PersonaNamed(assignee).UserId);
+
+    [When(@"^(\w+) creates a task ""([^""]+)"" on board ""([^""]+)"" assigned to an unknown user$")]
+    public Task WhenPersonaCreatesATaskAssignedToUnknownUser(string persona, string title, string board) =>
+        CreateTaskAsync(persona, title, board, Guid.CreateVersion7());
+
+    private async Task CreateTaskAsync(string persona, string title, string board, Guid? assigneeId)
     {
         ApiResponse response = await api.SendAsync(persona, HttpMethod.Post, "/api/v1/tasks", new
         {
             boardId = world.BoardNamed(board),
             title,
             priority = Priority.Medium,
+            assigneeId,
         });
 
         if (response.IsSuccess)
         {
-            world.Tasks[title] = response.Json.GetProperty("id").GetGuid();
+            Guid taskId = response.Json.GetProperty("id").GetGuid();
+            world.Tasks[title] = taskId;
+            world.TaskCreationOrder.Add(taskId);
         }
     }
 

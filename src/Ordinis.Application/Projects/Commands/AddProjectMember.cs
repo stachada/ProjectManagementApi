@@ -73,9 +73,13 @@ public sealed class AddProjectMemberValidator : AbstractValidator<AddProjectMemb
             .MustAsync(async (id, ct) => await db.Projects.AnyAsync(p => p.Id == id, ct))
             .WithMessage("Project not found.");
 
+        // The user must belong to the project's organization. A user of another tenant gets the
+        // same "not found" as a nonexistent one, so tenants cannot be probed for user IDs.
         RuleFor(x => x.UserId)
             .NotEmpty()
-            .MustAsync(async (id, ct) => await db.Users.AnyAsync(u => u.Id == id, ct))
+            .MustAsync(async (command, userId, ct) =>
+                await db.Users.AnyAsync(u => u.Id == userId
+                    && db.Projects.Any(p => p.Id == command.ProjectId && p.OrganizationId == u.OrganizationId), ct))
             .WithMessage("User not found.");
 
         RuleFor(x => x.Role)
