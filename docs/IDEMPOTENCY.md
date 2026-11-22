@@ -92,32 +92,48 @@ works) and hashed with SHA-256. Raw bytes, not text — `AddAttachment`'s body i
 re-encoding for hashing could silently corrupt invalid byte sequences before they ever
 reach the hash function.
 
-### 3. A cache lookup decides what happens next
+### 3. An atomic reservation decides what happens next
 
-`IIdempotencyStore.TryGetAsync(cacheKey)` (`src/Ordinis.Application/Common/IIdempotencyStore.cs`)
-has three possible outcomes:
+`IIdempotencyStore.TryReserveAsync(cacheKey, bodyHash)` (`src/Ordinis.Application/Common/IIdempotencyStore.cs`)
+**atomically** claims the key if it is free, or reports who holds it. It has three outcomes:
 
-**Miss** — no prior request used this key on this route. The middleware buffers
-`context.Response.Body` into a `MemoryStream`, calls the rest of the pipeline (routing →
-model binding → the controller action → the `Dispatcher` → the handler), then:
+**Reserved** — no prior request used this key on this route, and this request now owns it
+(an "in flight" marker, expiring after 2 minutes so a crashed request can't block the key
+forever). The middleware buffers `context.Response.Body` into a `MemoryStream`, calls the
+rest of the pipeline (routing → model binding → the controller action → the `Dispatcher` →
+the handler), then:
 
-- If the resulting status code is `< 300`, caches `(status, Content-Type, Location,
-  body bytes)` under the cache key for 24 hours.
-- Either way, copies the buffered bytes to the real response stream so the caller gets a
-  normal response either way.
+- If the resulting status code is `< 300`, **completes** the reservation: stores `(status,
+  Content-Type, Location, body bytes)` under the key for 24 hours.
+- Otherwise — any non-`2xx` status, or an exception escaping the pipeline — **releases** the
+  reservation, so the client can fix the request and retry with the same key.
+- Copies the buffered bytes to the real response stream so the caller gets a normal response
+  either way.
 
-**Hit, body hash matches** — the same operation is being retried with the same payload.
-The middleware writes the cached status code, `Content-Type`, `Location` header, and body
+**Completed, body hash matches** — the same operation is being retried with the same payload.
+The middleware writes the stored status code, `Content-Type`, `Location` header, and body
 straight to the response and returns **without calling the rest of the pipeline at all**.
 The handler never runs a second time — no duplicate row, no duplicate side effect.
 
-**Hit, body hash differs** — the key was reused, but the request body doesn't match what
-was cached under it the first time. This is a client bug, not a safe retry: silently
-replaying the old response would return the wrong data, and silently creating a second
-resource would defeat the whole point of sending the key. The middleware throws
-`IdempotencyKeyConflictException`.
+**In flight, body hash matches** — an identical request with this key is *still being
+processed* (typically a client that timed out and retried immediately, or a double-submit).
+The middleware throws `IdempotencyRequestInProgressException` → `409 Conflict` "Request in
+progress" with `Retry-After: 1`. The duplicate is **not executed**; retried once the original
+finishes, it gets the original's stored response.
 
-### 4. `GlobalExceptionMiddleware` maps a key conflict to `409 Conflict`
+**Completed or in flight, body hash differs** — the key was reused, but the request body
+doesn't match the original. This is a client bug, not a safe retry: silently replaying the old
+response would return the wrong data, and silently creating a second resource would defeat the
+whole point of sending the key. The middleware throws `IdempotencyKeyConflictException`.
+
+> **Why a reservation, not a lookup:** the first version looked the key up and, on a miss,
+> executed the request and cached the result afterwards. Two identical requests arriving
+> together both saw the miss and both executed — exactly the timeout-retry case idempotency
+> keys exist for (GAP-13; reproduced in `IdempotencyInFlightTests`, where the duplicates either
+> created a second resource or hit the unique index with a `500`). Claiming the key
+> atomically *before* executing closes that window.
+
+### 4. `GlobalExceptionMiddleware` maps both cases to `409 Conflict`
 
 Same mechanism as every other domain/application exception in this API — see
 [API_INFRASTRUCTURE.md](API_INFRASTRUCTURE.md#globalexceptionmiddleware)'s exception
@@ -150,23 +166,28 @@ contract:
 ```csharp
 public interface IIdempotencyStore
 {
-    Task<IdempotencyRecord?> TryGetAsync(string key, CancellationToken cancellationToken);
-    Task SetAsync(string key, IdempotencyRecord record, TimeSpan ttl, CancellationToken cancellationToken);
+    Task<IdempotencyReservation> TryReserveAsync(string key, string requestBodyHash, TimeSpan inFlightTtl, CancellationToken cancellationToken);
+    Task CompleteAsync(string key, IdempotencyRecord record, TimeSpan ttl, CancellationToken cancellationToken);
+    Task ReleaseAsync(string key, CancellationToken cancellationToken);
 }
 ```
 
-The only implementation today, `InMemoryIdempotencyStore`
-(`src/Ordinis.Infrastructure/Common/InMemoryIdempotencyStore.cs`), wraps `IMemoryCache`
-and is registered as a singleton in `InfrastructureServiceExtensions.AddInfrastructureServices`.
+`TryReserveAsync` must be atomic — a check followed by a separate write is exactly the race the
+reservation exists to close. The only implementation today, `InMemoryIdempotencyStore`
+(`src/Ordinis.Infrastructure/Common/InMemoryIdempotencyStore.cs`), wraps `IMemoryCache` and
+does its check-and-set under a single lock (the critical section is a lookup and a write,
+never the request itself). It is registered as a singleton in
+`InfrastructureServiceExtensions.AddInfrastructureServices`. A distributed implementation
+would use an atomic insert instead (a unique-keyed row, or Redis `SET NX`).
 This mirrors the existing `IFileStorageService` swap-friendly pattern used for local file
 storage — a future multi-instance deployment can introduce a Redis-backed
 `IIdempotencyStore` in `Ordinis.Infrastructure` without touching the middleware, the
 attribute, or any controller.
 
-**Known limitation:** because the store is in-memory and per-instance, the replay
-guarantee only holds within a single running process. A restart clears the cache (any
-key becomes "unseen" again), and a multi-instance deployment behind a load balancer would
-only catch a duplicate if the retry happens to land on the same instance. Acceptable for
+**Known limitation:** because the store is in-memory and per-instance, the replay *and*
+in-flight guarantees only hold within a single running process. A restart clears the cache
+(any key becomes "unseen" again), and a multi-instance deployment behind a load balancer would
+only catch a duplicate — concurrent or retried — if it happens to land on the same instance. Acceptable for
 this project's current single-instance deployment target; the interface exists
 specifically so this can be upgraded later without a design change.
 
