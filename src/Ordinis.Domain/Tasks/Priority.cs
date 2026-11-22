@@ -5,14 +5,19 @@ namespace Ordinis.Domain.Tasks;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Integer values are assigned in ascending order of urgency so that
-/// <c>ORDER BY Priority DESC</c> returns the most critical tasks first
-/// without any additional mapping or CASE expression in queries.
+/// Integer values are assigned in ascending order of urgency, so the declared order is the
+/// severity order (Low → Critical).
 /// </para>
 /// <para>
 /// <b>EF Core mapping:</b> Stored as a <c>varchar</c> string column (not an integer)
 /// for the same readability and reordering-safety reasons as <see cref="ProjectTaskStatus"/>.
 /// Configured in <c>TaskConfiguration</c> via <c>.HasConversion<string>()</c>.
+/// </para>
+/// <para>
+/// <b>Sorting:</b> because the column holds text, a plain <c>ORDER BY Priority</c> is alphabetical
+/// ("Critical", "High", "Low", "Medium"). Queries sort with
+/// <c>EntityQueryableExtensions.OrderByEnumValue</c>, which ranks by the declared order via a
+/// <c>CASE</c> expression.
 /// </para>
 /// </remarks>
 public enum Priority

@@ -26,13 +26,14 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-961 scenarios (outline rows expanded): **110 pass, 851 skipped, 0 fail.**
+961 scenarios (outline rows expanded): **154 pass, 807 skipped, 0 fail.**
 
 | Feature | Status |
 | --- | --- |
 | Tasks/task-workflow | ✅ bound — 68 pass, 2 `@gap` (GAP-02) |
+| Tasks/task-listing | ✅ bound — 43 pass |
 | Tasks/task-assignment | ◐ 21 pass via shared steps, 14 skipped |
-| Tasks/task-comments, Tasks/task-creation | ◐ 7 pass each via shared steps, rest skipped |
+| Tasks/task-comments, Tasks/task-creation | ◐ 8 / 7 pass via shared steps, rest skipped |
 | Authorization/role-permissions, resource-visibility, tenant-isolation | ◐ 5 / 1 / 1 pass via shared steps, rest skipped |
 | *all other features* | ⏳ not bound yet (reported as skipped) |
 
@@ -169,7 +170,6 @@ moves to **Fixed gaps** below.
 | GAP-11 | Any project Member can remove any attachment | only the uploader, a project Admin or the org Admin |
 | GAP-12 | Users and organizations expose no version (ETag) and accept writes without If-Match | same optimistic concurrency as other aggregates |
 | GAP-13 | Two concurrent requests with the same Idempotency-Key both execute | only one executes; the other replays or is rejected as conflicting |
-| GAP-14 | Task `Status`/`Priority` are stored as strings (`ProjectTaskConfiguration` `HasConversion<string>()`), so `sortBy=status/priority` orders alphabetically | ordered by workflow position / severity |
 | GAP-15 | Re-creating a deleted project's name passes validation (soft-delete filter hides it) but violates the unfiltered unique `(OrganizationId, Slug)` index → 500 | rejected as invalid on `name` (slug stays reserved) |
 | GAP-16 | `User.Create` lower-cases emails but `Login` compares the input as typed, so mixed-case sign-in works on SQL Server (CI collation) but fails on PostgreSQL | email matched case-insensitively on both providers |
 
@@ -177,6 +177,7 @@ moves to **Fixed gaps** below.
 
 | Id | Was | Fix |
 | --- | --- | --- |
+| GAP-14 | Task `Status`/`Priority` are stored as strings (`HasConversion<string>()`), so `sortBy=status/priority` ordered alphabetically (priority descending: Medium, Low, High, Critical) | `EntityQueryableExtensions.OrderByEnumValue` sorts by a `CASE` rank of the declared enum order in `GetTasksFiltered`, `GetProjectTasks`, `GetBoardTasks`, `GetUserTasks`; string storage kept. Regression specs: `task-listing.feature` sort scenarios; unit tests `EntityQueryableExtensionsTests` |
 | GAP-17 | **Security (SSRF):** the `WebhookDelivery` HttpClient followed redirects (default `AllowAutoRedirect = true`), so a public receiver could redirect delivery to loopback / private / cloud-metadata addresses that `WebhookUrlGuard` never vets | primary handler `SocketsHttpHandler { AllowAutoRedirect = false }`; a 3xx is a failed attempt. Regression test: `Ordinis.IntegrationTests/Common/WebhookDeliveryHttpClientTests` |
 
 ## Out of scope (by design, not gaps)

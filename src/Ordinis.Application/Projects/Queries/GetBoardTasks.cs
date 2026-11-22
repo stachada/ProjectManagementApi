@@ -78,8 +78,8 @@ public sealed class GetBoardTasksHandler(IAppDbContext db)
         {
             ("title", false) => q.OrderBy(t => t.Title).ThenByStableId(),
             ("title", true) => q.OrderByDescending(t => t.Title).ThenByStableId(),
-            ("priority", false) => q.OrderBy(t => t.Priority).ThenByStableId(),
-            ("priority", true) => q.OrderByDescending(t => t.Priority).ThenByStableId(),
+            // Priority is stored as a string: sort by severity (enum order), not alphabetically.
+            ("priority", var descending) => q.OrderByEnumValue(t => t.Priority, descending).ThenByStableId(),
             // Lowercase: SortBy is lowercased above, so a mixed-case pattern can never match.
             ("duedate", false) => q.OrderBy(t => t.DueDate).ThenByStableId(),
             ("duedate", true) => q.OrderByDescending(t => t.DueDate).ThenByStableId(),

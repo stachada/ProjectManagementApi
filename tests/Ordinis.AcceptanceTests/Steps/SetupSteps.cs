@@ -36,7 +36,49 @@ internal sealed class SetupSteps(World world, Seeder seeder)
 
     [Given(@"^a project ""([^""]+)"" in ""([^""]+)"" with a board ""([^""]+)""$")]
     public Task GivenAProjectWithBoard(string project, string organization, string board) =>
-        seeder.CreateProjectWithBoardAsync(world.OrganizationNamed(organization), project, board);
+        seeder.CreateProjectWithBoardsAsync(world.OrganizationNamed(organization), project, board);
+
+    [Given(@"^a project ""([^""]+)"" in ""([^""]+)"" with boards ""([^""]+)"" and ""([^""]+)""$")]
+    public Task GivenAProjectWithTwoBoards(string project, string organization, string firstBoard, string secondBoard) =>
+        seeder.CreateProjectWithBoardsAsync(world.OrganizationNamed(organization), project, firstBoard, secondBoard);
+
+    /// <summary>
+    /// Seeds tasks row by row, in table order (which is therefore creation order). Columns:
+    /// title, board, status, priority, assignee (optional), due in (e.g. "5 days", optional).
+    /// </summary>
+    [Given(@"^these tasks exist:$")]
+    public async Task GivenTheseTasksExist(DataTable table)
+    {
+        foreach (DataTableRow row in table.Rows)
+        {
+            int? dueInDays = string.IsNullOrWhiteSpace(row["due in"])
+                ? null
+                : int.Parse(row["due in"].Split(' ')[0], System.Globalization.CultureInfo.InvariantCulture);
+
+            Guid taskId = await seeder.CreateTaskAsync(
+                world.BoardNamed(row["board"]),
+                row["title"],
+                Enum.Parse<Priority>(row["priority"]),
+                dueInDays);
+
+            // Assign before moving: terminal statuses refuse assignment.
+            if (!string.IsNullOrWhiteSpace(row["assignee"]))
+            {
+                await seeder.AssignTaskAsync(taskId, world.PersonaNamed(row["assignee"]).UserId);
+            }
+
+            await seeder.SetTaskStatusAsync(taskId, Enum.Parse<ProjectTaskStatus>(row["status"]));
+        }
+    }
+
+    [Given(@"^(\d+) tasks on board ""([^""]+)"" with priority (\w+)$")]
+    public async Task GivenManyTasksOnBoard(int count, string board, Priority priority)
+    {
+        for (int i = 1; i <= count; i++)
+        {
+            await seeder.CreateTaskAsync(world.BoardNamed(board), $"Generated task {i:00}", priority);
+        }
+    }
 
     [Given(@"^(\w+) is an? (Viewer|Member|Admin) of project ""([^""]+)""$")]
     public async Task GivenProjectMember(string persona, Role role, string project)

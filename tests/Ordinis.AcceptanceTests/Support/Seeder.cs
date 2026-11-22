@@ -66,26 +66,37 @@ internal sealed class Seeder(World world)
         return persona;
     }
 
-    public async Task<Guid> CreateProjectWithBoardAsync(Guid organizationId, string projectName, string boardName)
+    public async Task<Guid> CreateProjectWithBoardsAsync(Guid organizationId, string projectName, params string[] boardNames)
     {
         Guid founderId = await CreateUserAsync(organizationId, $"Founder of {projectName}", Role.Member);
 
-        (Guid projectId, Guid boardId) = await WithDbAsync(async db =>
+        (Guid projectId, List<(string Name, Guid Id)> boards) = await WithDbAsync(async db =>
         {
             DateTimeOffset now = Now(db);
             Project project = Project.Create(organizationId, founderId, projectName, Slugify(projectName), now);
-            Board board = Board.Create(project.Id, boardName, founderId);
             db.Projects.Add(project);
-            db.Boards.Add(board);
+
+            var created = new List<(string Name, Guid Id)>();
+            foreach (string boardName in boardNames)
+            {
+                Board board = Board.Create(project.Id, boardName, founderId);
+                db.Boards.Add(board);
+                created.Add((boardName, board.Id));
+            }
+
             await db.SaveChangesAsync();
-            return (project.Id, board.Id);
+            return (project.Id, created);
         });
 
         world.Projects[projectName] = projectId;
-        world.Boards[boardName] = boardId;
         world.ProjectFounders[projectId] = founderId;
         world.ProjectOrganizations[projectId] = organizationId;
-        world.BoardProjects[boardId] = projectId;
+        foreach ((string name, Guid boardId) in boards)
+        {
+            world.Boards[name] = boardId;
+            world.BoardProjects[boardId] = projectId;
+        }
+
         return projectId;
     }
 
@@ -107,20 +118,25 @@ internal sealed class Seeder(World world)
         return true;
     });
 
-    public async Task<Guid> CreateTaskAsync(Guid boardId, string title)
+    /// <param name="dueInDays">Due date relative to now, or <see langword="null"/> for none.</param>
+    public async Task<Guid> CreateTaskAsync(Guid boardId, string title, Priority priority = Priority.Medium, int? dueInDays = null)
     {
         Guid projectId = world.BoardProjects[boardId];
         Guid reporterId = await AnyProjectUserAsync(projectId);
 
         Guid taskId = await WithDbAsync(async db =>
         {
-            ProjectTask task = ProjectTask.Create(boardId, reporterId, title, Now(db));
+            DateTimeOffset now = Now(db);
+            ProjectTask task = ProjectTask.Create(
+                boardId, reporterId, title, now, priority,
+                dueDate: dueInDays is int days ? now.AddDays(days) : null);
             db.Tasks.Add(task);
             await db.SaveChangesAsync();
             return task.Id;
         });
 
         world.Tasks[title] = taskId;
+        world.TaskCreationOrder.Add(taskId);
         return taskId;
     }
 
