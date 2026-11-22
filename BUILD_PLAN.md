@@ -1316,6 +1316,43 @@ See [docs/REST_API_CONCEPTS.md#hateoas](docs/REST_API_CONCEPTS.md#hateoas) for t
 
 **Git tag:** `v0.9-phase9-testing`
 
+### Acceptance specifications & gap fixes (after the `v0.9-phase9-testing` tag)
+
+> Done after Phase 9 was tagged (PRs #137–#155); no new tag. Writing an executable behavioural
+> spec of the whole API surfaced 17 places where the code disagreed with the intended behaviour —
+> all fixed, each with regression tests and a red check (the new test fails with the fix reverted).
+
+- [x] **Gherkin specifications for the whole API** (#137) — 37 business-declarative `.feature` files in `tests/Ordinis.AcceptanceTests/Features/` (~960 scenarios with outline rows expanded) covering every endpoint, the authorization model, tenant isolation, webhooks (incl. background delivery) and the cross-cutting platform behaviour. `tests/Ordinis.AcceptanceTests/README.md` holds the conventions, personas, step glossary, tag taxonomy, an endpoint → feature coverage matrix, and the gap register
+- [x] **Reqnroll acceptance project** (#140, docs #141) — Reqnroll 3.3.4 on xUnit, part of `Ordinis.slnx` and CI. `OrdinisApiFactory` and `ConcurrencyRaceInterceptor` moved into a new shared `tests/Ordinis.Testing` library (overridable `LocalHostPort` so both suites can run concurrently; host disposed before its container). Givens seed through the domain model, Whens are real HTTP calls with real JWTs, webhook delivery is exercised against a loopback receiver. Unbound steps report as skipped (`missingOrPendingStepsOutcome: Ignore` — `Inconclusive` would fail under xUnit 2); `@gap` scenarios skip unless `ORDINIS_RUN_GAPS=1`. Status: 963 scenarios — **283 pass, 680 skipped (steps not bound yet), 0 fail**; fully bound: `task-workflow`, `task-listing`, `pagination`
+- [x] **All 17 gaps fixed:**
+
+  | Gap | Problem | Fix | PR |
+  |---|---|---|---|
+  | GAP-01 | `pageSize` ≤ 0 reached SQL in 5 list queries (→ 500); `(page-1)*pageSize` could overflow | Shared `PageRequest.Normalize` used by all 7 list queries | #145, #146 |
+  | GAP-02 | Reopen was a plain move to ToDo, so it also worked from Backlog/InProgress | Domain operation `ProjectTask.Reopen` (Done only) + `ReopenTask` command | #150 |
+  | GAP-03 | Users of another organization could be added to a project | `AddProjectMember` requires the project's organization (no tenant probing) | #148 |
+  | GAP-04 | Assignees were only checked for existence | Must be a project contributor; shared `ProjectAccessQueries.CanContributeAsync` | #148 |
+  | GAP-05 | The last org Admin could demote/deactivate themselves | `OrganizationAdminGuard` requires another active Admin | #149 |
+  | GAP-06 | Deactivated users kept access, demoted Admins kept Admin authority, until token expiry | `OnTokenValidated` → `ITokenPrincipalRevalidator`: per-request status check, current role replaces the token's | #151 |
+  | GAP-07 | Projects could be created in a suspended organization | `CreateProjectValidator` requires an active organization | #149 |
+  | GAP-08 | Archived boards/projects didn't lock their tasks | `TaskContainerGuard` in all 11 task command handlers — archived = read-only | #147 |
+  | GAP-09 | Non-member role change/removal returned 422 | 404 (missing sub-resource) | #149 |
+  | GAP-10 | Renames skipped name-uniqueness checks | Shared `NameUniquenessQueries` (slug **or** current name, ignoring case) on create and rename | #149 |
+  | GAP-11 | Any project Member could remove any attachment | Uploader or moderator only (`task.attachment-not-uploader`), mirroring comments | #149 |
+  | GAP-12 | Users/organizations exposed no `ETag` and ignored `If-Match` | Same contract as every other aggregate (**breaking**, pre-1.0); refresh-token rotation no longer changes a user's version | #154, #155 |
+  | GAP-13 | Concurrent requests with the same `Idempotency-Key` both executed | Atomic key reservation; in-flight duplicate → 409 + `Retry-After` | #152, #153 |
+  | GAP-14 | `sortBy=status/priority` sorted alphabetically (string-stored enums) | `OrderByEnumValue` (`CASE` rank of the declared order); no migration | #142 |
+  | GAP-15 | Re-creating a deleted project's name → 500 (unique index vs. soft-delete filter) | Slug check ignores the query filter; deleted names stay reserved | #143 |
+  | GAP-16 | Mixed-case sign-in failed on PostgreSQL (input compared as typed) | `Login` normalizes email and slug like they are stored | #144 |
+  | GAP-17 | **SSRF:** webhook delivery followed redirects past `WebhookUrlGuard` | Delivery `HttpClient` with `AllowAutoRedirect = false` | #138, #139 |
+
+**Findings:**
+
+- **Specs find what code review misses.** Four of the 17 gaps (GAP-14 to GAP-17) — plus the page-number overflow later folded into GAP-01 — weren't in the initial code review; they surfaced only while checking concrete scenarios against the code (e.g. "priority descending" against string-stored enums).
+- **The test database can hide provider bugs.** GAP-16 passes on SQL Server's case-insensitive default collation and fails on PostgreSQL; the regression test lives in `Ordinis.UnitTests`, whose EF InMemory provider compares strings case-sensitively, because the SQL Server-backed suites can't reproduce it.
+- **Known edge case (documented, not fixed):** two org Admins demoting each other at the same instant can both pass the last-admin check — different user rows, so `If-Match` can't detect it (see the acceptance README).
+- **Stale "Phase 8 not implemented yet" docs corrected** — rate-limit partitioning, response-caching (`private`, not `public`), CI secret and local-development JWT key notes, and the matching XML doc comments.
+
 ---
 
 ## Phase 10 — Developer experience & docs
