@@ -78,6 +78,7 @@ never need a `try/catch` for these cases
 | `NotFoundException` | `404` | Thrown by query/command handlers when a resource doesn't exist (or is soft-deleted) |
 | `ConcurrencyException` | `409` | Thrown when EF Core detects a `RowVersion` mismatch — an optimistic concurrency conflict |
 | `IdempotencyKeyConflictException` | `409` | Thrown by `IdempotencyMiddleware` when an `Idempotency-Key` is reused with a request body different from the one originally cached under that key |
+| `IdempotencyRequestInProgressException` | `409` + `Retry-After: 1` | Thrown by `IdempotencyMiddleware` when an identical request with the same `Idempotency-Key` is still being processed — the duplicate is not executed; retried later, it replays the original's response |
 | `DomainException` | `422` | Thrown by aggregate methods when a business rule is violated (e.g. suspending an already-suspended organization); `ex.ErrorCode` flows into the response's `type` as `urn:ordinis:error:{ErrorCode}`, so clients can distinguish error causes that share the same status code |
 | `BadHttpRequestException` | `ex.StatusCode` (typically `400`) | Thrown by Minimal API endpoints when a route/query parameter fails to bind (e.g. `GET /search?page=abc`) — caught in its own clause, *before* the catch-all, so it doesn't get flattened into a `500` |
 | anything else | `500` | Logged with the full exception, but the client only ever sees a generic message — never the raw exception detail |
@@ -157,15 +158,19 @@ What it does, in order:
 2. Builds a cache key from `{method}:{path}:{Idempotency-Key}` — scoped per route, so the same key
    value accidentally reused on two different endpoints can't collide — and hashes the raw request
    body bytes (SHA-256, not decoded as text, since `AddAttachment`'s body is multipart/binary).
-3. On a cache hit with a matching body hash: replays the stored status code, `Content-Type`,
-   `Location` header, and body verbatim, **without** calling the rest of the pipeline — the
-   handler never runs a second time.
-4. On a cache hit with a *different* body hash: throws `IdempotencyKeyConflictException` →
+3. Atomically **reserves** the key via `IIdempotencyStore.TryReserveAsync` (or learns its state).
+   If the key already completed with a matching body hash: replays the stored status code,
+   `Content-Type`, `Location` header, and body verbatim, **without** calling the rest of the
+   pipeline — the handler never runs a second time.
+4. If the key is held with a *different* body hash: throws `IdempotencyKeyConflictException` →
    `409 Conflict` — the key was reused for what looks like a different request, which is a client
-   bug, not a safe replay.
-5. On a cache miss: buffers the response, runs the rest of the pipeline, and — only if the
-   resulting status is `2xx` — caches `(status, Content-Type, Location, body)` for 24 hours via
-   `IIdempotencyStore`. Non-2xx responses (a `422` validation failure, `404`, `500`, ...) are
+   bug, not a safe replay. If an identical request is still **in flight**: throws
+   `IdempotencyRequestInProgressException` → `409` "Request in progress" with `Retry-After`, so a
+   concurrent duplicate never executes.
+5. If this request reserved the key: buffers the response, runs the rest of the pipeline, and — only
+   if the resulting status is `2xx` — completes the reservation with `(status, Content-Type,
+   Location, body)` for 24 hours; otherwise (or on an exception) releases it. Non-2xx responses (a
+   `422` validation failure, `404`, `500`, ...) are
    deliberately **not** cached, so a client can fix the request and retry under the same key. This
    also sidesteps a subtler problem: `ProblemDetailsFactory` stamps the *originating* request's
    `correlationId` into every error body, so replaying a cached error verbatim would show a stale,
