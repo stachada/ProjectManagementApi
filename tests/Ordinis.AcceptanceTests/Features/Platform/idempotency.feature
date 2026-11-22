@@ -105,8 +105,9 @@ Feature: Idempotent creation
       When Bob moves the task "Fix login bug" to ToDo with request key "k-1"
       Then the request is rejected as invalid with error "task.invalid-status-transition"
 
-  # GAP-13: there is no in-flight lock; both concurrent requests execute.
-  @gap
+  # GAP-13 (fixed): the key is reserved atomically while its request runs; an identical
+  # request arriving meanwhile gets 409 "Request in progress" and is not executed.
+  # Deterministic regression test: Ordinis.IntegrationTests/Common/IdempotencyInFlightTests.
   Rule: Concurrent duplicates execute only once
 
     Scenario: Two simultaneous requests with the same key
