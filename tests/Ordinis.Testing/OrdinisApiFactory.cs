@@ -11,8 +11,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Ordinis.Infrastructure.Persistence;
 using Respawn;
 using Testcontainers.MsSql;
+using Xunit;
 
-namespace Ordinis.IntegrationTests.Infrastructure;
+namespace Ordinis.Testing;
 
 /// <summary>
 /// Boots the real <c>Ordinis.Api</c> host in-process against a disposable SQL Server
@@ -20,9 +21,14 @@ namespace Ordinis.IntegrationTests.Infrastructure;
 /// production runs — no InMemory/SQLite substitute, so RowVersion concurrency tokens and
 /// provider-specific SQL behave exactly as they do in production.
 /// </summary>
-public sealed class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
+/// <remarks>
+/// Used directly as the xUnit collection fixture of <c>Ordinis.IntegrationTests</c>, and
+/// subclassed by <c>Ordinis.AcceptanceTests</c> (which overrides <see cref="LocalHostPort"/> and
+/// adds its own test services via <see cref="ConfigureWebHost"/>).
+/// </remarks>
+public class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private readonly MsSqlContainer _sqlContainer = BuildContainer();
+    private MsSqlContainer _sqlContainer = null!; // built in InitializeAsync so LocalHostPort can be overridden
 
     private Respawner? _respawner;
     private string _connectionString = string.Empty; // set in InitializeAsync, points at OrdinisTest, not master
@@ -53,8 +59,17 @@ public sealed class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLi
         await _respawner.ResetAsync(connection);
     }
 
+    /// <summary>
+    /// Fixed host port to bind SQL Server to when running locally (handy for inspecting the test
+    /// database with a SQL client), or <see langword="null"/> for a random free port. Always
+    /// random in CI. Two test projects running in parallel must not share a fixed port, so
+    /// subclasses used alongside <c>Ordinis.IntegrationTests</c> should override this.
+    /// </summary>
+    protected virtual int? LocalHostPort => 14330;
+
     public async Task InitializeAsync()
     {
+        _sqlContainer = BuildContainer(LocalHostPort);
         await _sqlContainer.StartAsync();
 
         // MsSqlBuilder has no .WithDatabase(...) - unlike the Postgres Testcontainers module,
@@ -119,18 +134,18 @@ public sealed class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLi
         });
     }
 
-    private static MsSqlContainer BuildContainer()
+    private static MsSqlContainer BuildContainer(int? localHostPort)
     {
         var builder = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest");
 
         // GITHUB_ACTIONS is set automatically by every GitHub Actions job - no workflow change
         // needed. Fixed port binding is only safe when a single test run owns its container at
         // a time (two concurrent local runs or CI's parallel matrix legs, would otherwise
-        // collide trying to bind the same host port 14330), os it' local-only
+        // collide trying to bind the same host port), so it's local-only.
         var isRunningInCi = Environment.GetEnvironmentVariable("GITHUB_ACTIONS") is not null;
-        if (!isRunningInCi)
+        if (!isRunningInCi && localHostPort is int hostPort)
         {
-            builder = builder.WithPortBinding(14330, 1433);
+            builder = builder.WithPortBinding(hostPort, 1433);
         }
 
         return builder.Build();
@@ -138,7 +153,13 @@ public sealed class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLi
 
     async Task IAsyncLifetime.DisposeAsync()
     {
-        await _sqlContainer.DisposeAsync();
+        // Stop the host first: its background services (outbox dispatcher, webhook delivery)
+        // poll the database, and would log connection failures if the container went first.
         await base.DisposeAsync();
+
+        if (_sqlContainer is not null)
+        {
+            await _sqlContainer.DisposeAsync();
+        }
     }
 }

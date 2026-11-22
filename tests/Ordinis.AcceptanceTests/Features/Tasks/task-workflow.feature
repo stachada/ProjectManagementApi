@@ -155,24 +155,24 @@ Feature: Task workflow
 
       Examples:
         | status    |
-        | Backlog   |
         | ToDo      |
         | InReview  |
         | Cancelled |
 
       # GAP-02: reopen is implemented as a plain move to ToDo, so it also
-      # succeeds from InProgress (InProgress -> ToDo is a legal move).
+      # succeeds wherever "-> ToDo" is a legal move (Backlog, InProgress).
       # See src/Ordinis.Api/Tasks/TasksController.cs (Reopen action).
       @gap
       Examples: Currently accepted by the API
         | status     |
+        | Backlog    |
         | InProgress |
 
   Rule: Terminal tasks are locked for editing until reopened
 
     Scenario Outline: A <status> task cannot be changed: <action>
-      Given the task "Fix login bug" has status <status>
-      And the task "Fix login bug" is assigned to Bob
+      Given the task "Fix login bug" is assigned to Bob
+      And the task "Fix login bug" has status <status>
       When Bob <action>
       Then the request is rejected as invalid with error "task.terminal-state"
 

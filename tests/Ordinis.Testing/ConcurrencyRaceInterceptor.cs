@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
-namespace Ordinis.IntegrationTests.Infrastructure;
+namespace Ordinis.Testing;
 
 /// <summary>
 /// Test-only <see cref="ISaveChangesInterceptor"/>, registered as a singleton in

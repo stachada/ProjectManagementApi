@@ -1,0 +1,53 @@
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Ordinis.Application.Common;
+using Ordinis.Infrastructure.Webhooks;
+using Ordinis.Testing;
+
+namespace Ordinis.AcceptanceTests.Support;
+
+/// <summary>
+/// The shared <see cref="OrdinisApiFactory"/>, adapted for acceptance scenarios: a random SQL
+/// Server host port (so it can run alongside <c>Ordinis.IntegrationTests</c>), faster webhook
+/// delivery polling, and a URL guard that additionally trusts the in-process
+/// <see cref="WebhookReceiver"/>.
+/// </summary>
+internal sealed class AcceptanceApiFactory : OrdinisApiFactory
+{
+    private readonly WebhookReceiver _receiver;
+
+    public AcceptanceApiFactory(WebhookReceiver receiver)
+    {
+        _receiver = receiver;
+
+        // Read by WebApplication.CreateBuilder when the host is first built (see the base class
+        // for why configuration must be supplied through environment variables).
+        Environment.SetEnvironmentVariable("WebhookDelivery__PollingInterval", "00:00:01");
+    }
+
+    protected override int? LocalHostPort => null;
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+
+        builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IWebhookUrlGuard>();
+            services.AddSingleton<IWebhookUrlGuard>(new ReceiverAwareUrlGuard(_receiver, new WebhookUrlGuard()));
+        });
+    }
+
+    /// <summary>
+    /// Allows the loopback <see cref="WebhookReceiver"/> (which the real guard rightly blocks)
+    /// and delegates every other URL to the production <see cref="WebhookUrlGuard"/>, so SSRF
+    /// rules still apply to everything else.
+    /// </summary>
+    private sealed class ReceiverAwareUrlGuard(WebhookReceiver receiver, IWebhookUrlGuard inner) : IWebhookUrlGuard
+    {
+        public Task<bool> IsAllowedAsync(string url, CancellationToken cancellationToken = default) =>
+            receiver.Owns(url) ? Task.FromResult(true) : inner.IsAllowedAsync(url, cancellationToken);
+    }
+}

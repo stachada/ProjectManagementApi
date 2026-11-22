@@ -8,8 +8,10 @@
     <Project Path="src/Ordinis.Infrastructure.Migrations.PostgreSql/Ordinis.Infrastructure.Migrations.PostgreSql.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Ordinis.AcceptanceTests/Ordinis.AcceptanceTests.csproj" />
     <Project Path="tests/Ordinis.Benchmarks/Ordinis.Benchmarks.csproj" />
     <Project Path="tests/Ordinis.IntegrationTests/Ordinis.IntegrationTests.csproj" />
+    <Project Path="tests/Ordinis.Testing/Ordinis.Testing.csproj" />
     <Project Path="tests/Ordinis.UnitTests/Ordinis.UnitTests.csproj" />
   </Folder>
 </Solution>

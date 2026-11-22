@@ -1,17 +1,68 @@
 # Ordinis Acceptance Specifications (Gherkin)
 
-Executable-to-be behavioural specification of the Ordinis API, written in
-[Gherkin](https://cucumber.io/docs/gherkin/reference/). The `.feature` files
-describe **intended** behaviour in business language. Step bindings
-([Reqnroll](https://reqnroll.net/), the maintained successor to SpecFlow) will be
-added in a later task; until then this folder has no `.csproj` and is not part of
-`Ordinis.slnx`, so nothing generates "pending" test failures.
+Executable behavioural specification of the Ordinis API, written in
+[Gherkin](https://cucumber.io/docs/gherkin/reference/) and run with
+[Reqnroll](https://reqnroll.net/) (the maintained successor to SpecFlow) on xUnit.
+The `.feature` files describe **intended** behaviour in business language.
 
-When bindings are added they should reuse the existing integration-test
-infrastructure in [`tests/Ordinis.IntegrationTests/Infrastructure/`](../Ordinis.IntegrationTests/Infrastructure/):
-`OrdinisApiFactory` (SQL Server Testcontainer + Respawn reset),
-`IntegrationTestBase` seeding/auth helpers (`CreateAccessTokenAsync`,
-`SendAsync` with `If-Match`, `AssertValidationProblemAsync`).
+## Running
+
+```sh
+dotnet test tests/Ordinis.AcceptanceTests              # needs Docker (SQL Server Testcontainer)
+dotnet test tests/Ordinis.AcceptanceTests --filter "FullyQualifiedName~TaskWorkflow"   # one feature
+ORDINIS_RUN_GAPS=1 dotnet test tests/Ordinis.AcceptanceTests   # also run @gap scenarios (expected to fail)
+```
+
+Outcomes:
+
+- **Passed / failed**: the scenario is fully bound and ran.
+- **Skipped, "known gap"**: tagged `@gap`; skipped unless `ORDINIS_RUN_GAPS=1` (see the gap register).
+- **Skipped, undefined steps**: the scenario uses a step with no binding yet. `reqnroll.json` sets
+  `missingOrPendingStepsOutcome` to `Ignore`, which xUnit reports as skipped (`Inconclusive` would
+  be reported as a *failure* — xUnit 2 has no inconclusive outcome). Binding a feature turns its
+  skips into passes or failures — the skip count is the remaining binding backlog.
+
+The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integration tests.
+
+## Binding status
+
+961 scenarios (outline rows expanded): **110 pass, 851 skipped, 0 fail.**
+
+| Feature | Status |
+| --- | --- |
+| Tasks/task-workflow | ✅ bound — 68 pass, 2 `@gap` (GAP-02) |
+| Tasks/task-assignment | ◐ 21 pass via shared steps, 14 skipped |
+| Tasks/task-comments, Tasks/task-creation | ◐ 7 pass each via shared steps, rest skipped |
+| Authorization/role-permissions, resource-visibility, tenant-isolation | ◐ 5 / 1 / 1 pass via shared steps, rest skipped |
+| *all other features* | ⏳ not bound yet (reported as skipped) |
+
+## How it works
+
+```text
+Features/**/*.feature   ── Reqnroll generates one xUnit test class per feature
+Steps/                  ── step definitions, grouped by concern (setup, outcomes, tasks, webhooks)
+Support/
+├── TestHost            ── run-wide: one API host + SQL Server container + webhook receiver;
+│                          database reset (Respawn) after every scenario
+├── AcceptanceApiFactory── the shared Ordinis.Testing factory, with a random DB port, 1 s webhook
+│                          polling, and a URL guard that also trusts the in-process receiver
+├── World               ── per-scenario names → IDs ("Bob", "Fix login bug"), last response,
+│                          versions (ETags) personas have read
+├── Seeder              ── "Given" state written through the real domain model, not the API
+├── ApiDriver           ── the only code that knows routes, headers and JSON; real JWTs per persona
+└── WebhookReceiver     ── loopback Kestrel server the background dispatcher really POSTs to
+```
+
+- **Givens seed, Whens call the API.** Arrangement goes straight through domain factories and
+  methods (so invariants still hold), keeping each scenario fast and independent of the endpoint
+  under test. Every "When" is a real HTTP call as a real, signed-in persona.
+- **Writes state the current version by default.** Steps add `If-Match` with the task's current
+  version unless they say `using the version <persona> read` (stale) or `without stating a version`.
+- **Hidden helper users.** Seeded projects are "founded" by a hidden user, removed as soon as a
+  named Admin joins, so membership matches the feature text; read-back assertions (e.g. the audit
+  trail) use a hidden org-Admin observer so they don't depend on any persona's access.
+- **Scenarios run sequentially** (`[assembly: CollectionBehavior(DisableTestParallelization = true)]`)
+  because they share one database.
 
 ---
 
@@ -106,7 +157,7 @@ moves to **Fixed gaps** below.
 | Id | Current behaviour | Intended behaviour |
 | --- | --- | --- |
 | GAP-01 | `pageSize` < 1 is passed through (empty page / EF error) in `GetTasksFiltered`, `GetProjectsFiltered`, `GetProjectTasks`, `GetBoardTasks`, `GetProjectAudit` | clamped to 1–100 like `GetUserTasks` |
-| GAP-02 | Reopen is a plain move to ToDo, so it also succeeds from InProgress | reopen only from Done |
+| GAP-02 | Reopen is a plain move to ToDo, so it also succeeds from Backlog and InProgress (confirmed by the bound `task-workflow.feature`) | reopen only from Done |
 | GAP-03 | A user from another organization can be added to a project | rejected as invalid |
 | GAP-04 | An assignee need not be a project member | assignee must be a Member or Admin of the project |
 | GAP-05 | The last org Admin can demote or deactivate themselves | rejected as invalid |
