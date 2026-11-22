@@ -199,10 +199,9 @@ when to try again) before they consume real backend resources.
   window, 100 requests/minute, partitioned per client IP so one noisy caller only throttles
   itself.
 - **Authenticated requests** — a sliding window, 500 requests/minute, partitioned per user
-  ID (`ClaimTypes.NameIdentifier`). This branch is dormant today: Phase 8 (JWT auth) hasn't
-  landed yet, so `HttpContext.User` is never authenticated and every request currently takes
-  the anonymous branch. It activates automatically once Phase 8 wires up JWT auth, with no
-  further changes to the limiter itself.
+  ID (the JWT `sub` claim), so a user's budget follows them across IP addresses and one
+  user can't exhaust another's. The limiter runs after authentication in the pipeline, so a
+  request whose token fails validation is anonymous and falls into its IP's fixed window.
 
 Both limits are config-driven (`RateLimiting` section of `appsettings.json`) rather than
 hardcoded. Rejected requests get a real `429 Too Many Requests`: the limiter's `OnRejected`
@@ -230,9 +229,12 @@ staleness window for a large reduction in server load.
 middleware needed, since this is exactly the scenario that middleware exists for. Every
 single-resource `GetById` action (`TasksController`, `TasksV2Controller`, `ProjectsController`,
 `BoardsController`, `OrganizationsController`, `UsersController`) carries
-`[ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any, VaryByHeader = "Accept-Encoding,Authorization")]`,
-producing `Cache-Control: public, max-age=30` and `Vary: Accept-Encoding, Authorization` on a
-`200` response.
+`[ResponseCache(Duration = 30, Location = ResponseCacheLocation.Client, VaryByHeader = "Accept-Encoding,Authorization")]`,
+producing `Cache-Control: private, max-age=30` and `Vary: Accept-Encoding, Authorization` on a
+`200` response. `private` because every response is authorized per caller: the requesting
+client may reuse it for 30 seconds, but shared caches (CDNs, proxies) must not store it — and
+neither does the server-side Response Caching middleware, which never stores `private`
+responses. In practice this is client-side caching only.
 
 **Scope: single-resource GETs only, not list/collection endpoints.** The `GetById` actions are
 also the ones carrying `ConcurrencyToken` → `ETag` (see "Optimistic concurrency" above), so a
@@ -242,12 +244,12 @@ deliberately stay uncached: there's no cache-invalidation mechanism in this code
 stale cached list is a more visible correctness problem — a task that just moved boards still
 showing in the old board's list — than a stale single resource for 30 seconds.
 
-**`Vary: ... Authorization`, ahead of auth existing.** Phase 8 (JWT auth) isn't implemented yet,
-so every request today is anonymous and this header currently has no observable effect. It's
-included now because the built-in `[ResponseCache]` attribute makes it free to declare
-up front, and once `[Authorize]` lands, per-user responses served from the same route won't get
-cross-contaminated by a shared cache entry — the header's job is done at declaration time, not
-retrofitted later.
+**`Vary: ... Authorization` as a second safeguard.** Responses from the same route differ per
+caller (what they may see, their role), so a cached copy must never be served to a different
+token. `private` already keeps shared caches out; `Vary: Authorization` additionally tells any
+cache that does store the response — including the client's own, if it switches users — to key
+it by the `Authorization` header. The header was declared before JWT auth existed, so nothing
+had to be retrofitted when it arrived in Phase 8.
 
 ---
 

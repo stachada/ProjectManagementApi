@@ -40,7 +40,8 @@ env:
 > running, so Testcontainers can start containers directly against the runner's own Docker socket
 > — no `services:` sidecar block needed (see [Adding a real database to
 > CI](#adding-a-real-database-to-ci) below for why that alternative wasn't used). `JWT_SIGNING_KEY`
-> remains genuinely unexercised — JWT auth (Phase 8) isn't implemented yet.
+> is overridden the same way: `OrdinisApiFactory` sets `Jwt__SigningKey` to a fresh random key
+> per run, so tests sign and validate their own tokens and never depend on the secret's value.
 
 ### `publish.yml` — push to `main`
 
@@ -67,7 +68,7 @@ Settings → Secrets and variables → Actions → New repository secret:
 | Secret | Used by | Value |
 |---|---|---|
 | `CONNECTION_STRING` | `ci.yml` | A DB connection string — set but unused by `dotnet test`; `Ordinis.IntegrationTests` supplies its own via Testcontainers instead (see above). Only relevant if a future step needs a real, persistent DB (e.g. a migration-CLI step for a staging deploy — see [Adding a real database to CI](#adding-a-real-database-to-ci)) |
-| `JWT_SIGNING_KEY` | `ci.yml` | Same value you use locally — see [docs/LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md#jwt-signing-key) — still unexercised until Phase 8 (JWT auth) lands |
+| `JWT_SIGNING_KEY` | `ci.yml` | Same value you use locally — see [docs/LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md#jwt-signing-key). Set on the test step, but the test factories override it with a random per-run key (see above); needed by any step that runs the real API (e.g. a future deploy or smoke test), since the API refuses to start without one |
 
 Secret values are masked in logs (`***`) and can't be read back once saved, only overwritten.
 
