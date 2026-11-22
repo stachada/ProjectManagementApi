@@ -9,6 +9,12 @@ public sealed class WebhookDeliveryOptions
     /// <summary>The configuration section name.</summary>
     public const string SectionName = "WebhookDelivery";
 
+    /// <summary>
+    /// Name of the <see cref="System.Net.Http.IHttpClientFactory"/> client used for outbound
+    /// deliveries. That client never follows redirects — see <c>InfrastructureServiceExtensions</c>.
+    /// </summary>
+    public const string HttpClientName = "WebhookDelivery";
+
     /// <summary>How often the dispatcher polls for due deliveries.</summary>
     public TimeSpan PollingInterval { get; set; } = TimeSpan.FromSeconds(5);
 

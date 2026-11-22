@@ -105,9 +105,7 @@ Feature: Webhook delivery
         | no answer within 10 seconds       |
         | a refused connection              |
 
-      # GAP-17: the "WebhookDelivery" HttpClient keeps the default
-      # AllowAutoRedirect = true, so redirects are followed instead.
-      @gap
+      # GAP-17 (fixed): the delivery client never follows redirects.
       Examples: Redirects are not followed
         | response                          |
         | status 301 redirect               |
@@ -134,9 +132,8 @@ Feature: Webhook delivery
       Then no request is sent to 127.0.0.1
       And the delivery attempt is recorded as failed because the destination is not allowed
 
-    # GAP-17: the URL guard only vets the registered host; auto-followed
-    # redirects reach internal addresses (e.g. cloud metadata) unchecked.
-    @gap
+    # GAP-17 (fixed): the URL guard only vets the registered host, so the delivery
+    # client must never follow redirects towards internal addresses.
     Scenario Outline: A redirect to an internal address is not followed: <target>
       Given project "Apollo" has a webhook at receiver "Chat" for "task.created"
       And receiver "Chat" redirects every request to "<target>"
