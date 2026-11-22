@@ -35,7 +35,7 @@ public sealed class OrganizationsController(IDispatcher dispatcher) : Controller
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="200">
     /// The organization was found and is returned. Cacheable for 30 seconds
-    /// (<c>Cache-Control: public, max-age=30</c>).
+    /// (<c>Cache-Control: private, max-age=30</c>; client-side only, since responses are per caller).
     /// </response>
     /// <response code="404">The ID is not the caller's organization.</response>
     [HttpGet("{id:guid}")]

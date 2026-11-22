@@ -17,7 +17,7 @@ namespace Ordinis.Application.Users.Commands;
 /// </param>
 /// <remarks>
 /// Email is immutable after creation (it is the login identifier).
-/// Password changes go through a dedicated command in Phase 8.
+/// There is no password-change operation yet.
 /// Role changes go through <c>ChangeUserOrgRole</c>.
 /// </remarks>
 /// <param name="IfMatch">

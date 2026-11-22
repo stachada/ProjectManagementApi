@@ -74,8 +74,8 @@ public static class ApiServiceExtensions
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-            // Partitioned per client IP (anonymous) or per user ID (authenticated, once Phase 8
-            // adds JWT auth) so one throttled caller doesn't affect others.
+            // Partitioned per client IP (anonymous) or per user ID (authenticated, the JWT "sub"
+            // claim) so one throttled caller doesn't affect others.
             options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(
                 context => RateLimitPartitioner.CreatePartition(context, rateLimitingOptions));
 
