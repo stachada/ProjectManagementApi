@@ -377,8 +377,9 @@ public sealed class TasksController(IDispatcher dispatcher, ICurrentUserService 
     }
 
     /// <summary>
-    /// Convenience alias for <see cref="Move"/> that transitions a
-    /// <see cref="ProjectTaskStatus.Done"/> task back to <see cref="ProjectTaskStatus.ToDo"/>.
+    /// Reopens a <see cref="ProjectTaskStatus.Done"/> task, moving it back to
+    /// <see cref="ProjectTaskStatus.ToDo"/>. Unlike <see cref="Move"/> to ToDo, it is rejected for
+    /// any task that is not Done.
     /// </summary>
     /// <param name="id">The task to reopen.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -400,9 +401,8 @@ public sealed class TasksController(IDispatcher dispatcher, ICurrentUserService 
         Guid id,
         CancellationToken cancellationToken = default)
     {
-        var command = new MoveTask(
+        var command = new ReopenTask(
             TaskId: id,
-            NewStatus: ProjectTaskStatus.ToDo,
             RequestedByUserId: _currentUser.UserId,
             IfMatch: HttpContext.Items[ConcurrencyTokenMiddleware.ItemsKey] as byte[]);
 

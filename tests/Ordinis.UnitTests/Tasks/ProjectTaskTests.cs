@@ -493,4 +493,61 @@ public class ProjectTaskTests
         return task;
     }
     #endregion
+
+    #region Reopen
+    private static readonly Dictionary<ProjectTaskStatus, ProjectTaskStatus[]> PathFromBacklog = new()
+    {
+        [ProjectTaskStatus.Backlog] = [],
+        [ProjectTaskStatus.ToDo] = [ProjectTaskStatus.ToDo],
+        [ProjectTaskStatus.InProgress] = [ProjectTaskStatus.ToDo, ProjectTaskStatus.InProgress],
+        [ProjectTaskStatus.InReview] = [ProjectTaskStatus.ToDo, ProjectTaskStatus.InProgress, ProjectTaskStatus.InReview],
+        [ProjectTaskStatus.Done] = [ProjectTaskStatus.ToDo, ProjectTaskStatus.InProgress, ProjectTaskStatus.InReview, ProjectTaskStatus.Done],
+        [ProjectTaskStatus.Cancelled] = [ProjectTaskStatus.Cancelled],
+    };
+
+    private static ProjectTask TaskIn(ProjectTaskStatus status)
+    {
+        ProjectTask task = TaskBuilder.Create(now: Now);
+        foreach (ProjectTaskStatus step in PathFromBacklog[status])
+        {
+            task.Move(step, Guid.CreateVersion7(), Now);
+        }
+
+        return task;
+    }
+
+    [Fact]
+    public void Reopen_DoneTask_MovesToToDoAndRaisesTaskMoved()
+    {
+        ProjectTask task = TaskIn(ProjectTaskStatus.Done);
+        var reopenedBy = Guid.CreateVersion7();
+
+        task.Reopen(reopenedBy, Now);
+
+        Assert.Equal(ProjectTaskStatus.ToDo, task.Status);
+        TaskMoved evt = Assert.Single(task.DomainEvents.OfType<TaskMoved>(), e => e.MovedByUserId == reopenedBy);
+        Assert.Equal(ProjectTaskStatus.Done, evt.PreviousStatus);
+        Assert.Equal(ProjectTaskStatus.ToDo, evt.NewStatus);
+        Assert.Equal(reopenedBy, evt.MovedByUserId);
+    }
+
+    // GAP-02: Backlog -> ToDo and InProgress -> ToDo are legal moves, but not reopens.
+    [Theory]
+    [InlineData(ProjectTaskStatus.Backlog)]
+    [InlineData(ProjectTaskStatus.ToDo)]
+    [InlineData(ProjectTaskStatus.InProgress)]
+    [InlineData(ProjectTaskStatus.InReview)]
+    [InlineData(ProjectTaskStatus.Cancelled)]
+    public void Reopen_TaskNotDone_ThrowsAndLeavesStatus(ProjectTaskStatus status)
+    {
+        ProjectTask task = TaskIn(status);
+        int eventsBefore = task.DomainEvents.Count;
+
+        DomainException ex = Assert.Throws<DomainException>(() => task.Reopen(Guid.CreateVersion7(), Now));
+
+        Assert.Equal("task.invalid-status-transition", ex.ErrorCode);
+        Assert.Equal(status, task.Status);
+        Assert.Equal(eventsBefore, task.DomainEvents.Count);
+    }
+    #endregion
 }

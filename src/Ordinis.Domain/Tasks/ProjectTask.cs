@@ -309,6 +309,32 @@ public class ProjectTask : AggregateRoot
             movedByUserId,
             now));
     }
+
+    /// <summary>
+    /// Reopens a completed task: <see cref="ProjectTaskStatus.Done"/> → <see cref="ProjectTaskStatus.ToDo"/>.
+    /// </summary>
+    /// <param name="reopenedByUserId">The user reopening the task. Carried in the domain event.</param>
+    /// <param name="now">The date and time of the reopen. Carried in the domain event.</param>
+    /// <exception cref="DomainException">
+    /// Thrown (<c>task.invalid-status-transition</c>) if the task is not <see cref="ProjectTaskStatus.Done"/>.
+    /// </exception>
+    /// <remarks>
+    /// "Reopen" is a business intent, not just a move to ToDo: <c>Backlog → ToDo</c> and
+    /// <c>InProgress → ToDo</c> are legal <see cref="Move"/>s, but neither reopens anything. This
+    /// restricts the intent to completed work and then delegates to <see cref="Move"/>, so the
+    /// state machine and the <see cref="TaskMoved"/> event stay the single source of truth.
+    /// </remarks>
+    public void Reopen(Guid reopenedByUserId, DateTimeOffset now)
+    {
+        if (Status != ProjectTaskStatus.Done)
+        {
+            throw new DomainException(
+                $"Only a Done task can be reopened; this task is '{Status}'.",
+                "task.invalid-status-transition");
+        }
+
+        Move(ProjectTaskStatus.ToDo, reopenedByUserId, now);
+    }
     #endregion
 
     #region Assignment

@@ -26,11 +26,11 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-963 scenarios (outline rows expanded): **277 pass, 686 skipped, 0 fail.**
+963 scenarios (outline rows expanded): **279 pass, 684 skipped, 0 fail.**
 
 | Feature | Status |
 | --- | --- |
-| Tasks/task-workflow | ✅ bound — 68 pass, 2 `@gap` (GAP-02) |
+| Tasks/task-workflow | ✅ bound — 70 pass |
 | Tasks/task-listing | ✅ bound — 43 pass |
 | Platform/pagination | ✅ bound — 28 pass |
 | Tasks/task-assignment | ◐ 21 pass via shared steps, 14 skipped |
@@ -158,7 +158,6 @@ moves to **Fixed gaps** below.
 
 | Id | Current behaviour | Intended behaviour |
 | --- | --- | --- |
-| GAP-02 | Reopen is a plain move to ToDo, so it also succeeds from Backlog and InProgress (confirmed by the bound `task-workflow.feature`) | reopen only from Done |
 | GAP-06 | A deactivated user's access token keeps working until expiry | rejected immediately |
 | GAP-12 | Users and organizations expose no version (ETag) and accept writes without If-Match | same optimistic concurrency as other aggregates |
 | GAP-13 | Two concurrent requests with the same Idempotency-Key both execute | only one executes; the other replays or is rejected as conflicting |
@@ -168,6 +167,7 @@ moves to **Fixed gaps** below.
 | Id | Was | Fix |
 | --- | --- | --- |
 | GAP-01 | Five list queries (`GetTasksFiltered`, `GetProjectsFiltered`, `GetProjectTasks`, `GetBoardTasks`, `GetProjectAudit`) only capped `pageSize` at 100, so 0 / negative sizes reached SQL (`FETCH NEXT 0 ROWS`, negative `Take`) → 500; all seven list queries could also overflow `(page - 1) * pageSize` | One shared `PageRequest.Normalize` (`pageSize` 1..100, `page` ≥ 1 and capped so the offset fits an `int`) used by all seven list queries. Regression specs: `pagination.feature` (bound, 28 scenarios); unit tests `PageRequestTests` |
+| GAP-02 | Reopen was a plain move to ToDo, so it also succeeded from Backlog and InProgress (`-> ToDo` is a legal move there) | New domain operation `ProjectTask.Reopen` (only from Done, then delegates to `Move`, still raising `TaskMoved`) behind a `ReopenTask` command; `422` `task.invalid-status-transition` otherwise. Regression tests: `ProjectTaskTests` (Reopen region); `task-workflow.feature` (now fully passing) |
 | GAP-03 | `AddProjectMemberValidator` only checked that the user existed, so a user of another organization could be added to a project | The user must belong to the project's organization; a cross-tenant ID gets the same "User not found." as a nonexistent one (no tenant probing). Regression tests: `AddProjectMemberValidatorTests`; `project-membership.feature`, `tenant-isolation.feature` |
 | GAP-04 | Assignees (`CreateTask`, `AssignTask`) were only checked for existence — a Viewer, a non-member or another tenant's user could be assigned (authorization only checks the caller) | The assignee must be a project contributor (project Member/Admin, or org Admin of the project's organization), via the shared `ProjectAccessQueries.CanContributeAsync`, also reused for `CreateTask`'s caller check. Regression tests: `AssignTaskValidatorTests`, `CreateTaskValidatorTests`; `task-assignment`, `task-creation`, `tenant-isolation` features |
 | GAP-05 | The last org Admin could demote or deactivate themselves, leaving the organization unadministrable | `OrganizationAdminGuard` (called by `ChangeUserOrgRole` and `DeactivateUser`) requires another **active** org Admin first; `422` `organization.last-admin-demotion` / `organization.last-admin-deactivation`. Regression tests: `LastOrgAdminRuleTests`; `user-management`, `user-lifecycle` features |

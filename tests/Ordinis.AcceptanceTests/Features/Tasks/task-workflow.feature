@@ -153,20 +153,15 @@ Feature: Task workflow
       Then the request is rejected as invalid with error "task.invalid-status-transition"
       And the task "Fix login bug" still has status <status>
 
+      # GAP-02 (fixed): reopen is its own domain operation (ProjectTask.Reopen), so it is
+      # rejected even where "-> ToDo" is a legal move (Backlog, InProgress).
       Examples:
-        | status    |
-        | ToDo      |
-        | InReview  |
-        | Cancelled |
-
-      # GAP-02: reopen is implemented as a plain move to ToDo, so it also
-      # succeeds wherever "-> ToDo" is a legal move (Backlog, InProgress).
-      # See src/Ordinis.Api/Tasks/TasksController.cs (Reopen action).
-      @gap
-      Examples: Currently accepted by the API
         | status     |
         | Backlog    |
+        | ToDo       |
         | InProgress |
+        | InReview   |
+        | Cancelled  |
 
   Rule: Terminal tasks are locked for editing until reopened
 
