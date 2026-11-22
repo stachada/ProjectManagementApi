@@ -21,10 +21,13 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <!-- OrdinisApiFactory / ConcurrencyRaceInterceptor live in the shared Ordinis.Testing library. -->
+    <Using Include="Ordinis.Testing" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Ordinis.Api\Ordinis.Api.csproj" />
+    <ProjectReference Include="..\Ordinis.Testing\Ordinis.Testing.csproj" />
   </ItemGroup>
 
 </Project>
