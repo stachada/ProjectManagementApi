@@ -38,13 +38,18 @@ Feature: Task comments
       When Victor views the task "Fix login bug"
       Then the task shows 1 comment
 
+    # A request whose required field is absent cannot be bound at all, so it is malformed (400);
+    # one that binds but breaks a rule is invalid (422).
+    Scenario: A comment without content is rejected as malformed
+      When Bob comments nothing on the task "Fix login bug"
+      Then the request is rejected as malformed
+
     Scenario Outline: Invalid comment content: <case>
       When Bob comments <content> on the task "Fix login bug"
       Then the request is rejected as invalid on field "content"
 
       Examples:
         | case                | content                          |
-        | missing             | nothing                          |
         | blank               | a blank text                     |
         | 10,001 characters   | a 10001-character text           |
 

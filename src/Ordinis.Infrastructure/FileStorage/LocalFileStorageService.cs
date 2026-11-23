@@ -123,6 +123,29 @@ public sealed class LocalFileStorageService : IFileStorageService
         var sanitized = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
 
         // Fallback for an empty result after sanitization
-        return string.IsNullOrWhiteSpace(sanitized) ? "file" : sanitized;
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return "file";
+        }
+
+        // Cap the length: the stored name is "{guid}_{name}", and file systems limit a single path
+        // component to 255 characters (NTFS, ext4). Without this, any valid file name longer than
+        // ~218 characters failed the upload with an IOException (500). The original name is kept in
+        // the database for display, so only the on-disk name is shortened; the extension survives.
+        if (sanitized.Length > MaxStoredNameLength)
+        {
+            string extension = Path.GetExtension(sanitized);
+            if (extension.Length > 16)
+            {
+                extension = string.Empty;
+            }
+
+            sanitized = sanitized[..(MaxStoredNameLength - extension.Length)] + extension;
+        }
+
+        return sanitized;
     }
+
+    /// <summary>Longest sanitized original name embedded in a stored file name (36-char GUID + "_" + this ≤ 255).</summary>
+    private const int MaxStoredNameLength = 100;
 }

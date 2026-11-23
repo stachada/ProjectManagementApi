@@ -188,6 +188,18 @@ internal sealed class Seeder(World world)
         return true;
     });
 
+    public Task RemoveProjectMemberAsync(Guid projectId, Guid userId) => WithDbAsync(async db =>
+    {
+        Project project = await db.Projects.Include(p => p.Members).SingleAsync(p => p.Id == projectId);
+        project.RemoveMember(userId);
+        await db.SaveChangesAsync();
+        return true;
+    });
+
+    /// <summary>The hidden org-Admin observer of the organization a board belongs to.</summary>
+    public Task<Guid> ObserverForBoardAsync(Guid boardId) =>
+        ObserverForOrganizationAsync(world.ProjectOrganizations[world.BoardProjects[boardId]]);
+
     public Task ArchiveBoardAsync(Guid boardId) => WithDbAsync(async db =>
     {
         Board board = await db.Boards.SingleAsync(b => b.Id == boardId);
@@ -218,10 +230,11 @@ internal sealed class Seeder(World world)
         WithDbAsync(db => db.Tasks.AsNoTracking().SingleOrDefaultAsync(t => t.Id == taskId));
 
     /// <summary>The current version of a task, formatted exactly like the API's ETag.</summary>
+    /// <remarks>Includes soft-deleted tasks, so "delete it again" scenarios still send a real version.</remarks>
     public async Task<string> CurrentTaskVersionAsync(Guid taskId)
     {
         byte[]? rowVersion = await WithDbAsync(db =>
-            db.Tasks.Where(t => t.Id == taskId).Select(t => t.RowVersion).SingleAsync());
+            db.Tasks.IgnoreQueryFilters().Where(t => t.Id == taskId).Select(t => t.RowVersion).SingleAsync());
         return $"\"{Convert.ToBase64String(rowVersion ?? [])}\"";
     }
 

@@ -34,7 +34,7 @@ Feature: Error responses
         | not found          | 404    | Resource not found                       | Bob views an unknown task                                   |
         | method not allowed | 405    | Method not allowed                       | Bob patches the task "Fix login bug"                        |
         | conflicting        | 409    | Concurrency conflict                     | Bob moves the task "Fix login bug" to ToDo using an outdated version |
-        | invalid            | 422    | One or more validation errors occurred.  | Bob creates a task without a title on board "Sprint 1"      |
+        | invalid            | 422    | One or more validation errors occurred.  | Bob creates a task with a blank title on board "Sprint 1"   |
         | invalid            | 422    | Business rule violated                   | Bob moves the task "Fix login bug" to Done                  |
 
     Scenario: An unknown address is a Problem Details "not found"
