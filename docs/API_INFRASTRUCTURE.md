@@ -252,6 +252,16 @@ change independently.
 
 - **Controllers** (`AddControllers()`), with `ConfigureApiBehaviorOptions` overriding
   `InvalidModelStateResponseFactory` (see below).
+- **Enums by name** — a `JsonStringEnumConverter` on both the MVC JSON options
+  (`AddJsonOptions`) and the Minimal API ones (`ConfigureHttpJsonOptions` — auth, search and
+  webhooks are serialized by a separate options instance, so configuring only MVC would leave
+  them sending numbers). Responses say `"status": "InProgress"`, `"role": "Admin"`, matching the
+  query string (`?status=InProgress`) and `UserDto.OrgRole`. Request bodies accept names *and*
+  ordinals (the converter's default `AllowIntegerValues`), so clients that send numbers keep
+  working; an unknown name is malformed JSON for the target type (`400`), an undefined ordinal
+  binds and is rejected by the validator (`422`). Domain-event JSON (outbox payloads, exposed
+  as-is by the audit trail, and webhook envelopes) uses the same converter through
+  `EventJson.Options`, which still reads outbox rows written with ordinals.
 - **Response caching** (`AddResponseCaching()`) — enables the `[ResponseCache]` attributes on the
   single-resource `GetById` endpoints (`Cache-Control: private, max-age=30`, `Vary:
   Accept-Encoding, Authorization`; client-side caching only — see
