@@ -149,8 +149,8 @@ internal sealed class ListingSteps(World world, ApiDriver api)
         {
             string actual = field.Trim() switch
             {
-                "status" => ((ProjectTaskStatus)entry.GetProperty("status").GetInt32()).ToString(),
-                "priority" => ((Priority)entry.GetProperty("priority").GetInt32()).ToString(),
+                "status" => entry.GetProperty("status").GetString() ?? string.Empty,
+                "priority" => entry.GetProperty("priority").GetString() ?? string.Empty,
                 "assignee name" => entry.GetProperty("assigneeDisplayName").GetString() ?? string.Empty,
                 "comment count" => entry.GetProperty("commentCount").GetInt32().ToString(CultureInfo.InvariantCulture),
                 "attachment count" => entry.GetProperty("attachmentCount").GetInt32().ToString(CultureInfo.InvariantCulture),

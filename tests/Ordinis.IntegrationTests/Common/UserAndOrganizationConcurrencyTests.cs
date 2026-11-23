@@ -6,6 +6,7 @@ using Ordinis.Api.Organizations.Requests;
 using Ordinis.Api.Users.Requests;
 using Ordinis.Domain.Users;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Common;
 
@@ -63,7 +64,7 @@ public sealed class UserAndOrganizationConcurrencyTests(OrdinisApiFactory factor
         HttpResponseMessage second = await Client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
-        Assert.Equal("Concurrency conflict", (await second.Content.ReadFromJsonAsync<ProblemDetails>())?.Title);
+        Assert.Equal("Concurrency conflict", (await second.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options))?.Title);
         Assert.Equal("First edit", await SeedAsync(db => db.Users.Where(u => u.Id == adminId).Select(u => u.DisplayName).SingleAsync()));
     }
 

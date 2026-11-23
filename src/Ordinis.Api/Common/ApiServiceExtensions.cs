@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -29,7 +30,11 @@ public static class ApiServiceExtensions
     /// <returns>The same <paramref name="services"/> for chaining.</returns>
     public static IServiceCollection AddApiServices(this IServiceCollection services, IConfiguration configuration)
     {
+        // Enums travel by name ("InProgress", "Admin") in both directions — the same form the
+        // query string already accepts and UserDto.OrgRole already uses. Numbers are still
+        // accepted on input, so clients that send ordinals keep working.
         services.AddControllers()
+            .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
             .ConfigureApiBehaviorOptions(options =>
             {
                 // Default behavior returns ASP.NET Core's own ValidationProblemDetails shape,
@@ -54,6 +59,9 @@ public static class ApiServiceExtensions
                     };
                 };
             });
+
+        // Minimal APIs (auth, search, webhooks) have their own JSON options.
+        services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
         services.AddResponseCaching();
 

@@ -188,7 +188,7 @@ internal sealed class OutboxDispatcherJob : BackgroundService
                 return;
             }
 
-            var domainEvent = (IDomainEvent?)JsonSerializer.Deserialize(message.Payload, eventType);
+            var domainEvent = (IDomainEvent?)JsonSerializer.Deserialize(message.Payload, eventType, EventJson.Options);
             if (domainEvent is null)
             {
                 _logger.LogError(
