@@ -1355,7 +1355,13 @@ See [docs/REST_API_CONCEPTS.md#hateoas](docs/REST_API_CONCEPTS.md#hateoas) for t
     | GAP-19 | A valid file name over ~218 characters → 500: the stored `{guid}_{name}` exceeded the 255-character path-component limit | `LocalFileStorageService` caps the *stored* name at 100 characters (extension kept); the original name is unchanged in the database |
 
     Spec errors: a request with a required field absent (no comment content, no task title) is *malformed* (400, model binding), not *invalid* (422) — the API's documented split; the scenarios were corrected
-  - [ ] Batch 2 — projects and boards
+  - [x] Batch 2 — projects and boards (`projects`, `project-lifecycle`, `project-membership`, `project-audit`, `boards`): all 5 fully bound; **566 pass, 397 skipped, 0 fail**. New gap:
+
+    | Gap | Problem | Fix |
+    |---|---|---|
+    | GAP-20 | No `JsonStringEnumConverter`: `status`/`priority`/`role` went out as numbers and JSON bodies with names were rejected (400) — though the docs showed names, query strings accepted them and `UserDto.OrgRole` was already a string | Converter on the MVC and Minimal API JSON options and in `EventJson.Options` (outbox/audit payloads, webhook envelopes): names out, names *or* numbers in. Integration tests read DTOs via `ApiJson.Options`; the acceptance driver now sends names |
+
+    Spec/binding corrections: missing project and board names are *malformed* (400), as in batch 1; "deleted" checks go through the API (the soft-delete filter is per entity, so a deleted project's boards and tasks are still rows — the API hides them); the archived-project webhook row registers the test receiver, since the scenario is about archiving, not URLs (fake-host DNS for the webhook features is batch 6 work: `WebhookUrlGuard` resolves through `Dns` directly)
   - [ ] Batch 3 — organizations and users
   - [ ] Batch 4 — auth, authorization and search
   - [ ] Batch 5 — platform cross-cutting (concurrency, idempotency, versioning, errors, fields, caching, correlation, health)
