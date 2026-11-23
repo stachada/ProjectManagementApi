@@ -116,9 +116,15 @@ public class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             // The production global rate limiter (100 req/min per client IP) throttles
             // WebApplicationFactory's in-process TestServer client too, since every request
             // shares the same loopback partition key. Tests that specifically exercise rate
-            // limiting should build their own factory/limiter config instead of relying on this
-            // shared instance.
-            services.Configure<RateLimiterOptions>(options => options.GlobalLimiter = null);
+            // limiting register KeepProductionRateLimiter (e.g. in a WithWebHostBuilder variant of
+            // this factory) to keep the production limiter exactly as Program.cs configures it.
+            services.AddOptions<RateLimiterOptions>().Configure<IServiceProvider>((options, provider) =>
+            {
+                if (provider.GetService<KeepProductionRateLimiter>() is null)
+                {
+                    options.GlobalLimiter = null;
+                }
+            });
 
             // Lets tests deterministically force an optimistic-concurrency race via a
             // SaveChangesAsync barrier instead of racing real HTTP/DB timing - see
@@ -163,3 +169,9 @@ public class OrdinisApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         }
     }
 }
+
+/// <summary>
+/// Marker service: a host that registers it keeps the production rate limiter, which
+/// <see cref="OrdinisApiFactory"/> otherwise switches off.
+/// </summary>
+public sealed class KeepProductionRateLimiter;

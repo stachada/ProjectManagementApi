@@ -389,6 +389,7 @@ internal sealed class Seeder(World world)
     /// <summary>Issues a real access token for a user, signed exactly as the API signs them.</summary>
     public async Task<string> AccessTokenForAsync(Guid userId)
     {
+        using IDisposable seeding = DatabaseOutage.Bypass(); // the test keeps its database during an outage
         using IServiceScope scope = TestHost.Factory.Services.CreateScope();
         AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         User user = await db.Users.SingleAsync(u => u.Id == userId);
@@ -455,6 +456,7 @@ internal sealed class Seeder(World world)
 
     private static async Task<T> WithDbAsync<T>(Func<AppDbContext, Task<T>> work)
     {
+        using IDisposable seeding = DatabaseOutage.Bypass(); // the test keeps its database during an outage
         using IServiceScope scope = TestHost.Factory.Services.CreateScope();
         AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         return await work(db);

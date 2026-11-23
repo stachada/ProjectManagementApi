@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Ordinis.Application.Common;
+using Ordinis.Infrastructure.Persistence;
 using Ordinis.Infrastructure.Webhooks;
 using Ordinis.Testing;
+using Serilog.Core;
 
 namespace Ordinis.AcceptanceTests.Support;
 
@@ -37,6 +40,11 @@ internal sealed class AcceptanceApiFactory : OrdinisApiFactory
         {
             services.RemoveAll<IWebhookUrlGuard>();
             services.AddSingleton<IWebhookUrlGuard>(new ReceiverAwareUrlGuard(_receiver, new WebhookUrlGuard()));
+
+            // "Given the database is unavailable" (off unless a scenario switches it on), and the
+            // log capture Program.cs's Serilog setup picks up through ReadFrom.Services.
+            services.AddDbContext<AppDbContext>(options => options.AddInterceptors(TestHost.Outage));
+            services.AddSingleton<ILogEventSink>(TestHost.Logs);
         });
     }
 

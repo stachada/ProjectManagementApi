@@ -26,7 +26,7 @@ internal sealed class ApiDriver(World world, Seeder seeder)
     /// <param name="ifMatch">Optional, already-quoted ETag for the <c>If-Match</c> header.</param>
     public async Task<ApiResponse> SendAsync(string persona, HttpMethod method, string path, object? body = null, string? ifMatch = null)
     {
-        using HttpClient client = TestHost.Factory.CreateClient();
+        using HttpClient client = CreateClient();
         RequestModifiers modifiers = TakeModifiers();
         using var request = new HttpRequestMessage(method, Versioned(path, modifiers));
         ifMatch = modifiers.OmitIfMatch ? null : ifMatch;
@@ -62,7 +62,7 @@ internal sealed class ApiDriver(World world, Seeder seeder)
     /// </summary>
     public async Task<ApiResponse> SendWithTokenAsync(string? accessToken, HttpMethod method, string path, object? body = null)
     {
-        using HttpClient client = TestHost.Factory.CreateClient();
+        using HttpClient client = CreateClient();
         RequestModifiers modifiers = TakeModifiers();
         using var request = new HttpRequestMessage(method, Versioned(path, modifiers));
         AddModifierHeaders(request, modifiers);
@@ -87,7 +87,7 @@ internal sealed class ApiDriver(World world, Seeder seeder)
     /// </summary>
     public async Task<ApiResponse> UploadAsync(string persona, string path, string fileName, string contentType, byte[] content)
     {
-        using HttpClient client = TestHost.Factory.CreateClient();
+        using HttpClient client = CreateClient();
         RequestModifiers modifiers = TakeModifiers();
         using var request = new HttpRequestMessage(HttpMethod.Post, Versioned(path, modifiers));
         AddModifierHeaders(request, modifiers);
@@ -110,7 +110,7 @@ internal sealed class ApiDriver(World world, Seeder seeder)
     public async Task<ApiResponse> SendAsUserAsync(
         Guid userId, HttpMethod method, string path, object? body = null, string? ifMatch = null, string? idempotencyKey = null)
     {
-        using HttpClient client = TestHost.Factory.CreateClient();
+        using HttpClient client = CreateClient();
         using var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await seeder.AccessTokenForAsync(userId));
 
@@ -135,7 +135,7 @@ internal sealed class ApiDriver(World world, Seeder seeder)
     /// <summary>Sends a body exactly as given (e.g. invalid JSON) as a persona, and records the response.</summary>
     public async Task<ApiResponse> SendRawBodyAsync(string persona, HttpMethod method, string path, string body, string contentType)
     {
-        using HttpClient client = TestHost.Factory.CreateClient();
+        using HttpClient client = CreateClient();
         using var request = new HttpRequestMessage(method, path)
         {
             Content = new StringContent(body, System.Text.Encoding.UTF8, contentType),
@@ -145,6 +145,18 @@ internal sealed class ApiDriver(World world, Seeder seeder)
         ApiResponse result = await SendRawAsync(client, request);
         world.LastResponse = result;
         return result;
+    }
+
+    /// <summary>A client of the scenario's host, sending from the scenario's client address (if any).</summary>
+    private HttpClient CreateClient()
+    {
+        HttpClient client = (world.Host ?? TestHost.Factory).CreateClient();
+        if (world.ClientAddress is not null)
+        {
+            client.DefaultRequestHeaders.Add(TestHost.ClientAddressHeader, world.ClientAddress);
+        }
+
+        return client;
     }
 
     private RequestModifiers TakeModifiers()
