@@ -26,7 +26,7 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-963 scenarios (outline rows expanded): **667 pass, 296 skipped, 0 fail.**
+963 scenarios (outline rows expanded): **773 pass, 190 skipped, 0 fail.**
 
 | Feature | Status |
 | --- | --- |
@@ -48,8 +48,14 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 | Users/user-tasks | ✅ bound — 18 pass |
 | Organizations/organization-lifecycle | ✅ bound — 15 pass |
 | Users/user-lifecycle | ✅ bound — 15 pass |
+| Authorization/role-permissions | ✅ bound — 38 pass |
+| Authorization/resource-visibility | ✅ bound — 24 pass |
+| Authorization/tenant-isolation | ✅ bound — 22 pass |
+| Search/search | ✅ bound — 22 pass |
+| Auth/login | ✅ bound — 13 pass; 1 `@needs-rate-limiter` skipped (batch 5) |
+| Auth/token-refresh | ✅ bound — 12 pass; 4 `@needs-clock` skipped (Tier 3) |
+| Auth/logout | ✅ bound — 5 pass |
 | Platform/pagination | ✅ bound — 28 pass |
-| Authorization/tenant-isolation, resource-visibility, role-permissions | ◐ 16 / 8 / 6 pass via shared steps, rest skipped |
 | Platform/api-versioning, optimistic-concurrency | ◐ 2 / 2 pass via shared steps, rest skipped |
 | *all other features* | ⏳ not bound yet (reported as skipped) |
 
@@ -171,7 +177,7 @@ Scenarios tagged `@gap` carry a `# GAP-nn` comment pointing here. When a gap is 
 its `@gap` tags are removed (the scenarios become ordinary regression specs) and the row
 moves to **Fixed gaps** below.
 
-*No open gaps — all 22 found by the specs are fixed (see below).*
+*No open gaps — all 24 found by the specs are fixed (see below).*
 
 ### Known edge cases (documented, not fixed)
 
@@ -209,6 +215,8 @@ moves to **Fixed gaps** below.
 | GAP-20 | No `JsonStringEnumConverter`: task `status`/`priority` and member `role` were sent as numbers, and JSON bodies with names (`{"status":"InProgress"}`, as the docs showed) were rejected with 400 — while query strings accepted names and `UserDto.OrgRole` was already a string | `JsonStringEnumConverter` on the MVC and Minimal API JSON options, and in `EventJson.Options` for outbox payloads (the audit trail) and webhook envelopes. Names out; names *or* numbers in, so ordinal clients keep working (a pre-1.0 change for clients reading numbers). Found binding `project-membership.feature`. Regression tests: `EnumSerializationTests`, `EventJsonTests`; the acceptance driver now sends names |
 | GAP-21 | The organization details had no `slug` — the value users must state when signing in, so a client could not discover it through the API — and no `updatedAt`, unlike every other resource | `OrganizationDto.Slug` and `UpdatedAt`, mapped in `OrganizationMapper`. Found binding `organizations.feature`. Regression tests: `OrganizationMapperTests.ToDto_AllFieldsMapCorrectly`, `OrganizationsControllerTests.GetById_ReturnsSlugAndUpdatedAt`; "Viewing one's own organization" scenario |
 | GAP-22 | `GetUserTasks` sent an unknown `sortBy` to newest first whatever `sortDescending` said, while every other task list falls back to `createdAt` in the requested direction | The fallback shares the `createdAt` branch, so it honours the direction. Found binding `user-tasks.feature`. Regression tests: `GetUserTasksHandlerTests.HandleAsync_UnknownSortField_SortsByCreatedAtInTheRequestedDirection`; "An unknown sort field falls back to creation order" scenario |
+| GAP-23 | A missing refresh token was reported on field `Token` — the command's property — although `POST /auth/refresh` takes `refreshToken`, so a client could not match the error to its input (the only request field renamed on its way to a command) | `RefreshTokenValidator` reports it as `RefreshToken` (`OverridePropertyName`); the command keeps `Token`, since a record member cannot share the record's name. Found binding `token-refresh.feature`. Regression test: `AuthEndpointsTests.Refresh_MissingToken_Returns422OnTheRequestField`; "The refresh token is required" scenario |
+| GAP-24 | FluentValidation translated validation messages into the server's current UI culture, so the API's error language depended on the host (Polish on a Polish machine: "Pole 'Refresh Token' nie może być puste.") while every other message is English | `ValidatorOptions.Global.LanguageManager.Enabled = false` in `AddApplicationServices`: always the built-in English messages. Found binding `token-refresh.feature` on a Polish-locale machine. Regression test: `AuthEndpointsTests.Validation_ServerUiCultureIsNotEnglish_MessagesStayEnglish` (runs the request under `pl-PL`, so it reproduces on any host) |
 
 ## Out of scope (by design, not gaps)
 

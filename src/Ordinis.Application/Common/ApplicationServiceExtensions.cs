@@ -25,6 +25,11 @@ public static class ApplicationServiceExtensions
         // Slug generation - singleton; stateless and uses a compiled regex
         services.AddSingleton<ISlugGenerator, SlugGenerator>();
 
+        // Validation messages are part of the API contract, so they are always the built-in English
+        // ones: by default FluentValidation translates them into the server's current UI culture,
+        // which made the API's error language depend on the machine it runs on.
+        ValidatorOptions.Global.LanguageManager.Enabled = false;
+
         // Auto-register all validators in this assembly.
         // AssemblyScanner finds every IValidator<T> implementation
         // and registers it with DI.

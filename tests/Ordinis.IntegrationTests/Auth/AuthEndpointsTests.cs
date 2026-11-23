@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -115,6 +117,40 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
+    }
+
+    /// <summary>The error names the field the client sent (<c>refreshToken</c>), not the command's <c>Token</c>.</summary>
+    [Fact]
+    public async Task Refresh_MissingToken_Returns422OnTheRequestField()
+    {
+        HttpResponseMessage response = await Client.PostAsJsonAsync("/auth/refresh", new { });
+
+        await AssertValidationProblemAsync(response, "RefreshToken");
+    }
+
+    /// <summary>
+    /// Validation messages do not follow the server's UI culture. The request runs under Polish
+    /// (the culture flows into the in-process server), which reproduces a non-English host anywhere.
+    /// </summary>
+    [Fact]
+    public async Task Validation_ServerUiCultureIsNotEnglish_MessagesStayEnglish()
+    {
+        CultureInfo original = CultureInfo.CurrentUICulture;
+        HttpResponseMessage response;
+        try
+        {
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("pl-PL");
+            response = await Client.PostAsJsonAsync("/auth/refresh", new RefreshTokenRequest(""));
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = original;
+        }
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        using JsonDocument problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        string message = problem.RootElement.GetProperty("errors").GetProperty("RefreshToken")[0].GetString()!;
+        Assert.Equal("'Refresh Token' must not be empty.", message);
     }
 
     [Fact]
