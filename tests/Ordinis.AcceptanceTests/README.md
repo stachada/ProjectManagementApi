@@ -26,7 +26,7 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-963 scenarios (outline rows expanded): **963 pass, 0 skipped, 0 fail** (about 7 minutes). Every feature is bound, including the `@needs-clock` scenarios (token and key expiry, rate-limit windows, retry timing), which run on the test clock.
+963 scenarios (outline rows expanded): **963 pass, 0 skipped, 0 fail** (about 2½ minutes). Every feature is bound, including the `@needs-clock` scenarios (token and key expiry, rate-limit windows, retry timing), which run on the test clock.
 
 | Feature | Status |
 | --- | --- |
@@ -97,8 +97,8 @@ Support/
 ├── TestHost            ── run-wide: one API host + SQL Server container + webhook receiver;
 │                          database reset (Respawn) after every scenario
 ├── AcceptanceApiFactory── the shared Ordinis.Testing factory, with a random DB port, the test
-│                          clock, 1 s webhook polling, and a URL guard that also trusts the
-│                          in-process receiver
+│                          clock, 250 ms background-job polling, and a URL guard that also
+│                          trusts the in-process receiver
 ├── TestClock           ── the hosts' TimeProvider: real time plus an offset steps move forward
 ├── World               ── per-scenario names → IDs ("Bob", "Fix login bug"), last response,
 │                          versions (ETags) personas have read

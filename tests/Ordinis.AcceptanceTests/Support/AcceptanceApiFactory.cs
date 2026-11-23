@@ -14,7 +14,7 @@ namespace Ordinis.AcceptanceTests.Support;
 /// <summary>
 /// The shared <see cref="OrdinisApiFactory"/>, adapted for acceptance scenarios: a random SQL
 /// Server host port (so it can run alongside <c>Ordinis.IntegrationTests</c>), the controllable
-/// <see cref="TestClock"/>, faster webhook delivery polling, and a URL guard that additionally
+/// <see cref="TestClock"/>, faster background-job polling, and a URL guard that additionally
 /// trusts the in-process <see cref="WebhookReceiver"/>.
 /// </summary>
 internal sealed class AcceptanceApiFactory : OrdinisApiFactory
@@ -26,10 +26,12 @@ internal sealed class AcceptanceApiFactory : OrdinisApiFactory
         _receiver = receiver;
 
         // Read by WebApplication.CreateBuilder when the host is first built (see the base class
-        // for why configuration must be supplied through environment variables).
-        // The retry backoff stays at its production value (30 s, then 60 s): scenarios skip the
-        // test clock ahead to a due retry instead of waiting for it.
-        Environment.SetEnvironmentVariable("WebhookDelivery__PollingInterval", "00:00:01");
+        // for why configuration must be supplied through environment variables). Both background
+        // jobs poll every 250 ms instead of every 5 s, so an event reaches its receiver within a
+        // fraction of a second. The retry backoff stays at its production value (30 s, then
+        // 60 s): scenarios skip the test clock ahead to a due retry instead of waiting for it.
+        Environment.SetEnvironmentVariable("Outbox__PollingInterval", "00:00:00.250");
+        Environment.SetEnvironmentVariable("WebhookDelivery__PollingInterval", "00:00:00.250");
     }
 
     protected override int? LocalHostPort => null;

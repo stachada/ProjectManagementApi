@@ -1,12 +1,19 @@
 namespace Ordinis.Infrastructure.Persistence;
 
 /// <summary>
-/// Configuration options for <see cref="OutboxDispatcherJob"/>
-/// Populated by <c>InfrastructureServiceExtensions.AddInfrastructureServices</c>
-/// for the resolved <c>DatabaseProvider</c> setting.
+/// Configuration options for <see cref="OutboxDispatcherJob"/>.
+/// <see cref="PollingInterval"/> is bound from the <c>Outbox</c> section of <c>appsettings.json</c>;
+/// <see cref="DatabaseProvider"/> is set by <c>InfrastructureServiceExtensions.AddInfrastructureServices</c>
+/// from the resolved <c>DatabaseProvider</c> setting.
 /// </summary>
 internal sealed class OutboxOptions
 {
+    /// <summary>The configuration section name.</summary>
+    public const string SectionName = "Outbox";
+
+    /// <summary>How often the job polls for unprocessed messages.</summary>
+    public TimeSpan PollingInterval { get; set; } = TimeSpan.FromSeconds(5);
+
     /// <summary>
     /// The active database provider. Valid values: <c>"SqlServer"</c>, <c>"PostgreSQL"</c>.
     /// </summary>

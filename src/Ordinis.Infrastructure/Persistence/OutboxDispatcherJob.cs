@@ -39,7 +39,6 @@ namespace Ordinis.Infrastructure.Persistence;
 /// </remarks>
 internal sealed class OutboxDispatcherJob : BackgroundService
 {
-    private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(5);
     private const int BatchSize = 50;
     private const int MaxRetries = 3;
     private const int MaxErrorLength = 2000;
@@ -54,6 +53,7 @@ internal sealed class OutboxDispatcherJob : BackgroundService
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<OutboxDispatcherJob> _logger;
     private readonly string _databaseProvider;
+    private readonly TimeSpan _pollingInterval;
 
     public OutboxDispatcherJob(
         IServiceScopeFactory scopeFactory,
@@ -65,11 +65,12 @@ internal sealed class OutboxDispatcherJob : BackgroundService
         _timeProvider = timeProvider;
         _logger = logger;
         _databaseProvider = options.Value.DatabaseProvider;
+        _pollingInterval = options.Value.PollingInterval;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(PollingInterval);
+        using var timer = new PeriodicTimer(_pollingInterval);
 
         try
         {
