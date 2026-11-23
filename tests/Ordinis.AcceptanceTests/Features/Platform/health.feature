@@ -31,12 +31,18 @@ Feature: Health check
 
   Rule: The API description is only published in development
 
-    Scenario Outline: The OpenAPI document in the <environment> environment
-      Given the API runs in the <environment> environment
+    Scenario: The OpenAPI document is published in Development
+      Given the API runs in the Development environment
       When the OpenAPI document is requested anonymously
-      Then <outcome>
+      Then the request succeeds
 
-      Examples:
-        | environment | outcome                              |
-        | Development | the request succeeds                 |
-        | Production  | the request is rejected as not found |
+    # Every address that is not explicitly public falls under the deny-by-default authorization
+    # policy, so an anonymous caller is asked to sign in (401) rather than told what exists; a
+    # signed-in caller sees that the document is not there at all.
+    Scenario: The OpenAPI document is not published in Production
+      Given the API runs in the Production environment
+      And an organization "Acme" with a user Bob
+      When the OpenAPI document is requested anonymously
+      Then the request is rejected as unauthenticated
+      When Bob requests the OpenAPI document
+      Then the request is rejected as not found

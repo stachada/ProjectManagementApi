@@ -8,8 +8,11 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((context, services, loggerConfig) =>
 {
+    // ReadFrom.Services adds sinks and enrichers registered in DI (e.g. a test's log capture)
+    // to the ones configured in appsettings.
     loggerConfig
         .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
         .Enrich.FromLogContext();
 });
 

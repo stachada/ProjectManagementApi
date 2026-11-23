@@ -95,10 +95,8 @@ public static class ApiServiceExtensions
             {
                 HttpContext context = rejectedContext.HttpContext;
 
-                if (rejectedContext.Lease.TryGetMetadata(MetadataName.RetryAfter, out TimeSpan retryAfter))
-                {
-                    context.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
-                }
+                context.Response.Headers.RetryAfter = RetryAfterSeconds(rejectedContext.Lease, context, rateLimitingOptions)
+                    .ToString(System.Globalization.CultureInfo.InvariantCulture);
 
                 ProblemDetails problemDetails = ProblemDetailsFactory.Create(
                     context,
@@ -229,5 +227,24 @@ public static class ApiServiceExtensions
         services.AddSingleton<IAuthorizationMiddlewareResultHandler, ResourceHidingAuthorizationResultHandler>();
 
         return services;
+    }
+
+    /// <summary>
+    /// How long a rejected caller should wait, in whole seconds (at least 1). The fixed-window
+    /// limiter (anonymous callers) reports it on the lease; the sliding-window limiter
+    /// (authenticated callers) does not, so it falls back to one segment of the window — the
+    /// soonest any of the caller's permits can be freed.
+    /// </summary>
+    private static int RetryAfterSeconds(RateLimitLease lease, HttpContext context, RateLimitingOptions options)
+    {
+        if (lease.TryGetMetadata(MetadataName.RetryAfter, out TimeSpan retryAfter))
+        {
+            return Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds));
+        }
+
+        RateLimitingOptions.SlidingWindowSettings sliding = options.SlidingWindow;
+        return context.User.Identity?.IsAuthenticated == true
+            ? Math.Max(1, (int)Math.Ceiling((double)sliding.WindowSeconds / Math.Max(1, sliding.SegmentsPerWindow)))
+            : Math.Max(1, options.FixedWindow.WindowSeconds);
     }
 }

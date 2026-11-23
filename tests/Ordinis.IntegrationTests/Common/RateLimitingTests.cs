@@ -74,6 +74,45 @@ public sealed class RateLimitingTests(OrdinisApiFactory factory) : IntegrationTe
         Assert.True(problem.Extensions.ContainsKey("correlationId"));
     }
 
+    /// <summary>
+    /// Authenticated callers are limited by a sliding window, whose rejected lease carries no
+    /// retry-after metadata; the response must still say how long to wait (one window segment).
+    /// </summary>
+    [Fact]
+    public async Task SlidingWindowRejection_StillReturnsRetryAfterInSeconds()
+    {
+        (Guid organizationId, Guid userId) = await AuthenticateAsOrgAdminAsync();
+        using HttpClient client = Factory
+            .WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+                services.PostConfigure<RateLimiterOptions>(options =>
+                {
+                    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(_ =>
+                        RateLimitPartition.GetSlidingWindowLimiter(
+                            partitionKey: "test-partition",
+                            factory: _ => new SlidingWindowRateLimiterOptions
+                            {
+                                PermitLimit = PermitLimit,
+                                Window = TimeSpan.FromMinutes(1),
+                                SegmentsPerWindow = 6,
+                                QueueLimit = 0,
+                            }));
+                })))
+            .CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", await CreateAccessTokenAsync(userId));
+
+        for (int i = 0; i < PermitLimit; i++)
+        {
+            await client.GetAsync($"/api/v1/organizations/{organizationId}");
+        }
+
+        HttpResponseMessage response = await client.GetAsync($"/api/v1/organizations/{organizationId}");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
+        // Configured defaults: a 60-second window in 6 segments → retry after 10 seconds.
+        Assert.Equal(TimeSpan.FromSeconds(10), response.Headers.RetryAfter?.Delta);
+    }
+
     [Fact]
     public async Task HealthEndpoint_IsExemptFromRateLimiting()
     {

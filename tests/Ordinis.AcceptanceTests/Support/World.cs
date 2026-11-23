@@ -83,6 +83,18 @@ internal sealed class World
     /// </summary>
     public RequestModifiers NextRequest { get; set; } = new();
 
+    /// <summary>
+    /// The API host this scenario talks to — <see langword="null"/> for the main one, or a variant
+    /// such as <see cref="TestHost.Production"/> ("Given the API runs in the Production environment").
+    /// </summary>
+    public Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program>? Host { get; set; }
+
+    /// <summary>
+    /// The IP address requests come from, on hosts that honour it (<see cref="TestHost.RateLimited"/>);
+    /// <see langword="null"/> for TestServer's default (none).
+    /// </summary>
+    public string? ClientAddress { get; set; }
+
     /// <summary>Responses of requests sent at the same time ("simultaneously …").</summary>
     public List<ApiResponse> ConcurrentResponses { get; } = [];
 

@@ -26,7 +26,7 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-963 scenarios (outline rows expanded): **871 pass, 92 skipped, 0 fail.**
+963 scenarios (outline rows expanded): **887 pass, 76 skipped, 0 fail.**
 
 | Feature | Status |
 | --- | --- |
@@ -52,19 +52,33 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 | Authorization/resource-visibility | ✅ bound — 24 pass |
 | Authorization/tenant-isolation | ✅ bound — 22 pass |
 | Search/search | ✅ bound — 22 pass |
-| Auth/login | ✅ bound — 13 pass; 1 `@needs-rate-limiter` skipped (batch 5) |
+| Auth/login | ✅ bound — 14 pass |
 | Auth/token-refresh | ✅ bound — 12 pass; 4 `@needs-clock` skipped (Tier 3) |
 | Auth/logout | ✅ bound — 5 pass |
 | Platform/optimistic-concurrency | ✅ bound — 32 pass |
 | Platform/idempotency | ✅ bound — 17 pass; 1 `@needs-clock` skipped (Tier 3) |
-| Platform/error-responses | ✅ bound — 15 pass; 1 needs an unavailable database (batch 5b) |
+| Platform/error-responses | ✅ bound — 16 pass |
 | Platform/sparse-fieldsets | ✅ bound — 12 pass |
 | Platform/api-versioning | ✅ bound — 11 pass |
 | Platform/caching | ✅ bound — 11 pass |
-| Platform/correlation | ✅ bound — 4 pass; 2 need captured logs (batch 5b) |
-| Platform/health, rate-limiting | ⏳ batch 5b — need a database-down host, a Production host and a rate-limited host |
+| Platform/correlation | ✅ bound — 6 pass |
+| Platform/health | ✅ bound — 6 pass |
+| Platform/rate-limiting | ✅ bound — 6 pass; 2 `@needs-clock` skipped (Tier 3) |
 | Platform/pagination | ✅ bound — 28 pass |
 | *all other features* | ⏳ not bound yet (reported as skipped) |
+
+## Host variants and simulated failures
+
+Most scenarios run against one in-process API host. A few need it configured differently;
+`TestHost` builds these variants on first use, from the same configuration and database, with
+no background jobs (so outbox messages are never processed twice):
+
+| Need | How |
+| --- | --- |
+| Development / Production environment ("Given the API runs in the … environment") | `TestHost.Development` / `TestHost.Production` (`UseEnvironment`); the scenario switches host through `World.Host` |
+| The production rate limiter (`@needs-rate-limiter`) | `TestHost.RateLimited` registers `KeepProductionRateLimiter`, so the limiter is exactly `Program.cs`'s. A test header sets `RemoteIpAddress`, and every scenario gets its own address and new users, so no scenario inherits another's quota |
+| "Given the database is unavailable" | `DatabaseOutage`, an EF Core connection interceptor on the main host: while on, opening a connection fails like an unreachable SQL Server (instantly, with connection details in the message, so leaks are detectable). The test's own seeding is exempt. Switched off after every scenario |
+| Log lines ("a request log entry records …") | `CapturedLogs`, a Serilog sink registered in DI and picked up by `Program.cs`'s `ReadFrom.Services` — so scenarios check the real logging pipeline. Cleared after every scenario |
 
 ## How it works
 
@@ -184,7 +198,7 @@ Scenarios tagged `@gap` carry a `# GAP-nn` comment pointing here. When a gap is 
 its `@gap` tags are removed (the scenarios become ordinary regression specs) and the row
 moves to **Fixed gaps** below.
 
-*No open gaps — all 25 found by the specs are fixed (see below).*
+*No open gaps — all 26 found by the specs are fixed (see below).*
 
 ### Known edge cases (documented, not fixed)
 
@@ -225,6 +239,7 @@ moves to **Fixed gaps** below.
 | GAP-23 | A missing refresh token was reported on field `Token` — the command's property — although `POST /auth/refresh` takes `refreshToken`, so a client could not match the error to its input (the only request field renamed on its way to a command) | `RefreshTokenValidator` reports it as `RefreshToken` (`OverridePropertyName`); the command keeps `Token`, since a record member cannot share the record's name. Found binding `token-refresh.feature`. Regression test: `AuthEndpointsTests.Refresh_MissingToken_Returns422OnTheRequestField`; "The refresh token is required" scenario |
 | GAP-24 | FluentValidation translated validation messages into the server's current UI culture, so the API's error language depended on the host (Polish on a Polish machine: "Pole 'Refresh Token' nie może być puste.") while every other message is English | `ValidatorOptions.Global.LanguageManager.Enabled = false` in `AddApplicationServices`: always the built-in English messages. Found binding `token-refresh.feature` on a Polish-locale machine. Regression test: `AuthEndpointsTests.Validation_ServerUiCultureIsNotEnglish_MessagesStayEnglish` (runs the request under `pl-PL`, so it reproduces on any host) |
 | GAP-25 | A retried upload with the same `Idempotency-Key` was rejected as "already used with a different request body": the request fingerprint hashed the raw multipart body, whose boundary the client picks anew (usually at random) for every request — so request keys never worked for attachments | `IdempotencyMiddleware` replaces the multipart boundary with a fixed marker before hashing, so the hash depends only on the parts. Found binding `idempotency.feature`. Regression tests: `IdempotencyMiddlewareTests.Post_RetriedUploadWithNewMultipartBoundary_ReplaysAndCreatesOneAttachment` (and `…SameKeyDifferentUploadContent_Returns409Conflict`, which guards that different content still conflicts); "Every create endpoint honours the request key: uploads …" scenario |
+| GAP-26 | An authenticated caller over the limit got `429` without `Retry-After` — although the body says "Retry after the interval given in the Retry-After header": `OnRejected` only copied the limiter's retry-after metadata, which the fixed window (anonymous callers) reports and the sliding window (authenticated callers) does not | `OnRejected` always sets `Retry-After`: the metadata when present, otherwise one sliding-window segment (`WindowSeconds / SegmentsPerWindow`, 10 s by default). Found binding `rate-limiting.feature`. Regression test: `RateLimitingTests.SlidingWindowRejection_StillReturnsRetryAfterInSeconds`; "The 501st request by one user within a minute is rejected" scenario |
 
 ## Out of scope (by design, not gaps)
 
