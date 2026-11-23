@@ -26,16 +26,22 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-963 scenarios (outline rows expanded): **283 pass, 680 skipped, 0 fail.**
+963 scenarios (outline rows expanded): **401 pass, 562 skipped, 0 fail.**
 
 | Feature | Status |
 | --- | --- |
 | Tasks/task-workflow | ✅ bound — 70 pass |
 | Tasks/task-listing | ✅ bound — 43 pass |
+| Tasks/task-assignment | ✅ bound — 35 pass |
+| Tasks/task-editing | ✅ bound — 34 pass |
+| Tasks/task-comments | ✅ bound — 32 pass |
+| Tasks/task-creation | ✅ bound — 28 pass |
+| Tasks/task-attachments | ✅ bound — 24 pass |
+| Tasks/task-hypermedia | ✅ bound — 18 pass |
 | Platform/pagination | ✅ bound — 28 pass |
-| Tasks/task-assignment | ◐ 21 pass via shared steps, 14 skipped |
-| Tasks/task-comments, Tasks/task-creation | ◐ 8 / 7 pass via shared steps, rest skipped |
-| Authorization/role-permissions, resource-visibility, tenant-isolation | ◐ 5 / 1 / 1 pass via shared steps, rest skipped |
+| Projects/project-membership, projects, project-lifecycle | ◐ 18 / 14 / 9 pass via shared steps, rest skipped |
+| Authorization/tenant-isolation, role-permissions, resource-visibility | ◐ 10 / 6 / 6 pass via shared steps, rest skipped |
+| Organizations, Users, Boards, Platform/api-versioning | ◐ a few pass via shared steps, rest skipped |
 | *all other features* | ⏳ not bound yet (reported as skipped) |
 
 ## How it works
@@ -128,12 +134,12 @@ Modifiers: `… using the version <persona> read` (stale If-Match),
 | Step | HTTP |
 | --- | --- |
 | `the request succeeds` | 2xx |
-| `the request is rejected as malformed` | 400 |
+| `the request is rejected as malformed` | 400 — the request cannot be bound (invalid JSON, a required field absent, an unconvertible value) |
 | `the request is rejected as unauthenticated` | 401 |
 | `the request is rejected as forbidden` | 403 |
 | `the request is rejected as not found` | 404 |
 | `the request is rejected as conflicting` | 409 |
-| `the request is rejected as invalid` / `… with error "<code>"` | 422 (+ domain error code) |
+| `the request is rejected as invalid` / `… with error "<code>"` | 422 (+ domain error code) — the request binds but breaks a rule (blank, too long, unknown reference, …) |
 | `the request is rejected as too many requests` | 429 |
 | `the task "<t>" has status <S>` / `still has status <S>` | read-back assertion |
 
@@ -156,7 +162,7 @@ Scenarios tagged `@gap` carry a `# GAP-nn` comment pointing here. When a gap is 
 its `@gap` tags are removed (the scenarios become ordinary regression specs) and the row
 moves to **Fixed gaps** below.
 
-*No open gaps — all 17 found by the specs are fixed (see below).*
+*No open gaps — all 19 found by the specs are fixed (see below).*
 
 ### Known edge cases (documented, not fixed)
 
@@ -189,6 +195,8 @@ moves to **Fixed gaps** below.
 | GAP-15 | Re-creating a deleted project's name passed validation (the soft-delete query filter hid it) but violated the unfiltered unique `(OrganizationId, Slug)` index → 500 | `CreateProjectValidator` checks slug uniqueness with `IgnoreQueryFilters()`, so a deleted project's slug stays reserved (422 on `name`). Regression tests: `ProjectsControllerTests.CreateProject_NameOfSoftDeletedProject_Returns422AndCreatesNothing`; `project-lifecycle.feature` "The name of a deleted project stays reserved" |
 | GAP-16 | `User.Create` / `Organization.Create` lower-case email and slug, but `Login` compared the input as typed (trim only), so mixed-case sign-in worked on SQL Server's case-insensitive collation and failed on PostgreSQL | `Login` normalizes email and slug with `Trim().ToLowerInvariant()`, matching how they are stored. Regression tests: `Ordinis.UnitTests/Application/Users/Commands/LoginHandlerTests` (InMemory compares case-sensitively, like PostgreSQL) |
 | GAP-17 | **Security (SSRF):** the `WebhookDelivery` HttpClient followed redirects (default `AllowAutoRedirect = true`), so a public receiver could redirect delivery to loopback / private / cloud-metadata addresses that `WebhookUrlGuard` never vets | primary handler `SocketsHttpHandler { AllowAutoRedirect = false }`; a 3xx is a failed attempt. Regression test: `Ordinis.IntegrationTests/Common/WebhookDeliveryHttpClientTests` |
+| GAP-18 | An attachment did not say who uploaded it, although only the uploader (or a project / org Admin) may remove it — a client could not tell whether to offer "remove" | `AttachmentDto.UploadedByUserId`, mapped in `TaskMapper.ToAttachmentDto`. Found binding `task-attachments.feature`. Regression tests: `TaskMapperTests.ToDto_Attachments_MapAllFields_OrderedByUploadedAt`, `TasksControllerTests.AddAttachment_ValidFile_Returns201WithDownloadUrl`; "Uploading an attachment" scenario |
+| GAP-19 | A valid file name over ~218 characters (the validator allows 255) → 500: the stored file is named `{guid}_{name}`, which exceeded the filesystem's 255-character limit per path component | `LocalFileStorageService` shortens the *stored* name to 100 characters, keeping the extension; the original name is kept in the database and returned unchanged. Found binding `task-attachments.feature`. Regression tests: `TasksControllerTests.AddAttachment_FileNameAtMaximumLength_Returns201AndKeepsTheFullName`; "A file name of exactly 255 characters is accepted" scenario |
 
 ## Out of scope (by design, not gaps)
 

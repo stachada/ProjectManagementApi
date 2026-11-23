@@ -34,6 +34,26 @@ internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api)
         Assert.True(found, $"No '{eventType}' entry by {actor} for '{title}' in: {audit.Body}");
     }
 
+    /// <summary>The newest entries of the audit trail, in order. Columns: event, actor, task.</summary>
+    [Then(@"^the audit trail of project ""([^""]+)"" shows, newest first:$")]
+    public async Task ThenTheAuditTrailShowsNewestFirst(string project, DataTable expected)
+    {
+        Guid projectId = world.ProjectNamed(project);
+        Guid observerId = await seeder.ObserverForOrganizationAsync(world.ProjectOrganizations[projectId]);
+        ApiResponse audit = await api.SendAsUserAsync(observerId, HttpMethod.Get, $"/api/v1/projects/{projectId}/audit?pageSize=100");
+        Assert.True(audit.IsSuccess, $"Could not read the audit trail: {audit}");
+
+        List<JsonElement> newest = audit.Json.EnumerateArray().Take(expected.RowCount).ToList();
+        Assert.Equal(expected.RowCount, newest.Count);
+
+        foreach ((DataTableRow row, JsonElement entry) in expected.Rows.Zip(newest))
+        {
+            Assert.Equal(row["event"], entry.GetProperty("eventType").GetString());
+            Assert.Equal(world.PersonaNamed(row["actor"]).UserId, entry.GetProperty("actorId").GetGuid());
+            Assert.Equal(world.TaskNamed(row["task"]), entry.GetProperty("payload").GetProperty("TaskId").GetGuid());
+        }
+    }
+
     [Then(@"^the webhook eventually receives a ""([^""]+)"" event for ""([^""]+)""$")]
     public async Task ThenTheWebhookEventuallyReceives(string eventType, string title)
     {

@@ -160,7 +160,8 @@ public static class TaskMapper
             ContentType = attachment.ContentType,
             SizeInBytes = attachment.SizeInBytes,
             DownloadUrl = attachment.StorageUrl, // Application layer resolves to pre-signed URL before returning to API consumers
-            UploadedAt = attachment.UploadedAt
+            UploadedAt = attachment.UploadedAt,
+            UploadedByUserId = attachment.UploadedByUserId
 
         };
     #endregion

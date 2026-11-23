@@ -51,8 +51,27 @@ internal sealed class World
     /// <summary>Versions (ETags) a persona has read: (persona, resource ID) → quoted ETag.</summary>
     public Dictionary<(string Persona, Guid ResourceId), string> ReadVersions { get; } = new();
 
-    /// <summary>The response to the most recent "When" action.</summary>
-    public ApiResponse? LastResponse { get; set; }
+    /// <summary>Download URLs of uploaded attachments: (task ID, file name) → URL.</summary>
+    public Dictionary<(Guid TaskId, string FileName), string> AttachmentUrls { get; } = new();
+
+    /// <summary>The most recently added comment ("that comment"), with the task it belongs to.</summary>
+    public (Guid TaskId, Guid CommentId)? LastComment { get; set; }
+
+    private ApiResponse? _lastResponse;
+
+    /// <summary>The response to the most recent "When" action. Setting it keeps the previous one.</summary>
+    public ApiResponse? LastResponse
+    {
+        get => _lastResponse;
+        set
+        {
+            PreviousResponse = _lastResponse;
+            _lastResponse = value;
+        }
+    }
+
+    /// <summary>The response before <see cref="LastResponse"/>, for "both responses …" comparisons.</summary>
+    public ApiResponse? PreviousResponse { get; private set; }
 
     public ApiResponse Response =>
         LastResponse ?? throw new InvalidOperationException("No request has been made in this scenario yet.");

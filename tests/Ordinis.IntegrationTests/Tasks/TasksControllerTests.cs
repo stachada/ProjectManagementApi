@@ -882,6 +882,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         Assert.NotNull(attachment);
         Assert.Equal("notes.txt", attachment!.FileName);
         Assert.NotEmpty(attachment.DownloadUrl);
+        Assert.Equal(userId, attachment.UploadedByUserId);
 
         // Clean up the file LocalFileStorageService wrote to disk - Respawn only resets the database.
         await Client.DeleteAsync($"/api/v1/tasks/{taskId}/attachments/{attachment.Id}");
@@ -911,6 +912,33 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
     // reaches the validator (confirmed empirically - manually constructing a Content-Disposition
     // header with an empty filename still gets a 400, not a 422). No integration test possible
     // for this specific rule without bypassing normal HTTP semantics.
+
+    [Fact]
+    public async Task AddAttachment_FileNameAtMaximumLength_Returns201AndKeepsTheFullName()
+    {
+        // 255 characters is valid per AddAttachmentValidator. The stored file is named
+        // "{guid}_{name}", which would exceed the filesystem's 255-character limit per path
+        // component - LocalFileStorageService must shorten the stored name, not fail with a 500.
+        (Guid userId, Guid boardId) = await SeedBoardAsync();
+        Guid taskId = await SeedTaskAsync(boardId, userId);
+        string fileName = new string('a', 251) + ".txt";
+
+        using var content = new MultipartFormDataContent();
+        using var fileContent = new ByteArrayContent([1, 2, 3]);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+        content.Add(fileContent, "file", fileName);
+
+        HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        AttachmentDto? attachment = await response.Content.ReadFromJsonAsync<AttachmentDto>();
+        Assert.NotNull(attachment);
+        Assert.Equal(fileName, attachment!.FileName);
+        Assert.EndsWith(".txt", attachment.DownloadUrl);
+
+        // Clean up the file LocalFileStorageService wrote to disk - Respawn only resets the database.
+        await Client.DeleteAsync($"/api/v1/tasks/{taskId}/attachments/{attachment.Id}");
+    }
 
     [Fact]
     public async Task AddAttachment_FileNameTooLong_Returns422()

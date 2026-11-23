@@ -56,13 +56,18 @@ Feature: Task creation
 
   Rule: Task details must be valid
 
+    # A request whose required field is absent cannot be bound at all, so it is malformed (400);
+    # one that binds but breaks a rule is invalid (422).
+    Scenario: A task without a title is rejected as malformed
+      When Bob creates a task without a title on board "Sprint 1"
+      Then the request is rejected as malformed
+
     Scenario Outline: Invalid title: <case>
       When Bob creates a task <title> on board "Sprint 1"
       Then the request is rejected as invalid on field "title"
 
       Examples:
         | case               | title                    |
-        | missing            | without a title          |
         | blank              | with a blank title       |
         | 201 characters     | with a 201-character title |
 

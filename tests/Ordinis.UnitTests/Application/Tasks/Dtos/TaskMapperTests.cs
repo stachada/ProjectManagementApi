@@ -177,10 +177,11 @@ public class TaskMapperTests
     public void ToDto_Attachments_MapAllFields_OrderedByUploadedAt()
     {
         ProjectTask task = TaskBuilder.Create(now: Now);
+        Guid uploaderId = Guid.CreateVersion7();
         Attachment second = task.AddAttachment(
             "second.png", "image/png", 200, "blob://second", Guid.CreateVersion7(), Now.AddMinutes(5));
         Attachment first = task.AddAttachment(
-            "first.png", "image/png", 100, "blob://first", Guid.CreateVersion7(), Now);
+            "first.png", "image/png", 100, "blob://first", uploaderId, Now);
 
         TaskDto dto = task.ToDto(new Dictionary<Guid, string>());
 
@@ -191,6 +192,7 @@ public class TaskMapperTests
         Assert.Equal(100, mappedFirst.SizeInBytes);
         Assert.Equal("blob://first", mappedFirst.DownloadUrl);
         Assert.Equal(Now, mappedFirst.UploadedAt);
+        Assert.Equal(uploaderId, mappedFirst.UploadedByUserId);
         Assert.NotEqual(first.Id, second.Id);
     }
     #endregion

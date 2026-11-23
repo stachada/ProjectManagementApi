@@ -34,4 +34,10 @@ public class AttachmentDto
     /// UTC timestamp when this attachment was uploaded.
     /// </summary>
     public DateTimeOffset UploadedAt { get; init; }
+
+    /// <summary>
+    /// The user who uploaded the attachment. Only the uploader, a project Admin or an org Admin may
+    /// remove it, so clients need this to decide whether to offer removal.
+    /// </summary>
+    public Guid UploadedByUserId { get; init; }
 }
