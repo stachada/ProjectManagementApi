@@ -19,6 +19,7 @@ using Ordinis.Domain.Tasks;
 using Ordinis.Domain.Users;
 using Ordinis.Infrastructure.Persistence;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Auth;
 
@@ -33,7 +34,7 @@ public class AuthorizationTests(OrdinisApiFactory factory) : IntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.Equal("A valid access token is required to access this resource.", content!.Detail);
     }
@@ -54,7 +55,7 @@ public class AuthorizationTests(OrdinisApiFactory factory) : IntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.Equal("A valid access token is required to access this resource.", content!.Detail);
     }
@@ -74,7 +75,7 @@ public class AuthorizationTests(OrdinisApiFactory factory) : IntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.Equal("A valid access token is required to access this resource.", content!.Detail);
     }
@@ -94,7 +95,7 @@ public class AuthorizationTests(OrdinisApiFactory factory) : IntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.Equal($"ProjectTask '{taskId}' was not found.", content!.Detail);
         Assert.Equal($"Resource not found", content.Title);
@@ -114,7 +115,7 @@ public class AuthorizationTests(OrdinisApiFactory factory) : IntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.Equal("You do not have permission to perform this action.", content!.Detail);
     }
@@ -137,7 +138,7 @@ public class AuthorizationTests(OrdinisApiFactory factory) : IntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.Equal("You do not have permission to perform this action.", content!.Detail);
     }
@@ -150,7 +151,7 @@ public class AuthorizationTests(OrdinisApiFactory factory) : IntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.Equal("A valid access token is required to access this resource.", content!.Detail);
     }
@@ -244,7 +245,7 @@ public class AuthorizationTests(OrdinisApiFactory factory) : IntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        ProblemDetails? problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        ProblemDetails? problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(problem);
         Assert.Equal("You do not have permission to perform this action.", problem!.Detail);
     }
@@ -481,7 +482,7 @@ public class AuthorizationTests(OrdinisApiFactory factory) : IntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>(ApiJson.Options);
         Assert.NotNull(tasks);
         TaskSummaryDto only = Assert.Single(tasks!);
         Assert.Equal(taskId, only.Id);
@@ -509,7 +510,7 @@ public class AuthorizationTests(OrdinisApiFactory factory) : IntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>(ApiJson.Options);
         Assert.NotNull(tasks);
         Assert.Equal(new[] { taskId1, taskId2 }.Order(), tasks!.Select(t => t.Id).Order());
         Assert.Equal("2", response.Headers.GetValues("X-Total-Count").Single());
@@ -523,7 +524,7 @@ public class AuthorizationTests(OrdinisApiFactory factory) : IntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.Equal("A valid access token is required to access this resource.", content!.Detail);
     }
@@ -536,7 +537,7 @@ public class AuthorizationTests(OrdinisApiFactory factory) : IntegrationTestBase
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.Equal("A valid access token is required to access this resource.", content!.Detail);
     }

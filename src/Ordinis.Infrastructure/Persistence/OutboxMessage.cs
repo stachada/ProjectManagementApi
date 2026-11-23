@@ -55,6 +55,6 @@ public sealed class OutboxMessage
             Id = Guid.CreateVersion7(),
             OccurredAt = domainEvent.OccurredAt,
             Type = domainEvent.GetType().FullName!,
-            Payload = JsonSerializer.Serialize(domainEvent, domainEvent.GetType())
+            Payload = JsonSerializer.Serialize(domainEvent, domainEvent.GetType(), EventJson.Options)
         };
 }

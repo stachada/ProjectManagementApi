@@ -10,6 +10,7 @@ using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
 using Ordinis.Domain.Users;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Common;
 
@@ -34,8 +35,8 @@ public sealed class IdempotencyMiddlewareTests(OrdinisApiFactory factory) : Inte
         Assert.Equal(HttpStatusCode.Created, second.StatusCode);
         Assert.Equal(first.Headers.Location, second.Headers.Location);
 
-        OrganizationDto? firstDto = await first.Content.ReadFromJsonAsync<OrganizationDto>();
-        OrganizationDto? secondDto = await second.Content.ReadFromJsonAsync<OrganizationDto>();
+        OrganizationDto? firstDto = await first.Content.ReadFromJsonAsync<OrganizationDto>(ApiJson.Options);
+        OrganizationDto? secondDto = await second.Content.ReadFromJsonAsync<OrganizationDto>(ApiJson.Options);
         Assert.NotNull(firstDto);
         Assert.NotNull(secondDto);
         Assert.Equal(firstDto.Id, secondDto.Id);
@@ -136,8 +137,8 @@ public sealed class IdempotencyMiddlewareTests(OrdinisApiFactory factory) : Inte
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
         Assert.Equal(HttpStatusCode.Created, second.StatusCode);
 
-        CommentDto? firstComment = await first.Content.ReadFromJsonAsync<CommentDto>();
-        CommentDto? secondComment = await second.Content.ReadFromJsonAsync<CommentDto>();
+        CommentDto? firstComment = await first.Content.ReadFromJsonAsync<CommentDto>(ApiJson.Options);
+        CommentDto? secondComment = await second.Content.ReadFromJsonAsync<CommentDto>(ApiJson.Options);
         Assert.NotNull(firstComment);
         Assert.NotNull(secondComment);
         Assert.NotEqual(firstComment.Id, secondComment.Id);

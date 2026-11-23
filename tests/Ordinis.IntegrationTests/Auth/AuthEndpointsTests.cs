@@ -10,6 +10,7 @@ using Ordinis.Domain.Organizations;
 using Ordinis.Domain.Users;
 using Ordinis.Infrastructure.Persistence;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Auth;
 
@@ -27,7 +28,7 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<LoginResult>();
+        var content = await response.Content.ReadFromJsonAsync<LoginResult>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.False(string.IsNullOrEmpty(content!.AccessToken));
         Assert.False(string.IsNullOrEmpty(content.RefreshToken));
@@ -45,7 +46,7 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<LoginResult>();
+        var content = await response.Content.ReadFromJsonAsync<LoginResult>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.False(string.IsNullOrEmpty(content!.AccessToken));
         Assert.False(string.IsNullOrEmpty(content.RefreshToken));
@@ -62,7 +63,7 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/auth/login", new LoginRequest(organizationSlug.ToUpperInvariant(), email, "WrongPassword123!"));
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.Equal("Invalid organization, email, or password.", content!.Detail);
     }
@@ -78,7 +79,7 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/auth/login", new LoginRequest("WrongSlug", email, password));
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.Equal("Invalid organization, email, or password.", content!.Detail);
     }
@@ -95,7 +96,7 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
         Assert.Equal("Invalid organization, email, or password.", content!.Detail);
     }
@@ -112,7 +113,7 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
 
         // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        var content = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(content);
     }
 
@@ -124,7 +125,7 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
         var (organizationSlug, email, userId) = await SeedUserWithPasswordAsync(password);
 
         HttpResponseMessage loginResponse = await Client.PostAsJsonAsync($"/auth/login", new LoginRequest(organizationSlug, email, password));
-        var loginContent = await loginResponse.Content.ReadFromJsonAsync<LoginResult>();
+        var loginContent = await loginResponse.Content.ReadFromJsonAsync<LoginResult>(ApiJson.Options);
         Assert.NotNull(loginContent);
         Assert.False(string.IsNullOrEmpty(loginContent!.AccessToken));
 
@@ -144,7 +145,7 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
         var (organizationSlug, email, _) = await SeedUserWithPasswordAsync(password);
 
         HttpResponseMessage loginResponse = await Client.PostAsJsonAsync($"/auth/login", new LoginRequest(organizationSlug, email, password));
-        var loginContent = await loginResponse.Content.ReadFromJsonAsync<LoginResult>();
+        var loginContent = await loginResponse.Content.ReadFromJsonAsync<LoginResult>(ApiJson.Options);
         Assert.NotNull(loginContent);
         Assert.False(string.IsNullOrEmpty(loginContent!.RefreshToken));
 
@@ -153,7 +154,7 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, refreshResponse.StatusCode);
-        var refreshContent = await refreshResponse.Content.ReadFromJsonAsync<LoginResult>();
+        var refreshContent = await refreshResponse.Content.ReadFromJsonAsync<LoginResult>(ApiJson.Options);
         Assert.NotNull(refreshContent);
         Assert.False(string.IsNullOrEmpty(refreshContent!.AccessToken));
         Assert.False(string.IsNullOrEmpty(refreshContent.RefreshToken));
@@ -169,12 +170,12 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
         var (organizationSlug, email, _) = await SeedUserWithPasswordAsync(password);
 
         HttpResponseMessage loginResponse = await Client.PostAsJsonAsync($"/auth/login", new LoginRequest(organizationSlug, email, password));
-        var loginContent = await loginResponse.Content.ReadFromJsonAsync<LoginResult>();
+        var loginContent = await loginResponse.Content.ReadFromJsonAsync<LoginResult>(ApiJson.Options);
         Assert.NotNull(loginContent);
         Assert.False(string.IsNullOrEmpty(loginContent!.RefreshToken));
 
         HttpResponseMessage refreshResponse1 = await Client.PostAsJsonAsync($"/auth/refresh", new RefreshTokenRequest(loginContent.RefreshToken));
-        var refreshContent1 = await refreshResponse1.Content.ReadFromJsonAsync<LoginResult>();
+        var refreshContent1 = await refreshResponse1.Content.ReadFromJsonAsync<LoginResult>(ApiJson.Options);
         Assert.NotNull(refreshContent1);
         Assert.False(string.IsNullOrEmpty(refreshContent1!.RefreshToken));
 
@@ -183,7 +184,7 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, refreshResponse2.StatusCode);
-        var refreshContent2 = await refreshResponse2.Content.ReadFromJsonAsync<ProblemDetails>();
+        var refreshContent2 = await refreshResponse2.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(refreshContent2);
         Assert.Equal("Invalid or expired refresh token.", refreshContent2!.Detail);
     }
@@ -196,7 +197,7 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
         var (organizationSlug, email, userId) = await SeedUserWithPasswordAsync(password);
 
         HttpResponseMessage loginResponse = await Client.PostAsJsonAsync($"/auth/login", new LoginRequest(organizationSlug, email, password));
-        var loginContent = await loginResponse.Content.ReadFromJsonAsync<LoginResult>();
+        var loginContent = await loginResponse.Content.ReadFromJsonAsync<LoginResult>(ApiJson.Options);
         Assert.NotNull(loginContent);
         Assert.False(string.IsNullOrEmpty(loginContent!.AccessToken));
         Assert.False(string.IsNullOrEmpty(loginContent.RefreshToken));
@@ -211,7 +212,7 @@ public sealed class AuthEndpointsTests(OrdinisApiFactory factory) : IntegrationT
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, refreshResponse.StatusCode);
-        var refreshContent = await refreshResponse.Content.ReadFromJsonAsync<ProblemDetails>();
+        var refreshContent = await refreshResponse.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(refreshContent);
         Assert.Equal("Invalid or expired refresh token.", refreshContent!.Detail);
     }

@@ -7,6 +7,7 @@ using Ordinis.Api.Tasks.Requests;
 using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Tasks;
 
@@ -57,7 +58,7 @@ public sealed class ArchivedContainerTests(OrdinisApiFactory factory) : Integrat
         else
         {
             Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-            ProblemDetails? problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+            ProblemDetails? problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
             Assert.Equal($"urn:ordinis:error:{container}.archived", problem?.Type);
         }
 

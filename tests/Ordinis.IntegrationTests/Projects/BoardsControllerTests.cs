@@ -6,6 +6,7 @@ using Ordinis.Application.Tasks.Dtos;
 using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Projects;
 
@@ -20,7 +21,7 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/projects/{projectId}/boards", request);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        BoardDto? board = await response.Content.ReadFromJsonAsync<BoardDto>();
+        BoardDto? board = await response.Content.ReadFromJsonAsync<BoardDto>(ApiJson.Options);
         Assert.NotNull(board);
         Assert.Equal("Sprint Board", board!.Name);
         Assert.Equal(projectId, board.ProjectId);
@@ -91,7 +92,7 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/boards/{boardId}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        BoardDto? board = await response.Content.ReadFromJsonAsync<BoardDto>();
+        BoardDto? board = await response.Content.ReadFromJsonAsync<BoardDto>(ApiJson.Options);
         Assert.NotNull(board);
         Assert.Equal(boardId, board!.Id);
         Assert.Equal(0, board.TaskCount);
@@ -106,7 +107,7 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/boards/{boardId}");
 
-        BoardDto? board = await response.Content.ReadFromJsonAsync<BoardDto>();
+        BoardDto? board = await response.Content.ReadFromJsonAsync<BoardDto>(ApiJson.Options);
         Assert.NotNull(board);
         Assert.NotNull(response.Headers.ETag);
         Assert.Equal($"\"{board!.ConcurrencyToken}\"", response.Headers.ETag!.Tag);
@@ -137,7 +138,7 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/boards/{boardId}/tasks");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>(ApiJson.Options);
         Assert.NotNull(tasks);
         Assert.Single(tasks!);
         Assert.Equal("In scope", tasks![0].Title);
@@ -161,7 +162,7 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
             $"/api/v1/boards/{boardId}/tasks?sortBy=dueDate&sortDescending={descending}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>(ApiJson.Options);
         Assert.Equal(expectedTitles, tasks!.Select(t => t.Title).ToArray());
     }
 
@@ -176,7 +177,7 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/boards/{boardId}/tasks");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>(ApiJson.Options);
         TaskSummaryDto only = Assert.Single(tasks!);
         Assert.Equal(1, only.CommentCount); // soft-deleted comment excluded
         Assert.Equal(1, only.AttachmentCount);
@@ -203,7 +204,7 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/boards/{boardId}/name", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        BoardDto? board = await Client.GetFromJsonAsync<BoardDto>($"/api/v1/boards/{boardId}");
+        BoardDto? board = await Client.GetFromJsonAsync<BoardDto>($"/api/v1/boards/{boardId}", ApiJson.Options);
         Assert.Equal("Renamed Board", board!.Name);
     }
 
@@ -324,7 +325,7 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/archive", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        BoardDto? board = await Client.GetFromJsonAsync<BoardDto>($"/api/v1/boards/{boardId}");
+        BoardDto? board = await Client.GetFromJsonAsync<BoardDto>($"/api/v1/boards/{boardId}", ApiJson.Options);
         Assert.True(board!.IsArchived);
     }
 
@@ -380,7 +381,7 @@ public sealed class BoardsControllerTests(OrdinisApiFactory factory) : Integrati
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/boards/{boardId}/unarchive", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        BoardDto? board = await Client.GetFromJsonAsync<BoardDto>($"/api/v1/boards/{boardId}");
+        BoardDto? board = await Client.GetFromJsonAsync<BoardDto>($"/api/v1/boards/{boardId}", ApiJson.Options);
         Assert.False(board!.IsArchived);
     }
 

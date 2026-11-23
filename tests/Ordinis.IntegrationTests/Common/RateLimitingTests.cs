@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Common;
 
@@ -67,7 +68,7 @@ public sealed class RateLimitingTests(OrdinisApiFactory factory) : IntegrationTe
         Assert.True(response.Headers.RetryAfter is not null, "Expected a Retry-After header on a 429 response.");
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
 
-        ProblemDetails? problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        ProblemDetails? problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.NotNull(problem);
         Assert.Equal(StatusCodes.Status429TooManyRequests, problem.Status);
         Assert.True(problem.Extensions.ContainsKey("correlationId"));

@@ -80,9 +80,9 @@ public sealed class WebhookDomainEventHandler(AppDbContext db) :
 
         // Serialize via the concrete runtime type (matches OutboxMessage.From's approach) so the
         // embedded "data" element reflects the domain event's own fields, not a generic `object`.
-        JsonElement dataElement = JsonSerializer.SerializeToElement(data, data.GetType());
+        JsonElement dataElement = JsonSerializer.SerializeToElement(data, data.GetType(), EventJson.Options);
         var envelope = new WebhookEnvelope(eventName, occurredAt, dataElement);
-        string payload = JsonSerializer.Serialize(envelope);
+        string payload = JsonSerializer.Serialize(envelope, EventJson.Options);
 
         foreach (Webhook webhook in webhooks)
         {

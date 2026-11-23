@@ -7,6 +7,7 @@ using Ordinis.Domain.Organizations;
 using Ordinis.Domain.Projects;
 using Ordinis.Domain.Users;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Organizations;
 
@@ -21,7 +22,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/organizations", request);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        OrganizationDto? dto = await response.Content.ReadFromJsonAsync<OrganizationDto>();
+        OrganizationDto? dto = await response.Content.ReadFromJsonAsync<OrganizationDto>(ApiJson.Options);
         Assert.NotNull(dto);
         Assert.Equal(request.Name, dto.Name);
         Assert.Equal(request.Description, dto.Description);
@@ -71,7 +72,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/organizations/{orgId}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        OrganizationDto? organization = await response.Content.ReadFromJsonAsync<OrganizationDto>();
+        OrganizationDto? organization = await response.Content.ReadFromJsonAsync<OrganizationDto>(ApiJson.Options);
         Assert.NotNull(organization);
         Assert.Equal(orgId, organization.Id);
         Assert.Equal("Acme", organization.Name);
@@ -98,7 +99,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/organizations/{orgId}/projects?page=1&pageSize=2");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        IReadOnlyList<ProjectSummaryDto>? projects = await response.Content.ReadFromJsonAsync<IReadOnlyList<ProjectSummaryDto>>();
+        IReadOnlyList<ProjectSummaryDto>? projects = await response.Content.ReadFromJsonAsync<IReadOnlyList<ProjectSummaryDto>>(ApiJson.Options);
         Assert.NotNull(projects);
         Assert.Equal(2, projects.Count);
         Assert.True(response.Headers.Contains("X-Total-Count"));
@@ -114,7 +115,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/organizations/{orgId}/projects");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        IReadOnlyList<ProjectSummaryDto>? projects = await response.Content.ReadFromJsonAsync<IReadOnlyList<ProjectSummaryDto>>();
+        IReadOnlyList<ProjectSummaryDto>? projects = await response.Content.ReadFromJsonAsync<IReadOnlyList<ProjectSummaryDto>>(ApiJson.Options);
         ProjectSummaryDto project = Assert.Single(projects!);
         Assert.Equal("Project 1", project.Name);
         Assert.Equal("1", response.Headers.GetValues("X-Total-Count").Single());
@@ -140,7 +141,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/organizations/{orgId}/projects");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        IReadOnlyList<ProjectSummaryDto>? projects = await response.Content.ReadFromJsonAsync<IReadOnlyList<ProjectSummaryDto>>();
+        IReadOnlyList<ProjectSummaryDto>? projects = await response.Content.ReadFromJsonAsync<IReadOnlyList<ProjectSummaryDto>>(ApiJson.Options);
         Assert.NotNull(projects);
         Assert.Empty(projects);
         Assert.True(response.Headers.Contains("X-Total-Count"));
@@ -156,7 +157,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         HttpResponseMessage response = await SendWithCurrentOrganizationVersionAsync(HttpMethod.Put, orgId, $"/api/v1/organizations/{orgId}", request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        OrganizationDto? updatedOrganization = await Client.GetFromJsonAsync<OrganizationDto>($"/api/v1/organizations/{orgId}");
+        OrganizationDto? updatedOrganization = await Client.GetFromJsonAsync<OrganizationDto>($"/api/v1/organizations/{orgId}", ApiJson.Options);
         Assert.NotNull(updatedOrganization);
         Assert.Equal(request.Name, updatedOrganization.Name);
         Assert.Equal(request.Description, updatedOrganization.Description);
@@ -226,7 +227,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         HttpResponseMessage response = await SendWithCurrentOrganizationVersionAsync(HttpMethod.Put, orgId, $"/api/v1/organizations/{orgId}", request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-        OrganizationDto? organization = await Client.GetFromJsonAsync<OrganizationDto>($"/api/v1/organizations/{orgId}");
+        OrganizationDto? organization = await Client.GetFromJsonAsync<OrganizationDto>($"/api/v1/organizations/{orgId}", ApiJson.Options);
         Assert.NotNull(organization);
         Assert.Equal("Acme", organization.Name);
     }
@@ -239,7 +240,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         HttpResponseMessage response = await SendWithCurrentOrganizationVersionAsync(HttpMethod.Post, orgId, $"/api/v1/organizations/{orgId}/suspend");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        OrganizationDto? updatedOrganization = await Client.GetFromJsonAsync<OrganizationDto>($"/api/v1/organizations/{orgId}");
+        OrganizationDto? updatedOrganization = await Client.GetFromJsonAsync<OrganizationDto>($"/api/v1/organizations/{orgId}", ApiJson.Options);
         Assert.NotNull(updatedOrganization);
         Assert.False(updatedOrganization.IsActive);
     }
@@ -286,7 +287,7 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         HttpResponseMessage response = await SendWithCurrentOrganizationVersionAsync(HttpMethod.Post, orgId, $"/api/v1/organizations/{orgId}/reactivate");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        OrganizationDto? updatedOrganization = await Client.GetFromJsonAsync<OrganizationDto>($"/api/v1/organizations/{orgId}");
+        OrganizationDto? updatedOrganization = await Client.GetFromJsonAsync<OrganizationDto>($"/api/v1/organizations/{orgId}", ApiJson.Options);
         Assert.NotNull(updatedOrganization);
         Assert.True(updatedOrganization.IsActive);
     }

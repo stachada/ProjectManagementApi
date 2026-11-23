@@ -5,6 +5,7 @@ using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
 using Ordinis.Domain.Users;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Projects;
 
@@ -22,7 +23,7 @@ public sealed class ProjectAuditTests(
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/projects/{projectId}/audit");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        IReadOnlyList<AuditEntryDto>? entries = await response.Content.ReadFromJsonAsync<IReadOnlyList<AuditEntryDto>>();
+        IReadOnlyList<AuditEntryDto>? entries = await response.Content.ReadFromJsonAsync<IReadOnlyList<AuditEntryDto>>(ApiJson.Options);
         Assert.NotNull(entries);
 
         // Seed helper raises TaskCreated then TaskAssigned (see below) - newest-first means
@@ -55,7 +56,7 @@ public sealed class ProjectAuditTests(
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/projects/{projectId}/audit?page=1&pageSize=1");
 
-        IReadOnlyList<AuditEntryDto>? entries = await response.Content.ReadFromJsonAsync<IReadOnlyList<AuditEntryDto>>();
+        IReadOnlyList<AuditEntryDto>? entries = await response.Content.ReadFromJsonAsync<IReadOnlyList<AuditEntryDto>>(ApiJson.Options);
         Assert.NotNull(entries);
         Assert.Single(entries);
         Assert.Equal("TaskAssigned", entries[0].EventType); // newest-first, so page 1 is the latest event
@@ -75,7 +76,7 @@ public sealed class ProjectAuditTests(
 
         HttpResponseMessage responseA = await Client.GetAsync($"/api/v1/projects/{projectAId}/audit");
 
-        IReadOnlyList<AuditEntryDto>? entriesA = await responseA.Content.ReadFromJsonAsync<IReadOnlyList<AuditEntryDto>>();
+        IReadOnlyList<AuditEntryDto>? entriesA = await responseA.Content.ReadFromJsonAsync<IReadOnlyList<AuditEntryDto>>(ApiJson.Options);
         Assert.NotNull(entriesA);
         // Project B's events must not appear - this is the real test of the Tasks/Boards join
         // actually filtering by ProjectId, which no unit test can exercise (GetDbConnection()

@@ -8,6 +8,7 @@ using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
 using Ordinis.Domain.Users;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Projects;
 
@@ -30,7 +31,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/projects", request);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        ProjectDto? dto = await response.Content.ReadFromJsonAsync<ProjectDto>();
+        ProjectDto? dto = await response.Content.ReadFromJsonAsync<ProjectDto>(ApiJson.Options);
         Assert.NotNull(dto);
         Assert.Equal(request.Name, dto!.Name);
         Assert.Equal(request.Description, dto.Description);
@@ -149,7 +150,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
 
         HttpResponseMessage created = await Client.PostAsJsonAsync("/api/v1/projects", new CreateProjectRequest(organizationId, "Apollo"));
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
-        Guid projectId = (await created.Content.ReadFromJsonAsync<ProjectDto>())!.Id;
+        Guid projectId = (await created.Content.ReadFromJsonAsync<ProjectDto>(ApiJson.Options))!.Id;
 
         HttpResponseMessage deleted = await SendAsync(HttpMethod.Delete, $"/api/v1/projects/{projectId}", await GetProjectRowVersionAsync(projectId));
         Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
@@ -201,7 +202,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/projects", request);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        ProjectDto? dto = await response.Content.ReadFromJsonAsync<ProjectDto>();
+        ProjectDto? dto = await response.Content.ReadFromJsonAsync<ProjectDto>(ApiJson.Options);
         Assert.NotNull(dto);
         Assert.Equal(request.Description, dto!.Description);
     }
@@ -218,7 +219,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/projects");
 
         Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
-        IReadOnlyList<ProjectSummaryDto>? projects = await getResponse.Content.ReadFromJsonAsync<IReadOnlyList<ProjectSummaryDto>>();
+        IReadOnlyList<ProjectSummaryDto>? projects = await getResponse.Content.ReadFromJsonAsync<IReadOnlyList<ProjectSummaryDto>>(ApiJson.Options);
         Assert.NotNull(projects);
         Assert.Equal(2, projects!.Count);
         Assert.True(getResponse.Headers.Contains("X-Total-Count"));
@@ -236,7 +237,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/projects");
 
         Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
-        IReadOnlyList<ProjectSummaryDto>? projects = await getResponse.Content.ReadFromJsonAsync<IReadOnlyList<ProjectSummaryDto>>();
+        IReadOnlyList<ProjectSummaryDto>? projects = await getResponse.Content.ReadFromJsonAsync<IReadOnlyList<ProjectSummaryDto>>(ApiJson.Options);
         Assert.NotNull(projects);
         Assert.Empty(projects);
         Assert.True(getResponse.Headers.Contains("X-Total-Count"));
@@ -253,7 +254,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/projects/{projectId}");
 
         Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
-        ProjectDto? fetchedDto = await getResponse.Content.ReadFromJsonAsync<ProjectDto>();
+        ProjectDto? fetchedDto = await getResponse.Content.ReadFromJsonAsync<ProjectDto>(ApiJson.Options);
         Assert.NotNull(fetchedDto);
         Assert.Equal(projectId, fetchedDto!.Id);
         Assert.Equal("Apollo", fetchedDto.Name);
@@ -268,7 +269,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
 
         HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/projects/{projectId}");
 
-        ProjectDto? fetchedDto = await getResponse.Content.ReadFromJsonAsync<ProjectDto>();
+        ProjectDto? fetchedDto = await getResponse.Content.ReadFromJsonAsync<ProjectDto>(ApiJson.Options);
         Assert.NotNull(fetchedDto);
         Assert.NotNull(getResponse.Headers.ETag);
         Assert.Equal($"\"{fetchedDto!.ConcurrencyToken}\"", getResponse.Headers.ETag!.Tag);
@@ -283,7 +284,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
 
         HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/projects/{projectId}");
 
-        ProjectDto? fetchedDto = await getResponse.Content.ReadFromJsonAsync<ProjectDto>();
+        ProjectDto? fetchedDto = await getResponse.Content.ReadFromJsonAsync<ProjectDto>(ApiJson.Options);
         Assert.NotNull(fetchedDto);
         Assert.Contains(fetchedDto!.Links, l => l.Rel == "self" && l.Href == $"/api/v1/projects/{projectId}" && l.Method == "GET");
         Assert.Contains(fetchedDto.Links, l => l.Rel == "tasks" && l.Href == $"/api/v1/projects/{projectId}/tasks" && l.Method == "GET");
@@ -316,7 +317,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage getResponse = await Client.GetAsync($"/api/v1/projects/{projectId}/tasks");
 
         Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
-        IReadOnlyList<TaskSummaryDto>? tasks = await getResponse.Content.ReadFromJsonAsync<IReadOnlyList<TaskSummaryDto>>();
+        IReadOnlyList<TaskSummaryDto>? tasks = await getResponse.Content.ReadFromJsonAsync<IReadOnlyList<TaskSummaryDto>>(ApiJson.Options);
         Assert.NotNull(tasks);
         Assert.Equal(2, tasks.Count);
         Assert.True(getResponse.Headers.Contains("X-Total-Count"));
@@ -345,7 +346,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/projects/{projectId}/members");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        List<ProjectMemberDto>? members = await response.Content.ReadFromJsonAsync<List<ProjectMemberDto>>();
+        List<ProjectMemberDto>? members = await response.Content.ReadFromJsonAsync<List<ProjectMemberDto>>(ApiJson.Options);
         Assert.NotNull(members);
         // The creator is automatically added as an Admin member by Project.Create.
         Assert.Single(members!);
@@ -375,7 +376,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/projects/{projectId}/boards");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        List<BoardSummaryDto>? boards = await response.Content.ReadFromJsonAsync<List<BoardSummaryDto>>();
+        List<BoardSummaryDto>? boards = await response.Content.ReadFromJsonAsync<List<BoardSummaryDto>>(ApiJson.Options);
         Assert.NotNull(boards);
         Assert.Equal(2, boards!.Count);
     }
@@ -403,7 +404,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        ProjectDto? project = await Client.GetFromJsonAsync<ProjectDto>($"/api/v1/projects/{projectId}");
+        ProjectDto? project = await Client.GetFromJsonAsync<ProjectDto>($"/api/v1/projects/{projectId}", ApiJson.Options);
         Assert.NotNull(project);
         Assert.Equal("Updated Name", project!.Name);
         Assert.Equal("Updated Description", project.Description);
@@ -569,7 +570,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/archive", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        ProjectDto? project = await Client.GetFromJsonAsync<ProjectDto>($"/api/v1/projects/{projectId}");
+        ProjectDto? project = await Client.GetFromJsonAsync<ProjectDto>($"/api/v1/projects/{projectId}", ApiJson.Options);
         Assert.NotNull(project);
         Assert.True(project!.IsArchived);
     }
@@ -630,7 +631,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/unarchive", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        ProjectDto? project = await Client.GetFromJsonAsync<ProjectDto>($"/api/v1/projects/{projectId}");
+        ProjectDto? project = await Client.GetFromJsonAsync<ProjectDto>($"/api/v1/projects/{projectId}", ApiJson.Options);
         Assert.NotNull(project);
         Assert.False(project!.IsArchived);
     }
@@ -694,7 +695,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/projects/{projectId}/members", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        ProjectMemberDto? member = await response.Content.ReadFromJsonAsync<ProjectMemberDto>();
+        ProjectMemberDto? member = await response.Content.ReadFromJsonAsync<ProjectMemberDto>(ApiJson.Options);
         Assert.NotNull(member);
         Assert.Equal(newMemberId, member!.UserId);
         Assert.Equal(Role.Member, member.Role);
@@ -790,7 +791,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/projects/{projectId}/members/{memberId}/role", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        List<ProjectMemberDto>? members = await Client.GetFromJsonAsync<List<ProjectMemberDto>>($"/api/v1/projects/{projectId}/members");
+        List<ProjectMemberDto>? members = await Client.GetFromJsonAsync<List<ProjectMemberDto>>($"/api/v1/projects/{projectId}/members", ApiJson.Options);
         Assert.Equal(Role.Viewer, members!.Single(m => m.UserId == memberId).Role);
     }
 
@@ -884,7 +885,7 @@ public sealed class ProjectsControllerTests(OrdinisApiFactory factory) : Integra
         HttpResponseMessage response = await SendAsync(HttpMethod.Delete, $"/api/v1/projects/{projectId}/members/{memberId}", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        List<ProjectMemberDto>? members = await Client.GetFromJsonAsync<List<ProjectMemberDto>>($"/api/v1/projects/{projectId}/members");
+        List<ProjectMemberDto>? members = await Client.GetFromJsonAsync<List<ProjectMemberDto>>($"/api/v1/projects/{projectId}/members", ApiJson.Options);
         Assert.DoesNotContain(members!, m => m.UserId == memberId);
     }
 

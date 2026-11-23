@@ -5,6 +5,7 @@ using Ordinis.Application.Tasks.Dtos;
 using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Tasks;
 
@@ -20,8 +21,8 @@ public sealed class TasksV2ControllerTests(OrdinisApiFactory factory) : Integrat
         HttpResponseMessage v2Response = await Client.GetAsync($"/api/v2/tasks/{taskId}");
 
         Assert.Equal(HttpStatusCode.OK, v2Response.StatusCode);
-        TaskDto? v1Task = await v1Response.Content.ReadFromJsonAsync<TaskDto>();
-        TaskDto? v2Task = await v2Response.Content.ReadFromJsonAsync<TaskDto>();
+        TaskDto? v1Task = await v1Response.Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
+        TaskDto? v2Task = await v2Response.Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
         Assert.NotNull(v1Task);
         Assert.NotNull(v2Task);
         Assert.Equal(v1Task!.Id, v2Task!.Id);
@@ -48,7 +49,7 @@ public sealed class TasksV2ControllerTests(OrdinisApiFactory factory) : Integrat
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v2/tasks/{taskId}");
 
-        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>();
+        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
         Assert.NotNull(task);
         Assert.NotNull(response.Headers.ETag);
         Assert.Equal($"\"{task!.ConcurrencyToken}\"", response.Headers.ETag!.Tag);

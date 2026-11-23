@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Ordinis.Testing;
 
 namespace Ordinis.AcceptanceTests.Support;
 
@@ -38,7 +39,7 @@ internal sealed class ApiDriver(World world, Seeder seeder)
 
         if (body is not null)
         {
-            request.Content = JsonContent.Create(body);
+            request.Content = JsonContent.Create(body, options: ApiJson.Options);
         }
 
         if (ifMatch is not null)

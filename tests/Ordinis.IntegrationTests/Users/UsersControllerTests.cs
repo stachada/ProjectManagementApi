@@ -9,6 +9,7 @@ using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
 using Ordinis.Domain.Users;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Users;
 
@@ -29,7 +30,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/users", request);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        UserDto? user = await response.Content.ReadFromJsonAsync<UserDto>();
+        UserDto? user = await response.Content.ReadFromJsonAsync<UserDto>(ApiJson.Options);
         Assert.NotNull(user);
         Assert.Equal("Alice", user!.DisplayName);
         Assert.Equal("alice@example.com", user.Email);
@@ -44,7 +45,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
     {
         // UserDto has no PasswordHash/RefreshToken properties, but assert against the raw JSON
         // too - a future property rename that happens to collide with the DTO shape wouldn't be
-        // caught by ReadFromJsonAsync<UserDto>() alone, since unknown properties are just ignored.
+        // caught by ReadFromJsonAsync<UserDto>(ApiJson.Options) alone, since unknown properties are just ignored.
         (Guid organizationId, Guid adminId) = await SeedOrganizationWithUserAsync(
             displayName: "Org Admin",
             email: "admin@example.com",
@@ -80,7 +81,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        UserDto? user = await response.Content.ReadFromJsonAsync<UserDto>();
+        UserDto? user = await response.Content.ReadFromJsonAsync<UserDto>(ApiJson.Options);
         Assert.Equal(callerOrganizationId, user!.OrganizationId);
     }
 
@@ -256,7 +257,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/users/{userId}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        UserDto? user = await response.Content.ReadFromJsonAsync<UserDto>();
+        UserDto? user = await response.Content.ReadFromJsonAsync<UserDto>(ApiJson.Options);
         Assert.NotNull(user);
         Assert.Equal(userId, user!.Id);
         Assert.Equal("Alice", user.DisplayName);
@@ -314,7 +315,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/users/{aliceId}/tasks");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>(ApiJson.Options);
         TaskSummaryDto task = Assert.Single(tasks!);
         Assert.Equal("Visible to Bob", task.Title);
         Assert.Equal("1", response.Headers.GetValues("X-Total-Count").Single());
@@ -339,7 +340,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/users/{userId}/tasks");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>(ApiJson.Options);
         Assert.NotNull(tasks);
         Assert.Single(tasks!);
         Assert.Equal("Assigned to Alice", tasks![0].Title);
@@ -372,7 +373,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Put, userId, $"/api/v1/users/{userId}", request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}");
+        UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}", ApiJson.Options);
         Assert.Equal("Alice Updated", user!.DisplayName);
     }
 
@@ -416,7 +417,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Put, userId, $"/api/v1/users/{userId}", new UpdateUserRequest("Alice Renamed"));
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}");
+        UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}", ApiJson.Options);
         Assert.Equal("Alice Renamed", user!.DisplayName);
     }
 
@@ -432,7 +433,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Put, aliceId, $"/api/v1/users/{aliceId}", new UpdateUserRequest("Renamed by Bob"));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        UserDto? alice = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{aliceId}");
+        UserDto? alice = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{aliceId}", ApiJson.Options);
         Assert.Equal("Alice", alice!.DisplayName);
     }
 
@@ -488,7 +489,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Put, userId, $"/api/v1/users/{userId}/org-role", request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}");
+        UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}", ApiJson.Options);
         Assert.Equal("Admin", user!.OrgRole);
     }
 
@@ -557,7 +558,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Post, userId, $"/api/v1/users/{userId}/deactivate");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}");
+        UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}", ApiJson.Options);
         Assert.False(user!.IsActive);
     }
 
@@ -657,7 +658,7 @@ public sealed class UsersControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await SendWithCurrentUserVersionAsync(HttpMethod.Post, userId, $"/api/v1/users/{userId}/reactivate");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}");
+        UserDto? user = await Client.GetFromJsonAsync<UserDto>($"/api/v1/users/{userId}", ApiJson.Options);
         Assert.True(user!.IsActive);
     }
 

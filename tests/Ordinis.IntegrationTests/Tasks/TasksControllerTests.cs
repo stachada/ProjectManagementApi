@@ -9,6 +9,7 @@ using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
 using Ordinis.Domain.Users;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Tasks;
 
@@ -23,7 +24,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.PostAsJsonAsync("/api/v1/tasks", request);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>();
+        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
         Assert.NotNull(task);
         Assert.Equal("Fix login bug", task!.Title);
         Assert.Equal(boardId, task.BoardId);
@@ -119,7 +120,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks/{taskId}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>();
+        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
         Assert.NotNull(task);
         Assert.Equal(taskId, task!.Id);
         Assert.Equal("Investigate outage", task.Title);
@@ -135,7 +136,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks/{taskId}");
 
-        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>();
+        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
         Assert.NotNull(task);
         // A freshly-created task starts in Backlog, which allows ToDo and Cancelled.
         Assert.Equal(ProjectTaskStatus.Backlog, task!.Status);
@@ -157,7 +158,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks/{taskId}");
 
-        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>();
+        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
         Assert.NotNull(task);
         Assert.Equal(ProjectTaskStatus.Cancelled, task!.Status);
         Assert.DoesNotContain(task.Links, l => l.Rel == "move" || l.Rel.StartsWith("move:", StringComparison.Ordinal));
@@ -172,7 +173,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
 
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks/{taskId}");
 
-        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>();
+        TaskDto? task = await response.Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
         Assert.NotNull(task);
         Assert.NotNull(response.Headers.ETag);
         Assert.Equal($"\"{task!.ConcurrencyToken}\"", response.Headers.ETag!.Tag);
@@ -205,7 +206,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks?boardId={boardId}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>(ApiJson.Options);
         Assert.NotNull(tasks);
         Assert.Single(tasks!);
         Assert.Equal("In scope", tasks![0].Title);
@@ -234,7 +235,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.GetAsync($"/api/v1/tasks?boardId={boardId}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>(ApiJson.Options);
         TaskSummaryDto only = Assert.Single(tasks!);
         Assert.Equal(1, only.CommentCount); // soft-deleted comment excluded
         Assert.Equal(1, only.AttachmentCount);
@@ -258,7 +259,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
             $"/api/v1/tasks?boardId={boardId}&sortBy=dueDate&sortDescending={descending}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>();
+        List<TaskSummaryDto>? tasks = await response.Content.ReadFromJsonAsync<List<TaskSummaryDto>>(ApiJson.Options);
         Assert.Equal(expectedTitles, tasks!.Select(t => t.Title).ToArray());
     }
 
@@ -273,7 +274,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await SendAsync(HttpMethod.Put, $"/api/v1/tasks/{taskId}", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
+        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
         Assert.Equal("Updated title", task!.Title);
         Assert.Equal("New description", task.Description);
         Assert.Equal(Priority.Critical, task.Priority);
@@ -420,7 +421,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/move", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
+        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
         Assert.Equal(ProjectTaskStatus.ToDo, task!.Status);
     }
 
@@ -497,7 +498,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/assign", ifMatch, request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
+        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
         Assert.Equal(userId, task!.AssigneeId);
     }
 
@@ -537,7 +538,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/unassign", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
+        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
         Assert.Null(task!.AssigneeId);
     }
 
@@ -575,7 +576,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/close", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
+        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
         Assert.Equal(ProjectTaskStatus.Done, task!.Status);
     }
 
@@ -614,7 +615,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await SendAsync(HttpMethod.Post, $"/api/v1/tasks/{taskId}/reopen", ifMatch);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>();
+        TaskDto? task = await (await Client.GetAsync($"/api/v1/tasks/{taskId}")).Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options);
         Assert.Equal(ProjectTaskStatus.ToDo, task!.Status);
     }
 
@@ -655,7 +656,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.PostAsJsonAsync($"/api/v1/tasks/{taskId}/comments", request);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        CommentDto? comment = await response.Content.ReadFromJsonAsync<CommentDto>();
+        CommentDto? comment = await response.Content.ReadFromJsonAsync<CommentDto>(ApiJson.Options);
         Assert.NotNull(comment);
         Assert.Equal("Looks good to me", comment!.Content);
         Assert.Equal($"/api/v1/tasks/{taskId}/comments", response.Headers.Location?.PathAndQuery);
@@ -710,7 +711,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.PutAsJsonAsync($"/api/v1/tasks/{taskId}/comments/{commentId}", request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        List<CommentDto>? comments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/comments")).Content.ReadFromJsonAsync<List<CommentDto>>();
+        List<CommentDto>? comments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/comments")).Content.ReadFromJsonAsync<List<CommentDto>>(ApiJson.Options);
         CommentDto? comment = comments?.FirstOrDefault(c => c.Id == commentId);
         Assert.NotNull(comment);
         Assert.Equal("Edited comment", comment!.Content);
@@ -797,7 +798,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/tasks/{taskId}/comments/{commentId}");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        List<CommentDto>? comments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/comments")).Content.ReadFromJsonAsync<List<CommentDto>>();
+        List<CommentDto>? comments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/comments")).Content.ReadFromJsonAsync<List<CommentDto>>(ApiJson.Options);
         Assert.DoesNotContain(comments!, c => c.Id == commentId);
     }
 
@@ -815,10 +816,10 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/tasks/{taskId}/comments/{commentId}");
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-        ProblemDetails? problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        ProblemDetails? problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options);
         Assert.Equal("urn:ordinis:error:task.comment-not-author", problem?.Type);
 
-        List<CommentDto>? comments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/comments")).Content.ReadFromJsonAsync<List<CommentDto>>();
+        List<CommentDto>? comments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/comments")).Content.ReadFromJsonAsync<List<CommentDto>>(ApiJson.Options);
         Assert.Contains(comments!, c => c.Id == commentId);
     }
 
@@ -834,7 +835,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/tasks/{taskId}/comments/{commentId}");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        List<CommentDto>? comments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/comments")).Content.ReadFromJsonAsync<List<CommentDto>>();
+        List<CommentDto>? comments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/comments")).Content.ReadFromJsonAsync<List<CommentDto>>(ApiJson.Options);
         Assert.DoesNotContain(comments!, c => c.Id == commentId);
     }
 
@@ -878,7 +879,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        AttachmentDto? attachment = await response.Content.ReadFromJsonAsync<AttachmentDto>();
+        AttachmentDto? attachment = await response.Content.ReadFromJsonAsync<AttachmentDto>(ApiJson.Options);
         Assert.NotNull(attachment);
         Assert.Equal("notes.txt", attachment!.FileName);
         Assert.NotEmpty(attachment.DownloadUrl);
@@ -931,7 +932,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.PostAsync($"/api/v1/tasks/{taskId}/attachments", content);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        AttachmentDto? attachment = await response.Content.ReadFromJsonAsync<AttachmentDto>();
+        AttachmentDto? attachment = await response.Content.ReadFromJsonAsync<AttachmentDto>(ApiJson.Options);
         Assert.NotNull(attachment);
         Assert.Equal(fileName, attachment!.FileName);
         Assert.EndsWith(".txt", attachment.DownloadUrl);
@@ -1017,7 +1018,7 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
         HttpResponseMessage response = await Client.DeleteAsync($"/api/v1/tasks/{taskId}/attachments/{attachmentId}");
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        List<AttachmentDto>? attachments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/attachments")).Content.ReadFromJsonAsync<List<AttachmentDto>>();
+        List<AttachmentDto>? attachments = await (await Client.GetAsync($"/api/v1/tasks/{taskId}/attachments")).Content.ReadFromJsonAsync<List<AttachmentDto>>(ApiJson.Options);
         Assert.DoesNotContain(attachments!, a => a.Id == attachmentId);
     }
 

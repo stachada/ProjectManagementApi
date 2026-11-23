@@ -11,6 +11,7 @@ using Ordinis.Domain.Projects;
 using Ordinis.Domain.Tasks;
 using Ordinis.Domain.Users;
 using Ordinis.Infrastructure.Persistence;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Infrastructure;
 
@@ -217,7 +218,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
     {
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
 
-        ValidationProblemDetails? problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        ValidationProblemDetails? problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>(ApiJson.Options);
         Assert.NotNull(problem);
         Assert.Equal(StatusCodes.Status422UnprocessableEntity, problem.Status);
         Assert.Equal("One or more validation errors occurred.", problem.Title);

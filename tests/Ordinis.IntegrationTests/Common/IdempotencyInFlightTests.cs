@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Ordinis.Api.Organizations.Requests;
 using Ordinis.IntegrationTests.Infrastructure;
+using Ordinis.Testing;
 
 namespace Ordinis.IntegrationTests.Common;
 
@@ -34,13 +35,13 @@ public sealed class IdempotencyInFlightTests(OrdinisApiFactory factory) : Integr
             // Same key, same body, original still running → rejected, not executed.
             HttpResponseMessage duplicate = await SendWithKeyAsync(request, key);
             Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
-            Assert.Equal("Request in progress", (await duplicate.Content.ReadFromJsonAsync<ProblemDetails>())?.Title);
+            Assert.Equal("Request in progress", (await duplicate.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options))?.Title);
             Assert.NotNull(duplicate.Headers.RetryAfter);
 
             // Same key, different body → still the existing key-conflict error.
             HttpResponseMessage otherBody = await SendWithKeyAsync(new CreateOrganizationRequest("Other Co", null), key);
             Assert.Equal(HttpStatusCode.Conflict, otherBody.StatusCode);
-            Assert.Equal("Idempotency key conflict", (await otherBody.Content.ReadFromJsonAsync<ProblemDetails>())?.Title);
+            Assert.Equal("Idempotency key conflict", (await otherBody.Content.ReadFromJsonAsync<ProblemDetails>(ApiJson.Options))?.Title);
 
             interceptor.ReleaseFirst();
             HttpResponseMessage first = await original.WaitAsync(TimeSpan.FromSeconds(15));
