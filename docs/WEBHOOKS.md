@@ -111,7 +111,8 @@ one `WebhookEventTypes` actually knows about.
 Creating, moving, or assigning a task (or adding a comment) raises a domain event exactly
 as it always has — this part of the pipeline is unchanged. `AppDbContext.SaveChangesAsync`
 writes it to `OutboxMessages` in the same transaction as the aggregate change, and
-`OutboxDispatcherJob` picks it up on its next poll tick (every 5 seconds).
+`OutboxDispatcherJob` picks it up on its next poll tick (every 5 seconds by default —
+`Outbox:PollingInterval`).
 
 For each `TaskCreated`/`TaskMoved`/`TaskAssigned`/`CommentAdded` message,
 `WebhookDomainEventHandler`:
@@ -132,7 +133,7 @@ object-property polymorphic-serialization behavior.
 
 ### 3. `WebhookDeliveryDispatcherService` delivers it
 
-On its own 5-second poll tick, it fetches due `Pending` rows and `POST`s each one's
+On its own poll tick (every 5 seconds by default — `WebhookDelivery:PollingInterval`), it fetches due `Pending` rows and `POST`s each one's
 `Payload` to its `Url` via a named `HttpClient("WebhookDelivery")` (10s timeout). A batch's
 deliveries are sent concurrently (`Parallel.ForEachAsync`, at most `MaxParallelDeliveries` = 8
 at a time), so a receiver that is slow or never answers delays only its own delivery — sent one
