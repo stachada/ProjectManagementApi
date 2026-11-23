@@ -1385,7 +1385,13 @@ See [docs/REST_API_CONCEPTS.md#hateoas](docs/REST_API_CONCEPTS.md#hateoas) for t
     | GAP-25 | A retried upload with the same `Idempotency-Key` → 409 "different request body": the fingerprint hashed the raw multipart body, whose boundary clients pick anew per request, so keys never worked for attachments | `IdempotencyMiddleware` hashes the body with the boundary replaced by a fixed marker |
 
     Spec corrections: adding a member and registering a webhook need a project Admin, so those idempotency rows moved to an outline sent by Alice (they were sent by Bob, a Member); the webhook row registers the test receiver (as in batch 2). Bindings: protocol phrases are now modifier steps (`RequestModifierSteps`) that wrap any action — "… without stating a version", "… with request key "k-1"", "… using API version N" / "… in API vN", "… with correlation id "x"" — replacing the per-action variants; `ApiResponse` now carries headers and the request path
-  - [ ] Batch 5b — platform features that need a differently configured host: `health` and `rate-limiting` (a rate-limited host, a Production host), the "database is unavailable" scenarios (`error-responses`, `health`) and the log-line scenarios (`correlation`, captured Serilog events)
+  - [x] Batch 5b — platform features that need a differently configured host (`health`, `rate-limiting`, the database-down scenarios of `error-responses`, the log-line scenarios of `correlation`, and the brute-force scenario of `login`): **887 pass, 76 skipped, 0 fail**; only `@needs-clock` scenarios remain skipped in batches 1–5. New gap:
+
+    | Gap | Problem | Fix |
+    |---|---|---|
+    | GAP-26 | Authenticated callers over the limit got `429` without `Retry-After` (the body tells them to read it): only the fixed window (anonymous) reports retry-after metadata, not the sliding window (authenticated) | `OnRejected` falls back to one sliding-window segment (10 s by default) |
+
+    Spec correction: in Production an anonymous request for the OpenAPI document is `401`, not `404` — unknown addresses fall under the deny-by-default policy, so anonymous callers are asked to sign in rather than told what exists; the scenario now also checks that a signed-in user gets `404`. Test infrastructure: host variants (`TestHost.Development` / `Production` / `RateLimited`, built with `WithWebHostBuilder`, background jobs removed), `KeepProductionRateLimiter` marker in `Ordinis.Testing`, a `DatabaseOutage` connection interceptor, and a `CapturedLogs` Serilog sink — enabled by `Program.cs` now also reading sinks and enrichers from DI (`ReadFrom.Services`)
   - [ ] Batch 6 — webhooks (subscriptions and delivery)
   - [ ] Tier 3 — controllable test clock and scriptable webhook receiver for `@needs-clock` / delivery-retry scenarios; `@manual` for the rest
 
