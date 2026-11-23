@@ -153,6 +153,57 @@ public sealed class IdempotencyMiddlewareTests(OrdinisApiFactory factory) : Inte
         Assert.Equal(2, commentCount);
     }
 
+    /// <summary>
+    /// A retried upload is the same request even though the client picks a new multipart boundary
+    /// for it (HttpClient does, like most clients): it replays instead of conflicting.
+    /// </summary>
+    [Fact]
+    public async Task Post_RetriedUploadWithNewMultipartBoundary_ReplaysAndCreatesOneAttachment()
+    {
+        (Guid taskId, Guid userAId, _) = await SeedTaskWithTwoContributorsAsync();
+        await AuthenticateAsUserAsync(userAId);
+        string idempotencyKey = Guid.CreateVersion7().ToString();
+
+        HttpResponseMessage first = await UploadWithIdempotencyKeyAsync(taskId, idempotencyKey, boundary: "first-attempt");
+        HttpResponseMessage retry = await UploadWithIdempotencyKeyAsync(taskId, idempotencyKey, boundary: "retried-attempt");
+
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, retry.StatusCode);
+        Assert.Equal(first.Headers.Location, retry.Headers.Location);
+
+        int attachments = await SeedAsync(db => db.Tasks.Where(t => t.Id == taskId).SelectMany(t => t.Attachments).CountAsync());
+        Assert.Equal(1, attachments);
+    }
+
+    [Fact]
+    public async Task Post_SameKeyDifferentUploadContent_Returns409Conflict()
+    {
+        (Guid taskId, Guid userAId, _) = await SeedTaskWithTwoContributorsAsync();
+        await AuthenticateAsUserAsync(userAId);
+        string idempotencyKey = Guid.CreateVersion7().ToString();
+
+        HttpResponseMessage first = await UploadWithIdempotencyKeyAsync(taskId, idempotencyKey, boundary: "first-attempt");
+        HttpResponseMessage other = await UploadWithIdempotencyKeyAsync(taskId, idempotencyKey, boundary: "first-attempt", content: "other log");
+
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, other.StatusCode);
+    }
+
+    private async Task<HttpResponseMessage> UploadWithIdempotencyKeyAsync(
+        Guid taskId, string idempotencyKey, string boundary, string content = "crash log")
+    {
+        var file = new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes(content));
+        file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/tasks/{taskId}/attachments")
+        {
+            Content = new MultipartFormDataContent(boundary) { { file, "file", "crash.log" } },
+        };
+        request.Headers.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
+
+        return await Client.SendAsync(request);
+    }
+
     private async Task<HttpResponseMessage> SendWithIdempotencyKeyAsync(CreateOrganizationRequest body, string idempotencyKey)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/organizations")

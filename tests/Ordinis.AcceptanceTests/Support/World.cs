@@ -76,6 +76,19 @@ internal sealed class World
     /// <summary>The response before <see cref="LastResponse"/>, for "both responses …" comparisons.</summary>
     public ApiResponse? PreviousResponse { get; private set; }
 
+    /// <summary>
+    /// How the next request through <see cref="ApiDriver"/> is to be altered — set by modifier
+    /// steps ("… without stating a version", "… with request key "k-1"") that then run the
+    /// step they wrap. Consumed (reset) by the first request sent.
+    /// </summary>
+    public RequestModifiers NextRequest { get; set; } = new();
+
+    /// <summary>Responses of requests sent at the same time ("simultaneously …").</summary>
+    public List<ApiResponse> ConcurrentResponses { get; } = [];
+
+    /// <summary>Entity counts captured before a create was first sent, for "only one … was created".</summary>
+    public Dictionary<string, int> CountsBeforeCreate { get; } = new(StringComparer.Ordinal);
+
     public ApiResponse Response =>
         LastResponse ?? throw new InvalidOperationException("No request has been made in this scenario yet.");
 
@@ -96,4 +109,20 @@ internal sealed class World
         map.TryGetValue(key, out Guid id)
             ? id
             : throw new InvalidOperationException($"No {kind} named '{key}' has been set up in this scenario.");
+}
+
+/// <summary>Alterations to the next request, set by modifier steps (see <see cref="World.NextRequest"/>).</summary>
+internal sealed class RequestModifiers
+{
+    /// <summary>Send no <c>If-Match</c>, whatever the step would state.</summary>
+    public bool OmitIfMatch { get; set; }
+
+    /// <summary>An <c>Idempotency-Key</c> header to send.</summary>
+    public string? IdempotencyKey { get; set; }
+
+    /// <summary>Address this API version instead of v1 (<c>/api/v1/…</c> becomes <c>/api/vN/…</c>).</summary>
+    public int? ApiVersion { get; set; }
+
+    /// <summary>An <c>X-Correlation-ID</c> header to send.</summary>
+    public string? CorrelationId { get; set; }
 }

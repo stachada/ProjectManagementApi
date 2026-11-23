@@ -38,8 +38,19 @@ Feature: Idempotent creation
         | uploads "crash.log" to the task "Fix login bug"           | attachment   |
         | creates a board "Sprint 2" in project "Apollo"            | board        |
         | creates a project "Hermes" in "Acme"                      | project      |
-        | adds Olivia to project "Apollo" as a Viewer                | membership   |
-        | registers a webhook for project "Apollo" at "https://hooks.example.com/x" | webhook |
+
+    # Adding members and registering webhooks need a project Admin, so Alice sends them. The
+    # webhook targets the test receiver: this scenario is about the request key, not about URLs.
+    Scenario Outline: Project-admin creates honour the request key: <create>
+      Given Alice has sent "<create>" with request key "k-1"
+      When Alice sends "<create>" with request key "k-1" again
+      Then the second response replays the first
+      And only one <resource> was created
+
+      Examples:
+        | create                                      | resource   |
+        | adds Olivia to project "Apollo" as a Viewer | membership |
+        | registers a webhook for project "Apollo"    | webhook    |
 
     Scenario Outline: Org-level creates honour the request key: <create>
       Given Olivia has sent "<create>" with request key "k-1"

@@ -5,8 +5,9 @@ namespace Ordinis.AcceptanceTests.Support;
 /// <summary>
 /// The optional ending of a versioned write step, deciding what the request states in
 /// <c>If-Match</c>: nothing appended → the resource's current version;
-/// <c>" using the version &lt;persona&gt; read"</c> → the ETag that persona read earlier;
-/// <c>" without stating a version"</c> → no <c>If-Match</c> at all.
+/// <c>" using the version &lt;persona&gt; read"</c> → the ETag that persona read earlier.
+/// "… without stating a version" is not part of it: <c>RequestModifierSteps</c> handles that
+/// phrase for every write step alike.
 /// </summary>
 /// <remarks>
 /// The whole suffix is one capture group whose last alternative is empty, so it always
@@ -16,7 +17,7 @@ namespace Ordinis.AcceptanceTests.Support;
 internal static partial class VersionSuffix
 {
     /// <summary>Append to a step regex (before <c>$</c>); binds to one <see cref="string"/> parameter.</summary>
-    public const string Pattern = "( using the version \\w+ read| without stating a version|)";
+    public const string Pattern = "( using the version \\w+ read|)";
 
     /// <summary>The <c>If-Match</c> value the suffix asks for.</summary>
     /// <param name="suffix">The captured suffix.</param>
@@ -28,11 +29,6 @@ internal static partial class VersionSuffix
         if (suffix.Length == 0)
         {
             return await current();
-        }
-
-        if (suffix == " without stating a version")
-        {
-            return null;
         }
 
         string reader = ReaderPattern().Match(suffix).Groups[1].Value;

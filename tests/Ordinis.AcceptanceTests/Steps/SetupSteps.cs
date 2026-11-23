@@ -187,6 +187,10 @@ internal sealed class SetupSteps(World world, Seeder seeder)
         await seeder.AssignTaskAsync(taskId, world.PersonaNamed(assignee).UserId);
     }
 
+    [Given(@"^a task ""([^""]+)"" on board ""([^""]+)"" with priority (\w+)$")]
+    public Task GivenATaskWithPriority(string title, string board, Priority priority) =>
+        seeder.CreateTaskAsync(world.BoardNamed(board), title, priority);
+
     [Given(@"^a task ""([^""]+)"" on board ""([^""]+)"" created by (\w+)$")]
     public Task GivenATaskCreatedBy(string title, string board, string reporter) =>
         seeder.CreateTaskAsync(world.BoardNamed(board), title, reporterId: world.PersonaNamed(reporter).UserId);

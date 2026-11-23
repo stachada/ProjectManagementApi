@@ -1,6 +1,8 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.Primitives;
+using Microsoft.Net.Http.Headers;
 using Ordinis.Application.Common;
 
 namespace Ordinis.Api.Common;
@@ -129,8 +131,50 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, IIdempotencyStor
         await context.Request.Body.CopyToAsync(buffer, context.RequestAborted);
         context.Request.Body.Position = 0;
 
-        byte[] hashBytes = SHA256.HashData(buffer.ToArray());
+        byte[] hashBytes = SHA256.HashData(WithoutMultipartBoundary(buffer.ToArray(), context.Request.ContentType));
         return Convert.ToHexStringLower(hashBytes);
+    }
+
+    /// <summary>
+    /// A multipart body separates its parts with a boundary the client picks per request
+    /// (typically random), so a byte-identical retry of the same upload would still hash
+    /// differently. Replacing the boundary with a fixed marker makes the hash depend only on the
+    /// parts themselves.
+    /// </summary>
+    private static byte[] WithoutMultipartBoundary(byte[] body, string? contentType)
+    {
+        if (!MediaTypeHeaderValue.TryParse(contentType, out MediaTypeHeaderValue? mediaType) ||
+            !mediaType.MediaType.StartsWith("multipart/", StringComparison.OrdinalIgnoreCase))
+        {
+            return body;
+        }
+
+        string boundary = HeaderUtilities.RemoveQuotes(mediaType.Boundary).ToString();
+        if (boundary.Length == 0)
+        {
+            return body;
+        }
+
+        byte[] pattern = Encoding.ASCII.GetBytes(boundary);
+        byte[] marker = "boundary"u8.ToArray();
+        using var normalized = new MemoryStream(body.Length);
+
+        int start = 0;
+        while (true)
+        {
+            int offset = body.AsSpan(start).IndexOf(pattern);
+            if (offset < 0)
+            {
+                break;
+            }
+
+            normalized.Write(body, start, offset);
+            normalized.Write(marker);
+            start += offset + pattern.Length;
+        }
+
+        normalized.Write(body, start, body.Length - start);
+        return normalized.ToArray();
     }
 
     private static async Task ReplayAsync(HttpContext context, IdempotencyRecord cached)

@@ -27,7 +27,10 @@ internal sealed class ApiDriver(World world, Seeder seeder)
     public async Task<ApiResponse> SendAsync(string persona, HttpMethod method, string path, object? body = null, string? ifMatch = null)
     {
         using HttpClient client = TestHost.Factory.CreateClient();
-        using var request = new HttpRequestMessage(method, path);
+        RequestModifiers modifiers = TakeModifiers();
+        using var request = new HttpRequestMessage(method, Versioned(path, modifiers));
+        ifMatch = modifiers.OmitIfMatch ? null : ifMatch;
+        AddModifierHeaders(request, modifiers);
 
         if (persona != Anonymous)
         {
@@ -60,7 +63,9 @@ internal sealed class ApiDriver(World world, Seeder seeder)
     public async Task<ApiResponse> SendWithTokenAsync(string? accessToken, HttpMethod method, string path, object? body = null)
     {
         using HttpClient client = TestHost.Factory.CreateClient();
-        using var request = new HttpRequestMessage(method, path);
+        RequestModifiers modifiers = TakeModifiers();
+        using var request = new HttpRequestMessage(method, Versioned(path, modifiers));
+        AddModifierHeaders(request, modifiers);
 
         if (accessToken is not null)
         {
@@ -83,7 +88,9 @@ internal sealed class ApiDriver(World world, Seeder seeder)
     public async Task<ApiResponse> UploadAsync(string persona, string path, string fileName, string contentType, byte[] content)
     {
         using HttpClient client = TestHost.Factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Post, path);
+        RequestModifiers modifiers = TakeModifiers();
+        using var request = new HttpRequestMessage(HttpMethod.Post, Versioned(path, modifiers));
+        AddModifierHeaders(request, modifiers);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await seeder.AccessTokenForAsync(world.PersonaNamed(persona).UserId));
 
         var file = new ByteArrayContent(content);
@@ -96,12 +103,21 @@ internal sealed class ApiDriver(World world, Seeder seeder)
     }
 
     /// <summary>Sends a request as an arbitrary user ID (used for hidden observer reads).</summary>
-    /// <remarks>Not recorded as <see cref="World.LastResponse"/>: it is not the scenario's action.</remarks>
-    public async Task<ApiResponse> SendAsUserAsync(Guid userId, HttpMethod method, string path, object? body = null, string? ifMatch = null)
+    /// <remarks>
+    /// Not recorded as <see cref="World.LastResponse"/>: it is either not the scenario's action, or
+    /// one of several sent at once. Ignores <see cref="World.NextRequest"/>.
+    /// </remarks>
+    public async Task<ApiResponse> SendAsUserAsync(
+        Guid userId, HttpMethod method, string path, object? body = null, string? ifMatch = null, string? idempotencyKey = null)
     {
         using HttpClient client = TestHost.Factory.CreateClient();
         using var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await seeder.AccessTokenForAsync(userId));
+
+        if (idempotencyKey is not null)
+        {
+            request.Headers.Add("Idempotency-Key", idempotencyKey);
+        }
 
         if (body is not null)
         {
@@ -116,9 +132,55 @@ internal sealed class ApiDriver(World world, Seeder seeder)
         return await SendRawAsync(client, request);
     }
 
+    /// <summary>Sends a body exactly as given (e.g. invalid JSON) as a persona, and records the response.</summary>
+    public async Task<ApiResponse> SendRawBodyAsync(string persona, HttpMethod method, string path, string body, string contentType)
+    {
+        using HttpClient client = TestHost.Factory.CreateClient();
+        using var request = new HttpRequestMessage(method, path)
+        {
+            Content = new StringContent(body, System.Text.Encoding.UTF8, contentType),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await seeder.AccessTokenForAsync(world.PersonaNamed(persona).UserId));
+
+        ApiResponse result = await SendRawAsync(client, request);
+        world.LastResponse = result;
+        return result;
+    }
+
+    private RequestModifiers TakeModifiers()
+    {
+        RequestModifiers modifiers = world.NextRequest;
+        world.NextRequest = new RequestModifiers();
+        return modifiers;
+    }
+
+    private static string Versioned(string path, RequestModifiers modifiers) =>
+        modifiers.ApiVersion is int version && path.StartsWith("/api/v1/", StringComparison.Ordinal)
+            ? $"/api/v{version}/{path["/api/v1/".Length..]}"
+            : path;
+
+    private static void AddModifierHeaders(HttpRequestMessage request, RequestModifiers modifiers)
+    {
+        if (modifiers.IdempotencyKey is not null)
+        {
+            request.Headers.Add("Idempotency-Key", modifiers.IdempotencyKey);
+        }
+
+        if (modifiers.CorrelationId is not null)
+        {
+            request.Headers.Add("X-Correlation-ID", modifiers.CorrelationId);
+        }
+    }
+
     private static async Task<ApiResponse> SendRawAsync(HttpClient client, HttpRequestMessage request)
     {
         using HttpResponseMessage response = await client.SendAsync(request);
+
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (KeyValuePair<string, IEnumerable<string>> header in response.Headers.Concat(response.Content.Headers))
+        {
+            headers[header.Key] = string.Join(", ", header.Value);
+        }
 
         int? totalCount = response.Headers.TryGetValues("X-Total-Count", out IEnumerable<string>? values)
             && int.TryParse(values.FirstOrDefault(), out int count)
@@ -130,13 +192,27 @@ internal sealed class ApiDriver(World world, Seeder seeder)
             await response.Content.ReadAsStringAsync(),
             response.Headers.ETag?.Tag,
             response.Headers.Location,
-            totalCount);
+            totalCount,
+            headers,
+            request.RequestUri?.AbsolutePath ?? string.Empty);
     }
 }
 
 /// <summary>A captured HTTP response, decoupled from the disposed <see cref="HttpResponseMessage"/>.</summary>
-internal sealed record ApiResponse(HttpStatusCode StatusCode, string Body, string? ETag, Uri? Location, int? TotalCount)
+/// <param name="Headers">Response and content headers, multiple values joined by ", ".</param>
+/// <param name="RequestPath">The path the request was sent to, without the query string.</param>
+internal sealed record ApiResponse(
+    HttpStatusCode StatusCode,
+    string Body,
+    string? ETag,
+    Uri? Location,
+    int? TotalCount,
+    IReadOnlyDictionary<string, string> Headers,
+    string RequestPath)
 {
+    /// <summary>A response header, or <see langword="null"/>.</summary>
+    public string? Header(string name) => Headers.TryGetValue(name, out string? value) ? value : null;
+
     public bool IsSuccess => (int)StatusCode is >= 200 and < 300;
 
     /// <summary>The Problem Details <c>type</c>, or <see langword="null"/> if the body is not Problem Details.</summary>
