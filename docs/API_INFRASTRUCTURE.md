@@ -158,6 +158,9 @@ What it does, in order:
 2. Builds a cache key from `{method}:{path}:{Idempotency-Key}` — scoped per route, so the same key
    value accidentally reused on two different endpoints can't collide — and hashes the raw request
    body bytes (SHA-256, not decoded as text, since `AddAttachment`'s body is multipart/binary).
+   For a `multipart/*` body the boundary is replaced by a fixed marker before hashing: clients
+   pick a new (usually random) boundary for every request, so a retried upload would otherwise
+   never match its first attempt.
 3. Atomically **reserves** the key via `IIdempotencyStore.TryReserveAsync` (or learns its state).
    If the key already completed with a matching body hash: replays the stored status code,
    `Content-Type`, `Location` header, and body verbatim, **without** calling the rest of the
