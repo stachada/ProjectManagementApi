@@ -24,9 +24,11 @@ public static class OrganizationMapper
         {
             Id = organization.Id,
             Name = organization.Name,
+            Slug = organization.Slug,
             Description = organization.Description,
             IsActive = organization.IsActive,
             CreatedAt = organization.CreatedAt,
+            UpdatedAt = organization.UpdatedAt,
             ProjectCount = projectCount,
             // Empty for an unpersisted instance (unit tests); EF Core sets RowVersion on save.
             ConcurrencyToken = organization.RowVersion is { Length: > 0 }

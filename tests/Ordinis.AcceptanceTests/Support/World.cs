@@ -32,6 +32,9 @@ internal sealed class World
     /// </summary>
     public Dictionary<string, string> SessionTokens { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>Refresh tokens from a persona's latest real sign-in or refresh.</summary>
+    public Dictionary<string, string> RefreshTokens { get; } = new(StringComparer.Ordinal);
+
     /// <summary>Uploaded attachments: (task ID, file name) → attachment ID.</summary>
     public Dictionary<(Guid TaskId, string FileName), Guid> Attachments { get; } = new();
 

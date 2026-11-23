@@ -71,11 +71,23 @@ internal sealed class ApiDriver(World world, Seeder seeder)
     }
 
     /// <summary>Sends a request as an arbitrary user ID (used for hidden observer reads).</summary>
-    public async Task<ApiResponse> SendAsUserAsync(Guid userId, HttpMethod method, string path)
+    /// <remarks>Not recorded as <see cref="World.LastResponse"/>: it is not the scenario's action.</remarks>
+    public async Task<ApiResponse> SendAsUserAsync(Guid userId, HttpMethod method, string path, object? body = null, string? ifMatch = null)
     {
         using HttpClient client = TestHost.Factory.CreateClient();
         using var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await seeder.AccessTokenForAsync(userId));
+
+        if (body is not null)
+        {
+            request.Content = JsonContent.Create(body, options: ApiJson.Options);
+        }
+
+        if (ifMatch is not null)
+        {
+            request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+        }
+
         return await SendRawAsync(client, request);
     }
 

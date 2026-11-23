@@ -26,7 +26,7 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-963 scenarios (outline rows expanded): **566 pass, 397 skipped, 0 fail.**
+963 scenarios (outline rows expanded): **667 pass, 296 skipped, 0 fail.**
 
 | Feature | Status |
 | --- | --- |
@@ -43,9 +43,14 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 | Projects/project-lifecycle | ✅ bound — 36 pass |
 | Projects/project-audit | ✅ bound — 21 pass |
 | Boards/boards | ✅ bound — 50 pass |
+| Users/user-management | ✅ bound — 42 pass |
+| Organizations/organizations | ✅ bound — 31 pass |
+| Users/user-tasks | ✅ bound — 18 pass |
+| Organizations/organization-lifecycle | ✅ bound — 15 pass |
+| Users/user-lifecycle | ✅ bound — 15 pass |
 | Platform/pagination | ✅ bound — 28 pass |
-| Authorization/tenant-isolation, resource-visibility, role-permissions | ◐ 14 / 8 / 6 pass via shared steps, rest skipped |
-| Organizations, Users, Boards, Platform/api-versioning | ◐ a few pass via shared steps, rest skipped |
+| Authorization/tenant-isolation, resource-visibility, role-permissions | ◐ 16 / 8 / 6 pass via shared steps, rest skipped |
+| Platform/api-versioning, optimistic-concurrency | ◐ 2 / 2 pass via shared steps, rest skipped |
 | *all other features* | ⏳ not bound yet (reported as skipped) |
 
 ## How it works
@@ -166,7 +171,7 @@ Scenarios tagged `@gap` carry a `# GAP-nn` comment pointing here. When a gap is 
 its `@gap` tags are removed (the scenarios become ordinary regression specs) and the row
 moves to **Fixed gaps** below.
 
-*No open gaps — all 20 found by the specs are fixed (see below).*
+*No open gaps — all 22 found by the specs are fixed (see below).*
 
 ### Known edge cases (documented, not fixed)
 
@@ -202,6 +207,8 @@ moves to **Fixed gaps** below.
 | GAP-18 | An attachment did not say who uploaded it, although only the uploader (or a project / org Admin) may remove it — a client could not tell whether to offer "remove" | `AttachmentDto.UploadedByUserId`, mapped in `TaskMapper.ToAttachmentDto`. Found binding `task-attachments.feature`. Regression tests: `TaskMapperTests.ToDto_Attachments_MapAllFields_OrderedByUploadedAt`, `TasksControllerTests.AddAttachment_ValidFile_Returns201WithDownloadUrl`; "Uploading an attachment" scenario |
 | GAP-19 | A valid file name over ~218 characters (the validator allows 255) → 500: the stored file is named `{guid}_{name}`, which exceeded the filesystem's 255-character limit per path component | `LocalFileStorageService` shortens the *stored* name to 100 characters, keeping the extension; the original name is kept in the database and returned unchanged. Found binding `task-attachments.feature`. Regression tests: `TasksControllerTests.AddAttachment_FileNameAtMaximumLength_Returns201AndKeepsTheFullName`; "A file name of exactly 255 characters is accepted" scenario |
 | GAP-20 | No `JsonStringEnumConverter`: task `status`/`priority` and member `role` were sent as numbers, and JSON bodies with names (`{"status":"InProgress"}`, as the docs showed) were rejected with 400 — while query strings accepted names and `UserDto.OrgRole` was already a string | `JsonStringEnumConverter` on the MVC and Minimal API JSON options, and in `EventJson.Options` for outbox payloads (the audit trail) and webhook envelopes. Names out; names *or* numbers in, so ordinal clients keep working (a pre-1.0 change for clients reading numbers). Found binding `project-membership.feature`. Regression tests: `EnumSerializationTests`, `EventJsonTests`; the acceptance driver now sends names |
+| GAP-21 | The organization details had no `slug` — the value users must state when signing in, so a client could not discover it through the API — and no `updatedAt`, unlike every other resource | `OrganizationDto.Slug` and `UpdatedAt`, mapped in `OrganizationMapper`. Found binding `organizations.feature`. Regression tests: `OrganizationMapperTests.ToDto_AllFieldsMapCorrectly`, `OrganizationsControllerTests.GetById_ReturnsSlugAndUpdatedAt`; "Viewing one's own organization" scenario |
+| GAP-22 | `GetUserTasks` sent an unknown `sortBy` to newest first whatever `sortDescending` said, while every other task list falls back to `createdAt` in the requested direction | The fallback shares the `createdAt` branch, so it honours the direction. Found binding `user-tasks.feature`. Regression tests: `GetUserTasksHandlerTests.HandleAsync_UnknownSortField_SortsByCreatedAtInTheRequestedDirection`; "An unknown sort field falls back to creation order" scenario |
 
 ## Out of scope (by design, not gaps)
 

@@ -68,6 +68,18 @@ internal sealed class ListingSteps(World world, ApiDriver api)
     public Task WhenListsBoardTasksFiltered(string persona, string board, string filter) =>
         ListAsync(persona, $"/api/v1/boards/{world.BoardNamed(board)}/tasks", filter, sort: null);
 
+    [When(@"^(\w+) lists the tasks of (\w+) filtered by (.+)$")]
+    public Task WhenListsUserTasksFiltered(string persona, string user, string filter) =>
+        ListAsync(persona, $"/api/v1/users/{world.PersonaNamed(user).UserId}/tasks", filter, sort: null);
+
+    [When(@"^(\w+) lists the tasks of (\w+) sorted by (\w+) (ascending|descending)$")]
+    public Task WhenListsUserTasksSorted(string persona, string user, string field, string direction) =>
+        ListAsync(persona, $"/api/v1/users/{world.PersonaNamed(user).UserId}/tasks", filter: null, sort: (field, direction));
+
+    [When(@"^(\w+) lists the tasks of an unknown user$")]
+    public Task WhenListsTheTasksOfAnUnknownUser(string persona) =>
+        ListAsync(persona, $"/api/v1/users/{Guid.CreateVersion7()}/tasks", filter: null, sort: null);
+
     // ---- Assertions ----
 
     [Then(@"^the listed tasks are ""([^""]*)""$")]

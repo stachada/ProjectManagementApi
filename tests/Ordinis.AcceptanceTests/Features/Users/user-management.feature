@@ -55,14 +55,23 @@ Feature: User management
 
       Examples:
         | case                      | details                               | field       |
-        | missing display name      | without a display name                | displayName |
         | 101-character name        | with a 101-character display name     | displayName |
-        | missing email             | without an email                      | email       |
         | malformed email           | with email "not-an-email"             | email       |
         | 255-character email       | with a 255-character email            | email       |
-        | missing password          | without a password                    | password    |
         | 7-character password      | with password "short-1"               | password    |
         | unknown org role          | with an unknown org role              | orgRole     |
+
+    # A request without a required field cannot be bound at all, so it is malformed (400);
+    # a field that is present but breaks a rule is invalid (422).
+    Scenario Outline: A user without a <field> is rejected as malformed
+      When Olivia creates a user <details>
+      Then the request is rejected as malformed
+
+      Examples:
+        | field        | details                |
+        | display name | without a display name |
+        | email        | without an email       |
+        | password     | without a password     |
 
     Scenario: A password of exactly 8 characters is accepted
       When Olivia creates a user "Dan Smith" with email "dan@acme.example" and password "eight-ch"

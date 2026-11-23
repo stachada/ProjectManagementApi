@@ -19,13 +19,14 @@ Feature: A user's assigned tasks
       | Reply to Initech | Inbox  | Backlog    | High     | Bob      | 1 day   |
       | Add dark mode  | Sprint 1 | Backlog    | Low      | Nora     |         |
 
-  Rule: The list contains only tasks assigned to that user, newest first by default
+  # Oldest first by default, like every other task list (createdAt ascending).
+  Rule: The list contains only tasks assigned to that user, oldest first by default
 
     @smoke
     Scenario: Listing one's own tasks
       When Bob lists the tasks of Bob
       Then the request succeeds
-      And the listed tasks are "Reply to Initech, Write docs, Fix login bug"
+      And the listed tasks are "Fix login bug, Write docs, Reply to Initech"
       And the total count is 3
 
     Scenario: The list reflects unassignment
@@ -42,7 +43,7 @@ Feature: A user's assigned tasks
 
     Scenario: A colleague sees only the tasks of shared projects
       When Nora lists the tasks of Bob
-      Then the listed tasks are "Write docs, Fix login bug"
+      Then the listed tasks are "Fix login bug, Write docs"
 
     Scenario: The org Admin sees all of a user's tasks
       When Olivia lists the tasks of Bob
@@ -68,7 +69,7 @@ Feature: A user's assigned tasks
         | board "Sprint 1"  | Fix login bug                  |
         | status ToDo       | Write docs                     |
         | priority High     | Reply to Initech               |
-        | due before 5 days | Reply to Initech, Fix login bug |
+        | due before 5 days | Fix login bug, Reply to Initech |
         | due after 5 days  | Write docs                     |
 
     Scenario Outline: Sorting Bob's tasks by <field> <direction>
@@ -87,6 +88,8 @@ Feature: A user's assigned tasks
       When Bob lists the tasks of Bob sorted by priority descending
       Then the listed tasks are "Fix login bug, Reply to Initech, Write docs"
 
-    Scenario: An unknown sort field falls back to newest first
+    # GAP-22 (fixed): an unknown sort field falls back to createdAt in the requested
+    # direction, like every other task list (it used to be newest first whatever was asked).
+    Scenario: An unknown sort field falls back to creation order
       When Bob lists the tasks of Bob sorted by colour ascending
-      Then the listed tasks are "Reply to Initech, Write docs, Fix login bug"
+      Then the listed tasks are "Fix login bug, Write docs, Reply to Initech"

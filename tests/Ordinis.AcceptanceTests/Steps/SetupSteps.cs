@@ -38,9 +38,12 @@ internal sealed class SetupSteps(World world, Seeder seeder)
     public Task GivenUserWithPassword(string user, string organization, string password) =>
         seeder.CreatePersonaAsync(user, world.OrganizationNamed(organization), Role.Member, password);
 
-    [Given(@"^the organization ""([^""]+)"" is suspended$")]
-    public Task GivenTheOrganizationIsSuspended(string organization) =>
-        seeder.SuspendOrganizationAsync(world.OrganizationNamed(organization));
+    /// <summary>Organizations are seeded active, so "is active" only states the starting point.</summary>
+    [Given(@"^the organization ""([^""]+)"" is (active|suspended)$")]
+    public Task GivenTheOrganizationIsInState(string organization, string state) =>
+        state == "suspended"
+            ? seeder.SuspendOrganizationAsync(world.OrganizationNamed(organization))
+            : Task.CompletedTask;
 
     /// <summary>A project without boards whose (first) member is the named persona.</summary>
     [Given(@"^a project ""([^""]+)"" in ""([^""]+)"" where (\w+) is an? (Viewer|Member|Admin)$")]
@@ -69,7 +72,7 @@ internal sealed class SetupSteps(World world, Seeder seeder)
     /// Seeds tasks row by row, in table order (which is therefore creation order). Columns:
     /// title, board, status, priority, assignee (optional), due in (e.g. "5 days", optional).
     /// </summary>
-    [Given(@"^these tasks exist:$")]
+    [Given(@"^these tasks exist(?:, created in this order)?:$")]
     public async Task GivenTheseTasksExist(DataTable table)
     {
         foreach (DataTableRow row in table.Rows)
@@ -128,6 +131,13 @@ internal sealed class SetupSteps(World world, Seeder seeder)
     [Given(@"^a task ""([^""]+)"" on board ""([^""]+)""$")]
     public Task GivenATask(string title, string board) =>
         seeder.CreateTaskAsync(world.BoardNamed(board), title);
+
+    [Given(@"^a task ""([^""]+)"" on board ""([^""]+)"" assigned to (\w+)$")]
+    public async Task GivenATaskAssignedTo(string title, string board, string assignee)
+    {
+        Guid taskId = await seeder.CreateTaskAsync(world.BoardNamed(board), title);
+        await seeder.AssignTaskAsync(taskId, world.PersonaNamed(assignee).UserId);
+    }
 
     [Given(@"^a task ""([^""]+)"" on board ""([^""]+)"" created by (\w+)$")]
     public Task GivenATaskCreatedBy(string title, string board, string reporter) =>
