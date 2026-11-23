@@ -26,7 +26,7 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-963 scenarios (outline rows expanded): **954 pass, 9 skipped, 0 fail.** Every feature is bound; the 9 skipped scenarios are `@needs-clock` ones (token and key expiry, rate-limit windows, retry timing), waiting for a controllable test clock.
+963 scenarios (outline rows expanded): **963 pass, 0 skipped, 0 fail** (about 7 minutes). Every feature is bound, including the `@needs-clock` scenarios (token and key expiry, rate-limit windows, retry timing), which run on the test clock.
 
 | Feature | Status |
 | --- | --- |
@@ -53,20 +53,20 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 | Authorization/tenant-isolation | ✅ bound — 22 pass |
 | Search/search | ✅ bound — 22 pass |
 | Auth/login | ✅ bound — 14 pass |
-| Auth/token-refresh | ✅ bound — 12 pass; 4 `@needs-clock` skipped (Tier 3) |
+| Auth/token-refresh | ✅ bound — 16 pass |
 | Auth/logout | ✅ bound — 5 pass |
 | Platform/optimistic-concurrency | ✅ bound — 32 pass |
-| Platform/idempotency | ✅ bound — 17 pass; 1 `@needs-clock` skipped (Tier 3) |
+| Platform/idempotency | ✅ bound — 18 pass |
 | Platform/error-responses | ✅ bound — 16 pass |
 | Platform/sparse-fieldsets | ✅ bound — 12 pass |
 | Platform/api-versioning | ✅ bound — 11 pass |
 | Platform/caching | ✅ bound — 11 pass |
 | Platform/correlation | ✅ bound — 6 pass |
 | Platform/health | ✅ bound — 6 pass |
-| Platform/rate-limiting | ✅ bound — 6 pass; 2 `@needs-clock` skipped (Tier 3) |
+| Platform/rate-limiting | ✅ bound — 8 pass |
 | Platform/pagination | ✅ bound — 28 pass |
 | Webhooks/webhook-subscriptions | ✅ bound — 43 pass |
-| Webhooks/webhook-delivery | ✅ bound — 24 pass; 2 `@needs-clock` skipped (Tier 3) |
+| Webhooks/webhook-delivery | ✅ bound — 26 pass |
 
 ## Host variants and simulated failures
 
@@ -82,7 +82,9 @@ no background jobs (so outbox messages are never processed twice):
 | Made-up hosts in webhook URLs (`hooks.example.com`, "the host … resolves to 10.1.2.3") | `ScriptedDns`, the `IHostAddressResolver` the test host's `WebhookUrlGuard` uses: every `*.example.com` host is public, a scenario can point a host elsewhere (or rebind it), anything else goes to real DNS. Reset after every scenario |
 | Webhook receivers ("Chat", "CI") that fail, hang, drop the connection or redirect | `WebhookReceiver`, a loopback HTTP server: each named receiver is a path, records every request (failed attempts included) and answers as its script says. The addresses the features give receivers are labels |
 | Observing only what an action causes | Before a webhook scenario's first action, the event pipeline is drained and the receivers forget what they got — the arrangement's own events (a seeded task is a `task.created`) are history. After every scenario the background jobs are stopped around the database reset, so no in-flight batch leaks into the next scenario |
-| Retries within a scenario | The test host's retry backoff is 2 s (production: 30 s, then 60 s — specified by `@needs-clock` scenarios) |
+| Time passing ("Given 7 days and 1 second have passed") | `TestClock`, the `TimeProvider` of every host (and the seeder): the real time plus an offset a step moves forward at once. Only "now" shifts — timers and delays stay real, so the background jobs keep polling and simply find that the time has passed. Token lifetimes, refresh-token and request-key expiry and retry schedules all read it. Reset after every scenario |
+| Retries within a scenario | The production backoff (30 s, then 60 s). Steps that wait for a delivery to play out skip the clock ahead to each retry as soon as it is scheduled; the retry-timing steps move it deliberately (to just before the backoff: no attempt yet; to the backoff: the attempt is made) |
+| A rate-limit window passing (`@needs-clock` rate-limiting scenarios) | `TestHost.RateLimitedShortWindows`: the production limiter with every window 10 times shorter (a "minute" lasts 6 s), and the steps really wait. The built-in limiters time their windows with an internal stopwatch rather than a `TimeProvider`, so the clock cannot skip that time |
 | Workers stopped / a second instance ("two API instances share the database") | `TestHost.StopWorkersAsync` / `StartWorkersAsync` stop and restart the main host's background jobs; `StartSecondInstance` runs another host with its own jobs on the same database for the rest of the scenario |
 | Log lines ("a request log entry records …") | `CapturedLogs`, a Serilog sink registered in DI and picked up by `Program.cs`'s `ReadFrom.Services` — so scenarios check the real logging pipeline. Cleared after every scenario |
 
@@ -94,8 +96,10 @@ Steps/                  ── step definitions, grouped by concern (setup, outc
 Support/
 ├── TestHost            ── run-wide: one API host + SQL Server container + webhook receiver;
 │                          database reset (Respawn) after every scenario
-├── AcceptanceApiFactory── the shared Ordinis.Testing factory, with a random DB port, 1 s webhook
-│                          polling, and a URL guard that also trusts the in-process receiver
+├── AcceptanceApiFactory── the shared Ordinis.Testing factory, with a random DB port, the test
+│                          clock, 1 s webhook polling, and a URL guard that also trusts the
+│                          in-process receiver
+├── TestClock           ── the hosts' TimeProvider: real time plus an offset steps move forward
 ├── World               ── per-scenario names → IDs ("Bob", "Fix login bug"), last response,
 │                          versions (ETags) personas have read
 ├── Seeder              ── "Given" state written through the real domain model, not the API
@@ -193,7 +197,7 @@ Modifiers: `… using the version <persona> read` (stale If-Match),
 | `@smoke` | minimal happy-path set for a quick run |
 | `@gap` | specifies intended behaviour the API does **not** meet yet — see the gap register. Expected to fail when bound. |
 | `@role-matrix` | permission matrix outline |
-| `@needs-clock` | requires a controllable `TimeProvider` (token expiry, retry backoff); the integration factory currently uses the real clock |
+| `@needs-clock` | time has to pass (token and request-key expiry, retry backoff, rate-limit windows): driven by the test clock, or — for rate-limit windows — by the short-window host |
 | `@needs-rate-limiter` | requires the global rate limiter, which `OrdinisApiFactory` disables |
 | `@background` | asserts on outbox / webhook background processing (eventual consistency — poll with timeout) |
 | `@multi-tenant` | involves a second organization |
@@ -204,7 +208,7 @@ Scenarios tagged `@gap` carry a `# GAP-nn` comment pointing here. When a gap is 
 its `@gap` tags are removed (the scenarios become ordinary regression specs) and the row
 moves to **Fixed gaps** below.
 
-*No open gaps — all 27 found by the specs are fixed (see below).*
+*No open gaps — all 28 found by the specs are fixed (see below).*
 
 ### Known edge cases (documented, not fixed)
 
@@ -247,6 +251,7 @@ moves to **Fixed gaps** below.
 | GAP-25 | A retried upload with the same `Idempotency-Key` was rejected as "already used with a different request body": the request fingerprint hashed the raw multipart body, whose boundary the client picks anew (usually at random) for every request — so request keys never worked for attachments | `IdempotencyMiddleware` replaces the multipart boundary with a fixed marker before hashing, so the hash depends only on the parts. Found binding `idempotency.feature`. Regression tests: `IdempotencyMiddlewareTests.Post_RetriedUploadWithNewMultipartBoundary_ReplaysAndCreatesOneAttachment` (and `…SameKeyDifferentUploadContent_Returns409Conflict`, which guards that different content still conflicts); "Every create endpoint honours the request key: uploads …" scenario |
 | GAP-26 | An authenticated caller over the limit got `429` without `Retry-After` — although the body says "Retry after the interval given in the Retry-After header": `OnRejected` only copied the limiter's retry-after metadata, which the fixed window (anonymous callers) reports and the sliding window (authenticated callers) does not | `OnRejected` always sets `Retry-After`: the metadata when present, otherwise one sliding-window segment (`WindowSeconds / SegmentsPerWindow`, 10 s by default). Found binding `rate-limiting.feature`. Regression test: `RateLimitingTests.SlidingWindowRejection_StillReturnsRetryAfterInSeconds`; "The 501st request by one user within a minute is rejected" scenario |
 | GAP-27 | `WebhookDeliveryDispatcherService` sent a batch's deliveries one after another, so a receiver that never answered held every delivery queued behind it back by the 10 s HTTP timeout — on every attempt | The batch is delivered concurrently (`Parallel.ForEachAsync`, `MaxParallelDeliveries` = 8), still claimed, updated and saved in one transaction. Found binding `webhook-delivery.feature` (the scenario only asked for "eventually", so it was tightened to "while "Chat" is still not answering"). Regression test: `WebhookDeliveryDispatcherTests.SlowReceiver_DoesNotDelayTheRestOfTheBatch` (deterministic: the slow delivery is due first) |
+| GAP-28 | Two clock reads bypassed the app's `TimeProvider`: IdentityModel checked access-token lifetimes against the system clock, and the in-memory cache timed the idempotency store's 24-hour key lifetime with its own clock. No difference in production (both are the real time), but it broke the "every *now* comes from `TimeProvider`" rule — so with another clock (a test's, say) an expired access token kept working and an expired request key was still replayed | `JwtLifetime.Validator` (the same rules as IdentityModel's check, with `TimeProvider`'s "now") as the bearer options' `LifetimeValidator` — IdentityModel's own time-provider setting is internal — and `MemoryCacheOptions.Clock` set to `TimeProviderSystemClock`. Found binding the `@needs-clock` scenarios. Regression tests: `JwtLifetimeTests`; "An expired access token is rejected", "A key can be reused after it expires" |
 
 ## Out of scope (by design, not gaps)
 

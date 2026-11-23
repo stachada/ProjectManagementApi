@@ -19,7 +19,8 @@ namespace Ordinis.AcceptanceTests.Support;
 /// <remarks>
 /// A few scenarios need the API configured differently — in the Development or Production
 /// environment, or with the production rate limiter on. Those run against variants of the main
-/// host (<see cref="Development"/>, <see cref="Production"/>, <see cref="RateLimited"/>), built
+/// host (<see cref="Development"/>, <see cref="Production"/>, <see cref="RateLimited"/>,
+/// <see cref="RateLimitedShortWindows"/>), built
 /// on first use from the same configuration and database. Variants run no background jobs: only
 /// the main host dispatches outbox messages and delivers webhooks, so nothing is processed twice.
 /// </remarks>
@@ -37,6 +38,20 @@ internal sealed class TestHost
     private static readonly Lazy<WebApplicationFactory<Program>> DevelopmentHost = new(() => Variant(environment: "Development"));
     private static readonly Lazy<WebApplicationFactory<Program>> ProductionHost = new(() => Variant(environment: "Production"));
     private static readonly Lazy<WebApplicationFactory<Program>> RateLimitedHost = new(() => Variant(rateLimited: true));
+    private static readonly Lazy<WebApplicationFactory<Program>> RateLimitedShortWindowsHost = new(() => Built(
+        Variant(rateLimited: true),
+        new Dictionary<string, string>
+        {
+            ["RateLimiting__FixedWindow__WindowSeconds"] = "6",
+            ["RateLimiting__SlidingWindow__WindowSeconds"] = "6",
+            ["RateLimiting__SlidingWindow__SegmentsPerWindow"] = "6",
+        }));
+
+    /// <summary>
+    /// How much shorter every rate-limit window is on <see cref="RateLimitedShortWindows"/>: a
+    /// "minute" there lasts 6 seconds (and a sliding-window segment one second).
+    /// </summary>
+    public const int RateLimitWindowCompression = 10;
 
     public static AcceptanceApiFactory Factory =>
         _factory ?? throw new InvalidOperationException("The test host has not been started.");
@@ -49,6 +64,9 @@ internal sealed class TestHost
 
     /// <summary>Every event any host logs.</summary>
     public static CapturedLogs Logs { get; } = new();
+
+    /// <summary>"Now", for every host and the seeder: the real time plus whatever a scenario skipped.</summary>
+    public static TestClock Clock { get; } = new();
 
     /// <summary>What host names resolve to, as far as the webhook URL guard is concerned.</summary>
     public static ScriptedDns Dns { get; } = new();
@@ -63,6 +81,14 @@ internal sealed class TestHost
     public static WebApplicationFactory<Program> Production => ProductionHost.Value;
 
     public static WebApplicationFactory<Program> RateLimited => RateLimitedHost.Value;
+
+    /// <summary>
+    /// The production rate limiter with every window <see cref="RateLimitWindowCompression"/> times
+    /// shorter, for the scenarios in which a window has to pass. The built-in limiters time their
+    /// windows with an internal stopwatch, not a <see cref="TimeProvider"/>, so the
+    /// <see cref="Clock"/> cannot skip that time; compressing it keeps those scenarios at seconds.
+    /// </summary>
+    public static WebApplicationFactory<Program> RateLimitedShortWindows => RateLimitedShortWindowsHost.Value;
 
     [BeforeTestRun]
     public static async Task StartAsync()
@@ -110,6 +136,7 @@ internal sealed class TestHost
         }
 
         Receiver.Clear();
+        Clock.Reset();
         await Factory.ResetDatabaseAsync();
         await StartWorkersAsync();
         Receiver.Clear();
@@ -154,6 +181,32 @@ internal sealed class TestHost
     private static IEnumerable<IHostedService> Workers() =>
         Factory.Services.GetServices<IHostedService>()
             .Where(s => s.GetType().Namespace?.StartsWith("Ordinis.", StringComparison.Ordinal) == true);
+
+    /// <summary>
+    /// Builds <paramref name="host"/> with extra configuration. Program.cs reads configuration
+    /// through environment variables (see <see cref="OrdinisApiFactory"/>), so they are set only
+    /// while the host is being built.
+    /// </summary>
+    private static WebApplicationFactory<Program> Built(WebApplicationFactory<Program> host, Dictionary<string, string> settings)
+    {
+        foreach ((string name, string value) in settings)
+        {
+            Environment.SetEnvironmentVariable(name, value);
+        }
+
+        try
+        {
+            _ = host.Services; // builds the host, which reads its configuration now
+            return host;
+        }
+        finally
+        {
+            foreach (string name in settings.Keys)
+            {
+                Environment.SetEnvironmentVariable(name, null);
+            }
+        }
+    }
 
     private static WebApplicationFactory<Program> Variant(string? environment = null, bool rateLimited = false) =>
         Factory.WithWebHostBuilder(builder =>

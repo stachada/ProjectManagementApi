@@ -62,7 +62,7 @@ internal sealed partial class TaskDetailSteps(World world, Seeder seeder, ApiDri
     {
         DateTimeOffset? due = (await TaskAsync(title)).DueDate;
         Assert.NotNull(due);
-        Assert.InRange(due.Value, DateTimeOffset.UtcNow.AddDays(days).AddMinutes(-10), DateTimeOffset.UtcNow.AddDays(days).AddMinutes(10));
+        Assert.InRange(due.Value, TestHost.Clock.GetUtcNow().AddDays(days).AddMinutes(-10), TestHost.Clock.GetUtcNow().AddDays(days).AddMinutes(10));
     }
 
     [Then(@"^the task ""([^""]+)"" has no description and no due date$")]

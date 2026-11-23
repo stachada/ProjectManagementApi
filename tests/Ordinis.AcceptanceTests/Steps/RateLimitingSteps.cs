@@ -10,9 +10,18 @@ namespace Ordinis.AcceptanceTests.Steps;
 /// the main test host switches off). Every scenario gets its own client address, and its users are
 /// new, so no scenario inherits another's quota.
 /// </summary>
+/// <remarks>
+/// Scenarios in which a window has to pass (<c>@needs-clock</c>) run against
+/// <see cref="TestHost.RateLimitedShortWindows"/> instead, where every window is
+/// <see cref="TestHost.RateLimitWindowCompression"/> times shorter and the steps really wait:
+/// the built-in limiters cannot be driven by the <see cref="TestHost.Clock"/>.
+/// </remarks>
 [Binding]
-internal sealed class RateLimitingSteps(World world, Seeder seeder, ApiDriver api)
+internal sealed class RateLimitingSteps(World world, Seeder seeder, ApiDriver api, ScenarioContext scenario)
 {
+    /// <summary>Slack on top of a window, for the limiter's replenishment tick (every 100 ms).</summary>
+    private static readonly TimeSpan ReplenishmentSlack = TimeSpan.FromMilliseconds(500);
+
     /// <summary>Requests sent at once while using up a quota (in-process, so cheap).</summary>
     private const int Parallelism = 25;
 
@@ -21,7 +30,9 @@ internal sealed class RateLimitingSteps(World world, Seeder seeder, ApiDriver ap
     [BeforeScenario("needs-rate-limiter")]
     public void UseTheRateLimitedHost()
     {
-        world.Host = TestHost.RateLimited;
+        world.Host = scenario.ScenarioInfo.CombinedTags.Contains("needs-clock")
+            ? TestHost.RateLimitedShortWindows
+            : TestHost.RateLimited;
         world.ClientAddress = NewAddress();
     }
 
@@ -42,6 +53,18 @@ internal sealed class RateLimitingSteps(World world, Seeder seeder, ApiDriver ap
         Guid organizationId = world.PersonaNamed(persona).OrganizationId;
         await SendManyAsync(count, token, varyAddress: addresses.Length > 0, () => OrganizationRequest(organizationId));
     }
+
+    [Given(@"^(\w+) made (\d+) requests within one 10-second span$")]
+    public Task GivenPersonaMadeRequestsWithinOneSpan(string persona, int count) =>
+        GivenPersonaHasMadeRequests(persona, count, addresses: string.Empty);
+
+    // ---- Time passing (on the short-window host, where a "minute" lasts 6 seconds) ----
+
+    [Given(@"^the next minute has started$")]
+    public Task GivenTheNextMinuteHasStarted() => WaitAsync(TimeSpan.FromMinutes(1));
+
+    [Given(@"^(\d+) seconds have passed since that span$")]
+    public Task GivenSecondsHavePassed(int seconds) => WaitAsync(TimeSpan.FromSeconds(seconds));
 
     [When(@"^the health check is called (\d+) times within a minute from one address$")]
     public async Task WhenTheHealthCheckIsCalledRepeatedly(int count)
@@ -104,6 +127,17 @@ internal sealed class RateLimitingSteps(World world, Seeder seeder, ApiDriver ap
     }
 
     // ---- Helpers ----
+
+    /// <summary>
+    /// Really waits <paramref name="duration"/>, compressed like the windows, measured from now:
+    /// the quota was used up just before, so at least that much has passed since it started.
+    /// </summary>
+    private Task WaitAsync(TimeSpan duration)
+    {
+        Assert.True(world.Host == TestHost.RateLimitedShortWindows,
+            "Time can only pass for the rate limiter in a @needs-clock scenario (on the short-window host).");
+        return Task.Delay((duration / TestHost.RateLimitWindowCompression) + ReplenishmentSlack);
+    }
 
     private static readonly object SignInBody = new { organizationSlug = "acme", email = "nobody@acme.example", password = "wrong-password-1" };
 

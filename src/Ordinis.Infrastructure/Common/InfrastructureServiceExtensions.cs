@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -50,10 +51,11 @@ public static class InfrastructureServiceExtensions
         // Scoped: uses the request's AppDbContext. Called from JwtBearerEvents.OnTokenValidated.
         services.AddScoped<ITokenPrincipalRevalidator, TokenPrincipalRevalidator>();
 
-        // MemoryCacheOptions has no TimeProvider-based clock override in the referenced package
-        // version, so cache expiry runs on the wall clock rather than the app's TimeProvider
-        // singleton — the only clock dependency in this codebase not routed through TimeProvider.
+        // Cache expiry (the idempotency store's 24-hour key lifetime) follows the app's
+        // TimeProvider too: MemoryCacheOptions takes its clock as an ISystemClock, so adapt it.
         services.AddMemoryCache();
+        services.AddOptions<MemoryCacheOptions>()
+            .Configure<TimeProvider>((options, timeProvider) => options.Clock = new TimeProviderSystemClock(timeProvider));
         services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
 
         services.AddHealthChecks()

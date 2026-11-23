@@ -192,6 +192,16 @@ public static class ApiServiceExtensions
                 };
             });
 
+        // Token lifetimes are checked against the app's TimeProvider, like every other "now" in
+        // the codebase (IdentityModel would otherwise read the system clock itself). Configured
+        // here rather than in AddJwtBearer above because the TimeProvider comes from DI.
+        services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .Configure<TimeProvider>((options, timeProvider) =>
+            {
+                options.TimeProvider = timeProvider;
+                options.TokenValidationParameters.LifetimeValidator = JwtLifetime.Validator(timeProvider);
+            });
+
         services.AddHttpContextAccessor();
 
         services.AddAuthorizationBuilder()

@@ -13,9 +13,9 @@ namespace Ordinis.AcceptanceTests.Support;
 
 /// <summary>
 /// The shared <see cref="OrdinisApiFactory"/>, adapted for acceptance scenarios: a random SQL
-/// Server host port (so it can run alongside <c>Ordinis.IntegrationTests</c>), faster webhook
-/// delivery polling, and a URL guard that additionally trusts the in-process
-/// <see cref="WebhookReceiver"/>.
+/// Server host port (so it can run alongside <c>Ordinis.IntegrationTests</c>), the controllable
+/// <see cref="TestClock"/>, faster webhook delivery polling, and a URL guard that additionally
+/// trusts the in-process <see cref="WebhookReceiver"/>.
 /// </summary>
 internal sealed class AcceptanceApiFactory : OrdinisApiFactory
 {
@@ -27,11 +27,9 @@ internal sealed class AcceptanceApiFactory : OrdinisApiFactory
 
         // Read by WebApplication.CreateBuilder when the host is first built (see the base class
         // for why configuration must be supplied through environment variables).
+        // The retry backoff stays at its production value (30 s, then 60 s): scenarios skip the
+        // test clock ahead to a due retry instead of waiting for it.
         Environment.SetEnvironmentVariable("WebhookDelivery__PollingInterval", "00:00:01");
-
-        // Retries are observable within a scenario; the production backoff (30 s, then 60 s) is
-        // specified by the @needs-clock scenarios, which need a controllable clock instead.
-        Environment.SetEnvironmentVariable("WebhookDelivery__InitialBackoff", "00:00:02");
     }
 
     protected override int? LocalHostPort => null;
@@ -42,6 +40,10 @@ internal sealed class AcceptanceApiFactory : OrdinisApiFactory
 
         builder.ConfigureTestServices(services =>
         {
+            // One controllable clock for every host (the variants inherit this registration).
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(TestHost.Clock);
+
             services.RemoveAll<IWebhookUrlGuard>();
             services.AddSingleton<IWebhookUrlGuard>(new ReceiverAwareUrlGuard(_receiver, new WebhookUrlGuard(TestHost.Dns)));
 

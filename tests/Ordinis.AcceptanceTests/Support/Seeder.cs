@@ -131,6 +131,16 @@ internal sealed class Seeder(World world)
     public async Task<Ordinis.Infrastructure.Webhooks.WebhookDelivery?> LatestDeliveryAsync() =>
         (await WithDbAsync(db => db.WebhookDeliveries.AsNoTracking().ToListAsync())).MaxBy(d => d.Id);
 
+    /// <summary>When the earliest scheduled retry of a pending delivery is due (null if none is scheduled).</summary>
+    public async Task<DateTimeOffset?> NextRetryDueAsync()
+    {
+        List<DateTimeOffset> due = await WithDbAsync(db => db.WebhookDeliveries
+            .Where(d => d.Status == Ordinis.Infrastructure.Webhooks.WebhookDeliveryStatus.Pending && d.AttemptCount > 0)
+            .Select(d => d.NextAttemptAt)
+            .ToListAsync());
+        return due.Count == 0 ? null : due.Min();
+    }
+
     /// <summary>How many deliveries were ever created for a URL.</summary>
     public Task<int> CountDeliveriesToAsync(string url) =>
         WithDbAsync(db => db.WebhookDeliveries.CountAsync(d => d.Url == url));

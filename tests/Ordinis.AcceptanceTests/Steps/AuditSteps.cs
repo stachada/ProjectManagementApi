@@ -49,7 +49,7 @@ internal sealed class AuditSteps(World world, Seeder seeder, ApiDriver api)
         // The preceding step read the trail as the observer; the newest entry is the one it checked.
         JsonElement newest = Assert.Single(world.Response.Json.EnumerateArray().Take(1));
         DateTimeOffset occurredAt = newest.GetProperty("occurredAt").GetDateTimeOffset();
-        Assert.InRange(occurredAt, DateTimeOffset.UtcNow.AddMinutes(-10), DateTimeOffset.UtcNow.AddMinutes(10));
+        Assert.InRange(occurredAt, TestHost.Clock.GetUtcNow().AddMinutes(-10), TestHost.Clock.GetUtcNow().AddMinutes(10));
         Assert.Equal(JsonValueKind.Object, newest.GetProperty("payload").ValueKind);
         Assert.NotEmpty(newest.GetProperty("payload").EnumerateObject());
     }
