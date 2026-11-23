@@ -26,7 +26,7 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-963 scenarios (outline rows expanded): **773 pass, 190 skipped, 0 fail.**
+963 scenarios (outline rows expanded): **871 pass, 92 skipped, 0 fail.**
 
 | Feature | Status |
 | --- | --- |
@@ -55,8 +55,15 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 | Auth/login | ✅ bound — 13 pass; 1 `@needs-rate-limiter` skipped (batch 5) |
 | Auth/token-refresh | ✅ bound — 12 pass; 4 `@needs-clock` skipped (Tier 3) |
 | Auth/logout | ✅ bound — 5 pass |
+| Platform/optimistic-concurrency | ✅ bound — 32 pass |
+| Platform/idempotency | ✅ bound — 17 pass; 1 `@needs-clock` skipped (Tier 3) |
+| Platform/error-responses | ✅ bound — 15 pass; 1 needs an unavailable database (batch 5b) |
+| Platform/sparse-fieldsets | ✅ bound — 12 pass |
+| Platform/api-versioning | ✅ bound — 11 pass |
+| Platform/caching | ✅ bound — 11 pass |
+| Platform/correlation | ✅ bound — 4 pass; 2 need captured logs (batch 5b) |
+| Platform/health, rate-limiting | ⏳ batch 5b — need a database-down host, a Production host and a rate-limited host |
 | Platform/pagination | ✅ bound — 28 pass |
-| Platform/api-versioning, optimistic-concurrency | ◐ 2 / 2 pass via shared steps, rest skipped |
 | *all other features* | ⏳ not bound yet (reported as skipped) |
 
 ## How it works
@@ -177,7 +184,7 @@ Scenarios tagged `@gap` carry a `# GAP-nn` comment pointing here. When a gap is 
 its `@gap` tags are removed (the scenarios become ordinary regression specs) and the row
 moves to **Fixed gaps** below.
 
-*No open gaps — all 24 found by the specs are fixed (see below).*
+*No open gaps — all 25 found by the specs are fixed (see below).*
 
 ### Known edge cases (documented, not fixed)
 
@@ -217,6 +224,7 @@ moves to **Fixed gaps** below.
 | GAP-22 | `GetUserTasks` sent an unknown `sortBy` to newest first whatever `sortDescending` said, while every other task list falls back to `createdAt` in the requested direction | The fallback shares the `createdAt` branch, so it honours the direction. Found binding `user-tasks.feature`. Regression tests: `GetUserTasksHandlerTests.HandleAsync_UnknownSortField_SortsByCreatedAtInTheRequestedDirection`; "An unknown sort field falls back to creation order" scenario |
 | GAP-23 | A missing refresh token was reported on field `Token` — the command's property — although `POST /auth/refresh` takes `refreshToken`, so a client could not match the error to its input (the only request field renamed on its way to a command) | `RefreshTokenValidator` reports it as `RefreshToken` (`OverridePropertyName`); the command keeps `Token`, since a record member cannot share the record's name. Found binding `token-refresh.feature`. Regression test: `AuthEndpointsTests.Refresh_MissingToken_Returns422OnTheRequestField`; "The refresh token is required" scenario |
 | GAP-24 | FluentValidation translated validation messages into the server's current UI culture, so the API's error language depended on the host (Polish on a Polish machine: "Pole 'Refresh Token' nie może być puste.") while every other message is English | `ValidatorOptions.Global.LanguageManager.Enabled = false` in `AddApplicationServices`: always the built-in English messages. Found binding `token-refresh.feature` on a Polish-locale machine. Regression test: `AuthEndpointsTests.Validation_ServerUiCultureIsNotEnglish_MessagesStayEnglish` (runs the request under `pl-PL`, so it reproduces on any host) |
+| GAP-25 | A retried upload with the same `Idempotency-Key` was rejected as "already used with a different request body": the request fingerprint hashed the raw multipart body, whose boundary the client picks anew (usually at random) for every request — so request keys never worked for attachments | `IdempotencyMiddleware` replaces the multipart boundary with a fixed marker before hashing, so the hash depends only on the parts. Found binding `idempotency.feature`. Regression tests: `IdempotencyMiddlewareTests.Post_RetriedUploadWithNewMultipartBoundary_ReplaysAndCreatesOneAttachment` (and `…SameKeyDifferentUploadContent_Returns409Conflict`, which guards that different content still conflicts); "Every create endpoint honours the request key: uploads …" scenario |
 
 ## Out of scope (by design, not gaps)
 

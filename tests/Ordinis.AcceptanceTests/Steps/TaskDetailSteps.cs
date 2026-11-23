@@ -22,10 +22,6 @@ internal sealed partial class TaskDetailSteps(World world, Seeder seeder, ApiDri
     public Task WhenPersonaViewsTheTask(string persona, string title) =>
         api.SendAsync(persona, HttpMethod.Get, $"/api/v1/tasks/{world.TaskNamed(title)}");
 
-    [When("^" + Actor + @" views the task ""([^""]+)"" using API version (\d+)$")]
-    public Task WhenPersonaViewsTheTaskInVersion(string persona, string title, int version) =>
-        api.SendAsync(persona, HttpMethod.Get, $"/api/v{version}/tasks/{world.TaskNamed(title)}");
-
     [When("^" + Actor + @" views an unknown task$")]
     public Task WhenPersonaViewsAnUnknownTask(string persona) =>
         api.SendAsync(persona, HttpMethod.Get, $"/api/v1/tasks/{Guid.CreateVersion7()}");

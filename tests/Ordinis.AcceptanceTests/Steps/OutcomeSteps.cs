@@ -20,6 +20,7 @@ internal sealed class OutcomeSteps(World world)
         ["conflicting"] = HttpStatusCode.Conflict,
         ["invalid"] = HttpStatusCode.UnprocessableEntity,
         ["too many requests"] = HttpStatusCode.TooManyRequests,
+        ["method not allowed"] = HttpStatusCode.MethodNotAllowed,
     };
 
     [Then(@"^the request succeeds$")]
@@ -28,7 +29,7 @@ internal sealed class OutcomeSteps(World world)
         Assert.True(world.Response.IsSuccess, $"Expected a successful response, got {world.Response}");
     }
 
-    [Then(@"^the request is rejected as (malformed|unauthenticated|forbidden|not found|conflicting|invalid|too many requests)$")]
+    [Then(@"^the request is rejected as (malformed|unauthenticated|forbidden|not found|method not allowed|conflicting|invalid|too many requests)$")]
     public void ThenTheRequestIsRejectedAs(string outcome)
     {
         HttpStatusCode expected = Outcomes[outcome];

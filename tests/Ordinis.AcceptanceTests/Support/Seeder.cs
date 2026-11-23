@@ -115,6 +115,29 @@ internal sealed class Seeder(World world)
         return boardIds.Concat(taskIds).ToList();
     });
 
+    /// <summary>The kinds of entity <see cref="CountAsync"/> can count.</summary>
+    public static readonly string[] CountableKinds =
+        ["task", "comment", "attachment", "board", "project", "membership", "webhook", "user", "organization"];
+
+    /// <summary>How many entities of a kind exist (soft-deleted ones included).</summary>
+    public Task<int> CountAsync(string kind) => WithDbAsync(db => kind switch
+    {
+        "task" => db.Tasks.IgnoreQueryFilters().CountAsync(),
+        "comment" => db.Tasks.IgnoreQueryFilters().SelectMany(t => t.Comments).CountAsync(),
+        "attachment" => db.Tasks.IgnoreQueryFilters().SelectMany(t => t.Attachments).CountAsync(),
+        "board" => db.Boards.IgnoreQueryFilters().CountAsync(),
+        "project" => db.Projects.IgnoreQueryFilters().CountAsync(),
+        "membership" => db.Projects.IgnoreQueryFilters().SelectMany(p => p.Members).CountAsync(),
+        "webhook" => db.Projects.IgnoreQueryFilters().SelectMany(p => p.Webhooks).CountAsync(),
+        "user" => db.Users.CountAsync(),
+        "organization" => db.Organizations.CountAsync(),
+        _ => throw new InvalidOperationException($"Unknown kind of entity '{kind}'."),
+    });
+
+    /// <summary>How many (not deleted) tasks with exactly this title are on a board.</summary>
+    public Task<int> CountTasksOnBoardAsync(Guid boardId, string title) =>
+        WithDbAsync(db => db.Tasks.CountAsync(t => t.BoardId == boardId && t.Title == title));
+
     public Task<User> FindUserAsync(Guid userId) =>
         WithDbAsync(db => db.Users.AsNoTracking().SingleAsync(u => u.Id == userId));
 

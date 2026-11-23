@@ -99,6 +99,11 @@ internal sealed class PaginationSteps(World world, Seeder seeder, ApiDriver api)
         Assert.Equal(world.TaskCreationOrder.Take(count), listed);
     }
 
+    /// <summary>A sparse fieldset: the list phrase, then the raw <c>fields</c> value, sent as written.</summary>
+    [When(@"^(\w+) lists (.+) returning only ""([^""]*)""$")]
+    public Task WhenListsReturningOnly(string persona, string list, string fields) =>
+        api.SendAsync(persona, HttpMethod.Get, WithQuery(PathFor(list), $"fields={Uri.EscapeDataString(fields)}"));
+
     [Then(@"^every task appears exactly once$")]
     public void ThenEveryTaskAppearsExactlyOnce()
     {

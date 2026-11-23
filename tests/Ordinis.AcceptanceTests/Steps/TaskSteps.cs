@@ -7,7 +7,8 @@ namespace Ordinis.AcceptanceTests.Steps;
 /// <summary>
 /// Task actions ("When Bob moves the task …") and the arrangement steps built from them
 /// ("Given Bob has renamed …"). Writes state the task's current version unless the step says
-/// otherwise ("using the version Bob read", "without stating a version"). Read-back assertions
+/// otherwise ("using the version Bob read"; "without stating a version" works through
+/// <see cref="RequestModifierSteps"/>). Read-back assertions
 /// live in <see cref="TaskDetailSteps"/>; comments and attachments in their own classes.
 /// </summary>
 [Binding]
@@ -20,7 +21,8 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
     private const int UnknownEnumValue = 99;
 
     /// <summary>Which version a write states in <c>If-Match</c>.</summary>
-    private enum VersionMode { Current, ReadBy, None }
+    /// <remarks>"… without stating a version" is a modifier step (<see cref="RequestModifierSteps"/>).</remarks>
+    private enum VersionMode { Current, ReadBy }
 
     // ---- Arrangement through the API ("has read", "has since …", "has …ed") ----
 
@@ -59,6 +61,13 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
     public async Task GivenPersonaHasRenamedTheTask(string persona, string title, string newTitle)
     {
         ApiResponse response = await RenameAsync(persona, title, newTitle, VersionMode.Current, reader: null);
+        Assert.True(response.IsSuccess, $"Arrangement failed — {persona} could not rename '{title}': {response}");
+    }
+
+    [Given(@"^(\w+) has renamed the task ""([^""]+)"" to ""([^""]+)"" using the version (\w+) read$")]
+    public async Task GivenPersonaHasRenamedTheTaskWithReadVersion(string persona, string title, string newTitle, string reader)
+    {
+        ApiResponse response = await RenameAsync(persona, title, newTitle, VersionMode.ReadBy, reader);
         Assert.True(response.IsSuccess, $"Arrangement failed — {persona} could not rename '{title}': {response}");
     }
 
@@ -187,10 +196,6 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
     public Task WhenPersonaRenamesTheTaskWithReadVersion(string persona, string title, string newTitle, string reader) =>
         RenameAsync(persona, title, newTitle, VersionMode.ReadBy, reader);
 
-    [When("^" + Actor + @" renames the task ""([^""]+)"" to ""([^""]+)"" without stating a version$")]
-    public Task WhenPersonaRenamesTheTaskWithoutVersion(string persona, string title, string newTitle) =>
-        RenameAsync(persona, title, newTitle, VersionMode.None, reader: null);
-
     [When("^" + Actor + @" changes the priority of the task ""([^""]+)"" to (\w+)$")]
     public async Task WhenPersonaChangesThePriority(string persona, string title, Priority priority)
     {
@@ -210,10 +215,6 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
     public Task WhenPersonaDeletesTheTaskWithReadVersion(string persona, string title, string reader) =>
         DeleteAsync(persona, title, VersionMode.ReadBy, reader);
 
-    [When("^" + Actor + @" deletes the task ""([^""]+)"" without stating a version$")]
-    public Task WhenPersonaDeletesTheTaskWithoutVersion(string persona, string title) =>
-        DeleteAsync(persona, title, VersionMode.None, reader: null);
-
     // ---- Workflow ----
 
     [When("^" + Actor + @" moves the task ""([^""]+)"" to (\w+)$")]
@@ -227,10 +228,6 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
     [When("^" + Actor + @" moves the task ""([^""]+)"" to (\w+) using the version (\w+) read$")]
     public async Task WhenPersonaMovesTheTaskWithReadVersion(string persona, string title, ProjectTaskStatus status, string reader) =>
         await MoveAsync(persona, title, status, VersionReadBy(reader, title));
-
-    [When("^" + Actor + @" moves the task ""([^""]+)"" to (\w+) without stating a version$")]
-    public async Task WhenPersonaMovesTheTaskWithoutVersion(string persona, string title, ProjectTaskStatus status) =>
-        await MoveAsync(persona, title, status, ifMatch: null);
 
     [When("^" + Actor + @" closes the task ""([^""]+)""$")]
     public Task WhenPersonaClosesTheTask(string persona, string title) =>
@@ -257,10 +254,6 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
     [When("^" + Actor + @" unassigns the task ""([^""]+)""$")]
     public Task WhenPersonaUnassignsTheTask(string persona, string title) =>
         PostTransitionAsync(persona, title, "unassign", VersionMode.Current, reader: null);
-
-    [When("^" + Actor + @" unassigns the task ""([^""]+)"" without stating a version$")]
-    public Task WhenPersonaUnassignsTheTaskWithoutVersion(string persona, string title) =>
-        PostTransitionAsync(persona, title, "unassign", VersionMode.None, reader: null);
 
     // ---- Helpers ----
 
@@ -320,9 +313,8 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
 
     private async Task<string?> VersionAsync(string title, VersionMode mode, string? reader) => mode switch
     {
-        VersionMode.Current => await CurrentVersionAsync(title),
         VersionMode.ReadBy => VersionReadBy(reader!, title),
-        _ => null,
+        _ => await CurrentVersionAsync(title),
     };
 
     private Task<string> CurrentVersionAsync(string title) =>
