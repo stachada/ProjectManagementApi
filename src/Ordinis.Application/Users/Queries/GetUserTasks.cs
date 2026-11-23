@@ -100,7 +100,8 @@ internal sealed class GetUserTasksHandler(IAppDbContext db, ICurrentUserService 
         // Total count on the filtered (pre-pagination) queryable.
         var totalCount = await queryable.CountAsync(ct);
 
-        // Sorting. See EntityQueryableExtensions.ThenByStableId for why every branch ends with it.
+        // Sorting: an unknown field falls back to createdAt in the requested direction, like every
+        // other task list. See EntityQueryableExtensions.ThenByStableId for why every branch ends with it.
         queryable = filter.SortBy?.ToLowerInvariant() switch
         {
             "title" => filter.SortDescending
@@ -111,10 +112,9 @@ internal sealed class GetUserTasksHandler(IAppDbContext db, ICurrentUserService 
             "duedate" => filter.SortDescending
                                 ? queryable.OrderByDescending(t => t.DueDate).ThenByStableId()
                                 : queryable.OrderBy(t => t.DueDate).ThenByStableId(),
-            "createdat" => filter.SortDescending
+            _ => filter.SortDescending
                                 ? queryable.OrderByDescending(t => t.CreatedAt).ThenByStableId()
                                 : queryable.OrderBy(t => t.CreatedAt).ThenByStableId(),
-            _ => queryable.OrderByDescending(t => t.CreatedAt).ThenByStableId(), // default
         };
 
         // Paginate and materialise.

@@ -17,6 +17,12 @@ public sealed record OrganizationDto
     public required string Name { get; init; }
 
     /// <summary>
+    /// URL-friendly unique identifier, fixed at creation (renaming keeps it). Users state it when
+    /// signing in, because an email is only unique within one organization.
+    /// </summary>
+    public required string Slug { get; init; }
+
+    /// <summary>
     /// Optional description of the organization's purpose.
     /// </summary>
     public string? Description { get; init; }
@@ -31,6 +37,11 @@ public sealed record OrganizationDto
     /// UTC timestamp when the organization was created.
     /// </summary>
     public required DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>
+    /// UTC timestamp of the organization's last change.
+    /// </summary>
+    public required DateTimeOffset UpdatedAt { get; init; }
 
     /// <summary>
     /// Total number of projects belonging to this organization.

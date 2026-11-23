@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Ordinis.Api.Organizations.Requests;
 using Ordinis.Application.Organizations.Dtos;
 using Ordinis.Application.Projects.Dtos;
@@ -76,6 +78,25 @@ public sealed class OrganizationsControllerTests(OrdinisApiFactory factory) : In
         Assert.NotNull(organization);
         Assert.Equal(orgId, organization.Id);
         Assert.Equal("Acme", organization.Name);
+    }
+
+    /// <summary>
+    /// The slug is what users state when signing in, so the details must expose it. Reads raw
+    /// JSON: deserializing into the DTO would hide a field the response leaves out.
+    /// </summary>
+    [Fact]
+    public async Task GetById_ReturnsSlugAndUpdatedAt()
+    {
+        (Guid orgId, _) = await AuthenticateAsOrgAdminAsync();
+        string slug = await SeedAsync(db => db.Organizations.Where(o => o.Id == orgId).Select(o => o.Slug).SingleAsync());
+
+        HttpResponseMessage response = await Client.GetAsync($"/api/v1/organizations/{orgId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using JsonDocument organization = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(slug, organization.RootElement.GetProperty("slug").GetString());
+        Assert.True(organization.RootElement.TryGetProperty("updatedAt", out JsonElement updatedAt));
+        Assert.NotEqual(default, updatedAt.GetDateTimeOffset());
     }
 
     [Fact]

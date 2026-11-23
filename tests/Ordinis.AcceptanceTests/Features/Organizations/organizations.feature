@@ -38,9 +38,14 @@ Feature: Organizations
 
       Examples:
         | case                        | details                           | field       |
-        | missing name                | without a name                    | name        |
         | 101-character name          | with a 101-character name         | name        |
         | 1,001-character description | with a 1001-character description | description |
+
+    # A request without a required field cannot be bound at all, so it is malformed (400);
+    # a field that is present but breaks a rule is invalid (422).
+    Scenario: An organization without a name is rejected as malformed
+      When Olivia creates an organization without a name
+      Then the request is rejected as malformed
 
     Scenario: A regular user cannot create organizations
       When Nora creates an organization "Initech"
@@ -52,6 +57,7 @@ Feature: Organizations
 
   Rule: Users can view their own organization only
 
+    # GAP-21 (fixed): the details include the slug (which users sign in with) and the update time.
     Scenario: Viewing one's own organization
       When Nora views the organization "Acme"
       Then the request succeeds

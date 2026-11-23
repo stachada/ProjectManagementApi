@@ -20,14 +20,17 @@ public class OrganizationMapperTests
             slug: "acme-corp",
             description: "Widget manufacturer");
         organization.CreatedAt = Now;
+        organization.UpdatedAt = Now.AddHours(1);
 
         OrganizationDto dto = organization.ToDto(projectCount: 12);
 
         Assert.Equal(organization.Id, dto.Id);
         Assert.Equal("Acme Corp", dto.Name);
+        Assert.Equal("acme-corp", dto.Slug);
         Assert.Equal("Widget manufacturer", dto.Description);
         Assert.True(dto.IsActive);
         Assert.Equal(Now, dto.CreatedAt);
+        Assert.Equal(Now.AddHours(1), dto.UpdatedAt);
         Assert.Equal(12, dto.ProjectCount);
     }
 

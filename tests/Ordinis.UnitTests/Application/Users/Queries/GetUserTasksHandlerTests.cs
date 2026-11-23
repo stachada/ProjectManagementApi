@@ -113,6 +113,40 @@ public class GetUserTasksHandlerTests
         Assert.Equal(2, result.Page);
     }
 
+    /// <summary>
+    /// An unknown sort field falls back to createdAt in the requested direction — the same rule
+    /// as every other task list — rather than always newest first.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HandleAsync_UnknownSortField_SortsByCreatedAtInTheRequestedDirection(bool sortDescending)
+    {
+        using TestAppDbContext db = TestDbContextFactory.Create();
+        User user = UserBuilder.Create();
+        db.Users.Add(user);
+
+        Guid boardId = SeedBoard(db);
+        var created = new List<Guid>();
+        for (int i = 0; i < 3; i++)
+        {
+            ProjectTask task = TaskBuilder.Create(boardId: boardId, title: $"Task {i}", now: Now);
+            task.Assign(user.Id, Guid.CreateVersion7(), Now);
+            task.CreatedAt = Now.AddMinutes(i);
+            db.Tasks.Add(task);
+            created.Add(task.Id);
+        }
+        await db.SaveChangesAsync();
+
+        PagedResult<TaskSummaryDto> result = await new GetUserTasksHandler(db, AdminCurrentUser)
+            .HandleAsync(
+                new GetUserTasks(user.Id, new TaskFilter { SortBy = "colour", SortDescending = sortDescending }),
+                CancellationToken.None);
+
+        IEnumerable<Guid> expected = sortDescending ? Enumerable.Reverse(created) : created;
+        Assert.Equal(expected, result.Items.Select(t => t.Id));
+    }
+
     [Fact]
     public async Task HandleAsync_AssigneeDisplayNameResolvedFromUserTable()
     {

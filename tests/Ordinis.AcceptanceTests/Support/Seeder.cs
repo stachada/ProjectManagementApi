@@ -77,6 +77,18 @@ internal sealed class Seeder(World world)
         return true;
     });
 
+    /// <summary>
+    /// Gives a seeded user a specific email. The domain has no "change email" operation, so this
+    /// sets the mapped property directly — arrangement only, never a behaviour under test.
+    /// </summary>
+    public Task SetUserEmailAsync(Guid userId, string email) => WithDbAsync(async db =>
+    {
+        User user = await db.Users.SingleAsync(u => u.Id == userId);
+        db.Entry(user).Property(u => u.Email).CurrentValue = email;
+        await db.SaveChangesAsync();
+        return true;
+    });
+
     public Task<User> FindUserAsync(Guid userId) =>
         WithDbAsync(db => db.Users.AsNoTracking().SingleAsync(u => u.Id == userId));
 
