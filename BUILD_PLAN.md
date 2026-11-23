@@ -1399,7 +1399,13 @@ See [docs/REST_API_CONCEPTS.md#hateoas](docs/REST_API_CONCEPTS.md#hateoas) for t
     | GAP-27 | Deliveries of a batch were sent one after another, so a receiver that never answered held every delivery behind it back by the 10 s timeout, on every attempt | Concurrent delivery within the batch (`Parallel.ForEachAsync`, `MaxParallelDeliveries` = 8), same transaction and single `SaveChanges` |
 
     Spec correction: "A slow receiver does not delay other webhooks" only asked for eventual delivery, which sequential delivery also met; it now checks that the other receiver is served while the slow one is still not answering. Production seam: `WebhookUrlGuard` resolves host names through `IHostAddressResolver` (`DnsHostAddressResolver` in production), so the guard's host-name decisions are testable. Test infrastructure: `ScriptedDns`, scriptable named receivers, event-pipeline draining before a webhook scenario's first action, background jobs stopped around every database reset, a 2 s retry backoff in the test host, and `InternalsVisibleTo("Ordinis.IntegrationTests")` on `Ordinis.Infrastructure` for driving the delivery dispatcher directly
-  - [ ] Tier 3 — controllable test clock and scriptable webhook receiver for `@needs-clock` / delivery-retry scenarios; `@manual` for the rest
+  - [x] Tier 3 — controllable test clock for the `@needs-clock` scenarios (the scriptable webhook receiver came with batch 6): **963 pass, 0 skipped, 0 fail** — the whole specification runs; no scenario needed `@manual`. New gap:
+
+    | Gap | Problem | Fix |
+    |---|---|---|
+    | GAP-28 | Two clock reads bypassed `TimeProvider`: IdentityModel checked access-token lifetimes against the system clock, and the in-memory cache timed idempotency-key expiry with its own clock — the same time in production, but against the time-abstraction rule, so under another clock an expired access token kept working and an expired key was still replayed | `JwtLifetime.Validator` as the bearer options' `LifetimeValidator` (IdentityModel's own `TokenValidationParameters.TimeProvider` is internal in 8.23) and `MemoryCacheOptions.Clock` = `TimeProviderSystemClock`; supersedes the Phase 7 "`MemoryCacheOptions` has no `TimeProvider`-based clock override" note |
+
+    Test infrastructure: `TestClock` (real time plus an offset steps move forward; timers stay real) as every host's `TimeProvider`; the 2 s test backoff is gone — retries run on the production schedule (30 s, 60 s), and waiting steps skip the clock to each scheduled retry. The two rate-limit window scenarios run on `TestHost.RateLimitedShortWindows` (windows 10× shorter, real waits), because `System.Threading.RateLimiting` has no `TimeProvider` seam. Suite time: about 7 minutes
 
 **Findings:**
 
