@@ -132,8 +132,13 @@ object-property polymorphic-serialization behavior.
 
 ### 3. `WebhookDeliveryDispatcherService` delivers it
 
-On its own 5-second poll tick, it fetches due `Pending` rows and, for each, `POST`s
-`Payload` to `Url` via a named `HttpClient("WebhookDelivery")` (10s timeout):
+On its own 5-second poll tick, it fetches due `Pending` rows and `POST`s each one's
+`Payload` to its `Url` via a named `HttpClient("WebhookDelivery")` (10s timeout). A batch's
+deliveries are sent concurrently (`Parallel.ForEachAsync`, at most `MaxParallelDeliveries` = 8
+at a time), so a receiver that is slow or never answers delays only its own delivery — sent one
+after another, every delivery queued behind it waited out its 10 s timeout, on every attempt.
+That needs no locking: each delivery only updates its own row's entity, and the batch is saved
+once, in the same transaction that claimed it.
 
 - **2xx response** → `Status = Delivered`, `DeliveredAt` set.
 - **Anything else (non-2xx, timeout, connection refused, ...)** → `AttemptCount++`, and:
@@ -207,7 +212,10 @@ time delivery actually runs (DNS rebinding, covered below).
 
 `IWebhookUrlGuard` (`src/Ordinis.Application/Common/IWebhookUrlGuard.cs`, implemented by
 `WebhookUrlGuard` in `src/Ordinis.Infrastructure/Webhooks/`) resolves a URL's host and
-rejects it unless **every** resolved address is public and routable. It's checked in two
+rejects it unless **every** resolved address is public and routable. Host names are resolved
+through `IHostAddressResolver` — the operating system's DNS in production
+(`DnsHostAddressResolver`); tests substitute a scripted resolver to cover host names, not just
+IP literals (e.g. a host that resolves to a private address, or that is rebound to one). It's checked in two
 places, deliberately not just one:
 
 - **`RegisterWebhookValidator`** — at registration time, so a client attempting to
@@ -298,6 +306,10 @@ Verified manually end to end during implementation against a real SQL Server ins
 a local HTTP receiver: `task.created` and `task.moved` both delivered with the expected
 envelope shape, and a webhook pointed at an unreachable port correctly retried at the
 30s/60s backoff schedule before landing in `Failed` with the error logged.
+
+Concurrent delivery is covered by `WebhookDeliveryDispatcherTests` (integration: a slow delivery
+due first must not hold back the next one), and the guard's host-name decisions by
+`WebhookUrlGuardTests`.
 
 Unit coverage: `ProjectTests` (registration, the `MaxWebhooks` cap, unregistration,
 archived-project guards), `RegisterWebhookValidatorTests`/`UnregisterWebhookValidatorTests`,
