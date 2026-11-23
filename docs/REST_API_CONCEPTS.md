@@ -205,7 +205,8 @@ when to try again) before they consume real backend resources.
 
 Both limits are config-driven (`RateLimiting` section of `appsettings.json`) rather than
 hardcoded. Rejected requests get a real `429 Too Many Requests`: the limiter's `OnRejected`
-callback reads the algorithm's own `Retry-After` metadata and sets it as a response header,
+callback always sets a `Retry-After` header — the algorithm's own retry-after metadata, or,
+for the sliding window (which reports none), one window segment —
 then writes a body through the same `ProblemDetailsFactory` every other error response uses
 — RFC 9457 shape, `correlationId` included — instead of the default plain-text rejection.
 `GET /health` is exempted via `.DisableRateLimiting()`, since orchestrator liveness/readiness

@@ -278,8 +278,11 @@ change independently.
   `UseAuthentication()`, so an invalid token is treated as anonymous and lands in its IP's
   window. Limits are bound from `RateLimitingOptions` (`RateLimiting` section of
   `appsettings.json`) rather than hardcoded. Rejected requests get `429 Too Many Requests` via
-  `options.OnRejected`, which reads the limiter's own `Retry-After` metadata onto the response
-  header and writes a `ProblemDetailsFactory`-shaped body — the same RFC 9457 shape every other
+  `options.OnRejected`, which always sets `Retry-After` (whole seconds): the limiter's own
+  retry-after metadata when it has one (the fixed window does), otherwise one segment of the
+  sliding window (`WindowSeconds / SegmentsPerWindow`, 10 s by default) — the sliding-window
+  limiter reports none, so authenticated callers used to get a `429` without it. It then writes
+  a `ProblemDetailsFactory`-shaped body — the same RFC 9457 shape every other
   error response uses — instead of `AddRateLimiter`'s default plain-text rejection.
   `GET /health` opts out via `.DisableRateLimiting()` in `Program.cs`, so orchestrator
   liveness/readiness probes don't compete with real traffic for the same budget. Extracting the
@@ -387,7 +390,9 @@ typed, exactly as the project's mapping conventions call for.
 
 Configured in `Program.cs` via `builder.Host.UseSerilog(...)`, reading levels and sinks from the
 `Serilog` section of `appsettings.json` / `appsettings.{Environment}.json` (see
-[appsettings.json](../src/Ordinis.Api/appsettings.json)). Packages live in `Ordinis.Api` only —
+[appsettings.json](../src/Ordinis.Api/appsettings.json)), plus any `ILogEventSink` / enricher
+registered in DI (`ReadFrom.Services`) — which is how the acceptance tests capture the real
+pipeline's events. Packages live in `Ordinis.Api` only —
 `Ordinis.Infrastructure` and `Ordinis.Application` depend on the generic `Microsoft.Extensions.Logging`
 abstractions (`ILogger<T>`), never on Serilog directly, so the concrete logging framework stays a
 composition-root concern, swappable without touching any other layer.

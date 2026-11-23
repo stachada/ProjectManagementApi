@@ -66,8 +66,10 @@ A `WebApplicationFactory<Program>` that owns one `MsSqlContainer` for its whole 
   Every request from `WebApplicationFactory`'s in-process `TestServer` client shares the same
   loopback partition key, so a test suite firing more than 100 requests in a minute would start
   getting spurious `429`s. `ConfigureTestServices` overrides `RateLimiterOptions.GlobalLimiter` to
-  `null` for this factory. A dedicated rate-limiting test (still on the BUILD_PLAN checklist)
-  should build its own factory/limiter config instead of relying on this shared instance.
+  `null` for this factory — unless the host registers `KeepProductionRateLimiter` (in
+  `Ordinis.Testing`), which keeps the production limiter exactly as `Program.cs` configures it;
+  the acceptance tests' rate-limited host variant does that. `RateLimitingTests` instead installs
+  small, deterministic limiters with `PostConfigure<RateLimiterOptions>`.
 
 - **`ResetDatabaseAsync()`** wipes table data via Respawn. The `Respawner` is created lazily on
   first use and cached — building it involves introspecting the schema's foreign-key graph to
