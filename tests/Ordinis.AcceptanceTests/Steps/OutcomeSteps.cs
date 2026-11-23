@@ -42,7 +42,7 @@ internal sealed class OutcomeSteps(World world)
     public void ThenTheRequestIsRejectedWithError(string errorCode)
     {
         ThenTheRequestIsRejectedAs("invalid");
-        Assert.Equal($"urn:ordinis:error:{errorCode}", world.Response.ProblemType);
+        Assert.True(world.Response.ProblemType == $"urn:ordinis:error:{errorCode}", world.Response.ToString());
     }
 
     [Then(@"^the request is rejected as invalid on field ""([^""]+)""$")]

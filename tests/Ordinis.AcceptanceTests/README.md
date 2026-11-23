@@ -26,7 +26,7 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-963 scenarios (outline rows expanded): **401 pass, 562 skipped, 0 fail.**
+963 scenarios (outline rows expanded): **566 pass, 397 skipped, 0 fail.**
 
 | Feature | Status |
 | --- | --- |
@@ -38,9 +38,13 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 | Tasks/task-creation | ✅ bound — 28 pass |
 | Tasks/task-attachments | ✅ bound — 24 pass |
 | Tasks/task-hypermedia | ✅ bound — 18 pass |
+| Projects/project-membership | ✅ bound — 47 pass |
+| Projects/projects | ✅ bound — 46 pass |
+| Projects/project-lifecycle | ✅ bound — 36 pass |
+| Projects/project-audit | ✅ bound — 21 pass |
+| Boards/boards | ✅ bound — 50 pass |
 | Platform/pagination | ✅ bound — 28 pass |
-| Projects/project-membership, projects, project-lifecycle | ◐ 18 / 14 / 9 pass via shared steps, rest skipped |
-| Authorization/tenant-isolation, role-permissions, resource-visibility | ◐ 10 / 6 / 6 pass via shared steps, rest skipped |
+| Authorization/tenant-isolation, resource-visibility, role-permissions | ◐ 14 / 8 / 6 pass via shared steps, rest skipped |
 | Organizations, Users, Boards, Platform/api-versioning | ◐ a few pass via shared steps, rest skipped |
 | *all other features* | ⏳ not bound yet (reported as skipped) |
 
@@ -162,7 +166,7 @@ Scenarios tagged `@gap` carry a `# GAP-nn` comment pointing here. When a gap is 
 its `@gap` tags are removed (the scenarios become ordinary regression specs) and the row
 moves to **Fixed gaps** below.
 
-*No open gaps — all 19 found by the specs are fixed (see below).*
+*No open gaps — all 20 found by the specs are fixed (see below).*
 
 ### Known edge cases (documented, not fixed)
 
@@ -197,6 +201,7 @@ moves to **Fixed gaps** below.
 | GAP-17 | **Security (SSRF):** the `WebhookDelivery` HttpClient followed redirects (default `AllowAutoRedirect = true`), so a public receiver could redirect delivery to loopback / private / cloud-metadata addresses that `WebhookUrlGuard` never vets | primary handler `SocketsHttpHandler { AllowAutoRedirect = false }`; a 3xx is a failed attempt. Regression test: `Ordinis.IntegrationTests/Common/WebhookDeliveryHttpClientTests` |
 | GAP-18 | An attachment did not say who uploaded it, although only the uploader (or a project / org Admin) may remove it — a client could not tell whether to offer "remove" | `AttachmentDto.UploadedByUserId`, mapped in `TaskMapper.ToAttachmentDto`. Found binding `task-attachments.feature`. Regression tests: `TaskMapperTests.ToDto_Attachments_MapAllFields_OrderedByUploadedAt`, `TasksControllerTests.AddAttachment_ValidFile_Returns201WithDownloadUrl`; "Uploading an attachment" scenario |
 | GAP-19 | A valid file name over ~218 characters (the validator allows 255) → 500: the stored file is named `{guid}_{name}`, which exceeded the filesystem's 255-character limit per path component | `LocalFileStorageService` shortens the *stored* name to 100 characters, keeping the extension; the original name is kept in the database and returned unchanged. Found binding `task-attachments.feature`. Regression tests: `TasksControllerTests.AddAttachment_FileNameAtMaximumLength_Returns201AndKeepsTheFullName`; "A file name of exactly 255 characters is accepted" scenario |
+| GAP-20 | No `JsonStringEnumConverter`: task `status`/`priority` and member `role` were sent as numbers, and JSON bodies with names (`{"status":"InProgress"}`, as the docs showed) were rejected with 400 — while query strings accepted names and `UserDto.OrgRole` was already a string | `JsonStringEnumConverter` on the MVC and Minimal API JSON options, and in `EventJson.Options` for outbox payloads (the audit trail) and webhook envelopes. Names out; names *or* numbers in, so ordinal clients keep working (a pre-1.0 change for clients reading numbers). Found binding `project-membership.feature`. Regression tests: `EnumSerializationTests`, `EventJsonTests`; the acceptance driver now sends names |
 
 ## Out of scope (by design, not gaps)
 

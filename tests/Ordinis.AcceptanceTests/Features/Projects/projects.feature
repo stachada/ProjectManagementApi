@@ -30,13 +30,18 @@ Feature: Projects
       Then the request succeeds
       And the project "Hermes" has no description
 
+    # A request whose required field is absent cannot be bound at all, so it is malformed (400);
+    # one that binds but breaks a rule is invalid (422).
+    Scenario: A project without a name is rejected as malformed
+      When Nora creates a project in "Acme" without a name
+      Then the request is rejected as malformed
+
     Scenario Outline: Invalid project details: <case>
       When Nora creates a project in "Acme" <details>
       Then the request is rejected as invalid on field "<field>"
 
       Examples:
         | case                          | details                             | field       |
-        | missing name                  | without a name                      | name        |
         | 101-character name            | with a 101-character name           | name        |
         | 1,001-character description   | with a 1001-character description   | description |
 

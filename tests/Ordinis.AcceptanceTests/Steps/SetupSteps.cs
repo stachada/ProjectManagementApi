@@ -129,6 +129,10 @@ internal sealed class SetupSteps(World world, Seeder seeder)
     public Task GivenATask(string title, string board) =>
         seeder.CreateTaskAsync(world.BoardNamed(board), title);
 
+    [Given(@"^a task ""([^""]+)"" on board ""([^""]+)"" created by (\w+)$")]
+    public Task GivenATaskCreatedBy(string title, string board, string reporter) =>
+        seeder.CreateTaskAsync(world.BoardNamed(board), title, reporterId: world.PersonaNamed(reporter).UserId);
+
     /// <summary>
     /// A task with details given as a two-column "field | value" table without a header row
     /// (Reqnroll reads the first line as the header, so it is included). Fields: description,

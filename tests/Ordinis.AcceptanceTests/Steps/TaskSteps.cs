@@ -34,7 +34,7 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
         world.ReadVersions[(persona, taskId)] = response.ETag;
     }
 
-    [Given(@"^(\w+) has since moved the task ""([^""]+)"" to (\w+)$")]
+    [Given(@"^(\w+) has (?:since )?moved the task ""([^""]+)"" to (\w+)$")]
     public async Task GivenPersonaHasSinceMovedTheTask(string persona, string title, ProjectTaskStatus status)
     {
         ApiResponse response = await MoveAsync(persona, title, status, await CurrentVersionAsync(title));

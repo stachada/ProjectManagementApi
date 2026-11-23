@@ -37,13 +37,18 @@ Feature: Boards
       When Bob creates a board "Sprint 1" in project "Hermes"
       Then the request succeeds
 
+    # A request whose required field is absent cannot be bound at all, so it is malformed (400);
+    # one that binds but breaks a rule is invalid (422).
+    Scenario: A board without a name is rejected as malformed
+      When Bob creates a board without a name in project "Apollo"
+      Then the request is rejected as malformed
+
     Scenario Outline: Invalid board name: <case>
       When Bob creates a board <name> in project "Apollo"
       Then the request is rejected as invalid on field "name"
 
       Examples:
         | case               | name                        |
-        | missing            | without a name              |
         | 101 characters     | with a 101-character name   |
 
     Scenario: The project must not be archived

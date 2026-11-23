@@ -79,7 +79,7 @@ Feature: Project archiving and deletion
         | adds Nora to project "Apollo" as a Member                        |
         | changes the role of Bob in project "Apollo" to Admin             |
         | removes Bob from project "Apollo"                                |
-        | registers a webhook for project "Apollo" at "https://hooks.example.com/ordinis" |
+        | registers a webhook for project "Apollo"                         |
 
     Scenario: Boards cannot be created in an archived project
       When Alice creates a board "Sprint 2" in project "Apollo"
