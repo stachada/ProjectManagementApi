@@ -1392,7 +1392,13 @@ See [docs/REST_API_CONCEPTS.md#hateoas](docs/REST_API_CONCEPTS.md#hateoas) for t
     | GAP-26 | Authenticated callers over the limit got `429` without `Retry-After` (the body tells them to read it): only the fixed window (anonymous) reports retry-after metadata, not the sliding window (authenticated) | `OnRejected` falls back to one sliding-window segment (10 s by default) |
 
     Spec correction: in Production an anonymous request for the OpenAPI document is `401`, not `404` — unknown addresses fall under the deny-by-default policy, so anonymous callers are asked to sign in rather than told what exists; the scenario now also checks that a signed-in user gets `404`. Test infrastructure: host variants (`TestHost.Development` / `Production` / `RateLimited`, built with `WithWebHostBuilder`, background jobs removed), `KeepProductionRateLimiter` marker in `Ordinis.Testing`, a `DatabaseOutage` connection interceptor, and a `CapturedLogs` Serilog sink — enabled by `Program.cs` now also reading sinks and enrichers from DI (`ReadFrom.Services`)
-  - [ ] Batch 6 — webhooks (subscriptions and delivery)
+  - [x] Batch 6 — webhooks (`webhook-subscriptions`, `webhook-delivery`): both bound; **954 pass, 9 skipped, 0 fail** — every feature is now bound, and only the 9 `@needs-clock` scenarios remain. New gap:
+
+    | Gap | Problem | Fix |
+    |---|---|---|
+    | GAP-27 | Deliveries of a batch were sent one after another, so a receiver that never answered held every delivery behind it back by the 10 s timeout, on every attempt | Concurrent delivery within the batch (`Parallel.ForEachAsync`, `MaxParallelDeliveries` = 8), same transaction and single `SaveChanges` |
+
+    Spec correction: "A slow receiver does not delay other webhooks" only asked for eventual delivery, which sequential delivery also met; it now checks that the other receiver is served while the slow one is still not answering. Production seam: `WebhookUrlGuard` resolves host names through `IHostAddressResolver` (`DnsHostAddressResolver` in production), so the guard's host-name decisions are testable. Test infrastructure: `ScriptedDns`, scriptable named receivers, event-pipeline draining before a webhook scenario's first action, background jobs stopped around every database reset, a 2 s retry backoff in the test host, and `InternalsVisibleTo("Ordinis.IntegrationTests")` on `Ordinis.Infrastructure` for driving the delivery dispatcher directly
   - [ ] Tier 3 — controllable test clock and scriptable webhook receiver for `@needs-clock` / delivery-retry scenarios; `@manual` for the rest
 
 **Findings:**
