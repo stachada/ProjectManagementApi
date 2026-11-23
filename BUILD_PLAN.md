@@ -1362,7 +1362,14 @@ See [docs/REST_API_CONCEPTS.md#hateoas](docs/REST_API_CONCEPTS.md#hateoas) for t
     | GAP-20 | No `JsonStringEnumConverter`: `status`/`priority`/`role` went out as numbers and JSON bodies with names were rejected (400) — though the docs showed names, query strings accepted them and `UserDto.OrgRole` was already a string | Converter on the MVC and Minimal API JSON options and in `EventJson.Options` (outbox/audit payloads, webhook envelopes): names out, names *or* numbers in. Integration tests read DTOs via `ApiJson.Options`; the acceptance driver now sends names |
 
     Spec/binding corrections: missing project and board names are *malformed* (400), as in batch 1; "deleted" checks go through the API (the soft-delete filter is per entity, so a deleted project's boards and tasks are still rows — the API hides them); the archived-project webhook row registers the test receiver, since the scenario is about archiving, not URLs (fake-host DNS for the webhook features is batch 6 work: `WebhookUrlGuard` resolves through `Dns` directly)
-  - [ ] Batch 3 — organizations and users
+  - [x] Batch 3 — organizations and users (`organizations`, `organization-lifecycle`, `user-management`, `user-lifecycle`, `user-tasks`): all 5 fully bound; **667 pass, 296 skipped, 0 fail**. New gaps:
+
+    | Gap | Problem | Fix |
+    |---|---|---|
+    | GAP-21 | The organization details had no `slug` — what users state when signing in, so the API never told a client its value — and no `updatedAt` | `OrganizationDto.Slug` and `UpdatedAt` (additive) |
+    | GAP-22 | `GetUserTasks` sent an unknown `sortBy` to newest first whatever `sortDescending` said; every other task list falls back to `createdAt` in the requested direction | The fallback shares the `createdAt` branch |
+
+    Spec/binding corrections: missing organization name and missing user display name / email / password are *malformed* (400), as in batches 1–2; a user's task list is oldest first by default like every other task list (the spec had assumed newest first — the API documents `createdAt` ascending). Bindings: `UserSteps` (users created through the API become personas), a session refresh that signs in first when the persona has no session yet, and a sign-in-error check that compares an inactive account's rejection with an unknown email's
   - [ ] Batch 4 — auth, authorization and search
   - [ ] Batch 5 — platform cross-cutting (concurrency, idempotency, versioning, errors, fields, caching, correlation, health)
   - [ ] Batch 6 — webhooks (subscriptions and delivery)
