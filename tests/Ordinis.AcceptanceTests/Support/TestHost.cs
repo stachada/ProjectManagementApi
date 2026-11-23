@@ -50,6 +50,14 @@ internal sealed class TestHost
     /// <summary>Every event any host logs.</summary>
     public static CapturedLogs Logs { get; } = new();
 
+    /// <summary>What host names resolve to, as far as the webhook URL guard is concerned.</summary>
+    public static ScriptedDns Dns { get; } = new();
+
+    /// <summary>A second API instance with its own background jobs ("two API instances share the database").</summary>
+    private static WebApplicationFactory<Program>? _secondInstance;
+
+    private static bool _workersStopped;
+
     public static WebApplicationFactory<Program> Development => DevelopmentHost.Value;
 
     public static WebApplicationFactory<Program> Production => ProductionHost.Value;
@@ -85,10 +93,67 @@ internal sealed class TestHost
     public static async Task AfterScenario()
     {
         Outage.IsActive = false;
+        Dns.Reset();
+
+        if (_secondInstance is not null)
+        {
+            await _secondInstance.DisposeAsync();
+            _secondInstance = null;
+        }
+
+        // Stop the background jobs around the reset: an in-flight batch (a delivery waiting on a
+        // slow receiver, say) is cancelled and rolled back instead of finishing — or retrying —
+        // inside the next scenario.
+        if (!_workersStopped)
+        {
+            await StopWorkersAsync();
+        }
+
+        Receiver.Clear();
         await Factory.ResetDatabaseAsync();
+        await StartWorkersAsync();
         Receiver.Clear();
         Logs.Clear();
     }
+
+    /// <summary>Stops the main host's background jobs (outbox dispatch, webhook delivery), as if it went down.</summary>
+    public static async Task StopWorkersAsync()
+    {
+        foreach (IHostedService worker in Workers())
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+
+        _workersStopped = true;
+    }
+
+    /// <summary>Starts the main host's background jobs again, as after a restart.</summary>
+    public static async Task StartWorkersAsync()
+    {
+        foreach (IHostedService worker in Workers())
+        {
+            await worker.StartAsync(CancellationToken.None);
+        }
+
+        _workersStopped = false;
+    }
+
+    /// <summary>Whether the main host's background jobs are running.</summary>
+    public static bool WorkersRunning => !_workersStopped;
+
+    /// <summary>
+    /// Starts a second API instance on the same database, with its own background jobs, for the
+    /// rest of the scenario.
+    /// </summary>
+    public static void StartSecondInstance()
+    {
+        _secondInstance = Factory.WithWebHostBuilder(_ => { });
+        _ = _secondInstance.Services; // building the host starts its background jobs
+    }
+
+    private static IEnumerable<IHostedService> Workers() =>
+        Factory.Services.GetServices<IHostedService>()
+            .Where(s => s.GetType().Namespace?.StartsWith("Ordinis.", StringComparison.Ordinal) == true);
 
     private static WebApplicationFactory<Program> Variant(string? environment = null, bool rateLimited = false) =>
         Factory.WithWebHostBuilder(builder =>

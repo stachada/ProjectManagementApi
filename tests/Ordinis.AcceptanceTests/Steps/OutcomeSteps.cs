@@ -51,7 +51,9 @@ internal sealed class OutcomeSteps(World world)
     {
         ThenTheRequestIsRejectedAs("invalid");
         Assert.True(
-            world.Response.ValidationErrorFields.Any(f => string.Equals(f, field, StringComparison.OrdinalIgnoreCase)),
+            world.Response.ValidationErrorFields.Any(f =>
+                string.Equals(f, field, StringComparison.OrdinalIgnoreCase)
+                || f.StartsWith(field + "[", StringComparison.OrdinalIgnoreCase)), // an item of a list field, e.g. "EventTypes[0]"
             $"Expected a validation error on '{field}', got {world.Response}");
     }
 

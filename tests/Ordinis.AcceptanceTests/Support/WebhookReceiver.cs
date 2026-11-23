@@ -11,13 +11,19 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Ordinis.AcceptanceTests.Support;
 
 /// <summary>
-/// A real loopback HTTP server (Kestrel) standing in for third-party webhook receivers. The
-/// API's background dispatcher really POSTs to it, so delivery is exercised end-to-end.
-/// Each named receiver in a scenario gets its own path under <see cref="BaseAddress"/>.
+/// A real HTTP server on loopback that stands in for webhook receivers. Each named receiver
+/// ("Chat", "CI") is a path, <c>/hooks/{name}</c>; it records every request it gets — failed
+/// attempts included — and answers as its script says (200 OK by default).
 /// </summary>
+/// <remarks>
+/// The addresses the feature files give receivers ("https://chat.example.com/hooks/ordinis") are
+/// labels: deliveries really go to <see cref="UrlFor"/>, which the test host's URL guard allows.
+/// </remarks>
 internal sealed class WebhookReceiver : IAsyncDisposable
 {
     private readonly ConcurrentQueue<ReceivedWebhook> _received = new();
+    private readonly ConcurrentDictionary<string, Func<int, ReceiverResponse>> _scripts = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.Ordinal);
     private WebApplication? _app;
 
     public Uri BaseAddress { get; private set; } = null!;
@@ -28,12 +34,40 @@ internal sealed class WebhookReceiver : IAsyncDisposable
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         _app = builder.Build();
 
-        _app.MapPost("/hooks/{receiver}", async (string receiver, HttpRequest request) =>
+        _app.MapMethods("/hooks/{receiver}", ["POST", "PUT", "GET"], async (string receiver, HttpContext context) =>
         {
-            using var reader = new StreamReader(request.Body);
+            using var reader = new StreamReader(context.Request.Body);
             string body = await reader.ReadToEndAsync();
-            _received.Enqueue(new ReceivedWebhook(receiver, request.ContentType, body));
-            return Results.Ok();
+            int attempt = _attempts.AddOrUpdate(receiver, 1, (_, n) => n + 1);
+            _received.Enqueue(new ReceivedWebhook(receiver, context.Request.Method, context.Request.ContentType, body, DateTimeOffset.UtcNow));
+
+            ReceiverResponse response = _scripts.TryGetValue(receiver, out Func<int, ReceiverResponse>? script)
+                ? script(attempt)
+                : ReceiverResponse.Ok;
+
+            if (response.Abort)
+            {
+                context.Abort();
+                return;
+            }
+
+            if (response.Hang is TimeSpan hang)
+            {
+                try
+                {
+                    await Task.Delay(hang, context.RequestAborted);
+                }
+                catch (OperationCanceledException)
+                {
+                    return; // the client gave up waiting
+                }
+            }
+
+            context.Response.StatusCode = response.Status;
+            if (response.Location is not null)
+            {
+                context.Response.Headers.Location = response.Location;
+            }
         });
 
         await _app.StartAsync();
@@ -45,41 +79,57 @@ internal sealed class WebhookReceiver : IAsyncDisposable
         BaseAddress = new Uri(address);
     }
 
-    /// <summary>The URL a webhook must be registered with to reach the receiver called <paramref name="name"/>.</summary>
     public string UrlFor(string name) => new Uri(BaseAddress, $"/hooks/{Uri.EscapeDataString(name)}").ToString();
 
-    /// <summary>Whether <paramref name="url"/> points at this receiver (used to exempt it from the SSRF guard).</summary>
     public bool Owns(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
         && uri.Scheme == BaseAddress.Scheme
         && uri.Host == BaseAddress.Host
         && uri.Port == BaseAddress.Port;
 
+    /// <summary>How the receiver answers its Nth request (1-based) from now on.</summary>
+    public void Script(string name, Func<int, ReceiverResponse> script) => _scripts[name] = script;
+
     public IReadOnlyList<ReceivedWebhook> ReceivedBy(string name) =>
         _received.Where(r => r.Receiver == name).ToList();
 
-    /// <summary>Forgets everything received — called between scenarios.</summary>
-    public void Clear() => _received.Clear();
+    public IReadOnlyList<ReceivedWebhook> ReceivedByAnyone => [.. _received];
 
-    /// <summary>
-    /// Polls until a delivery to <paramref name="name"/> satisfies <paramref name="match"/>.
-    /// Delivery is asynchronous: outbox poll (5 s) + delivery poll (1 s in tests).
-    /// </summary>
+    /// <summary>Forgets what was received (and the attempt numbering); scripts stay.</summary>
+    public void ForgetReceived()
+    {
+        _received.Clear();
+        _attempts.Clear();
+    }
+
+    /// <summary>Back to the initial state: nothing received, every receiver answering 200.</summary>
+    public void Clear()
+    {
+        ForgetReceived();
+        _scripts.Clear();
+    }
+
     public async Task<ReceivedWebhook?> WaitForAsync(string name, Func<ReceivedWebhook, bool> match, TimeSpan timeout)
     {
+        IReadOnlyList<ReceivedWebhook> hits = await WaitForCountAsync(name, match, 1, timeout);
+        return hits.FirstOrDefault();
+    }
+
+    /// <summary>Waits until <paramref name="count"/> matching requests arrived (or the timeout), returning the matches.</summary>
+    public async Task<IReadOnlyList<ReceivedWebhook>> WaitForCountAsync(
+        string name, Func<ReceivedWebhook, bool> match, int count, TimeSpan timeout)
+    {
         DateTime deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
+        while (true)
         {
-            ReceivedWebhook? hit = ReceivedBy(name).FirstOrDefault(match);
-            if (hit is not null)
+            List<ReceivedWebhook> hits = ReceivedBy(name).Where(match).ToList();
+            if (hits.Count >= count || DateTime.UtcNow >= deadline)
             {
-                return hit;
+                return hits;
             }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(250));
+            await Task.Delay(TimeSpan.FromMilliseconds(200));
         }
-
-        return null;
     }
 
     public async ValueTask DisposeAsync()
@@ -91,17 +141,26 @@ internal sealed class WebhookReceiver : IAsyncDisposable
     }
 }
 
-/// <summary>One HTTP request received by <see cref="WebhookReceiver"/>.</summary>
-internal sealed record ReceivedWebhook(string Receiver, string? ContentType, string Body)
+/// <summary>How a scripted receiver answers one request.</summary>
+/// <param name="Status">HTTP status to answer with.</param>
+/// <param name="Location">A <c>Location</c> header (for redirects).</param>
+/// <param name="Hang">Wait this long before answering (or until the client gives up).</param>
+/// <param name="Abort">Drop the connection without answering.</param>
+internal sealed record ReceiverResponse(int Status = 200, string? Location = null, TimeSpan? Hang = null, bool Abort = false)
 {
-    /// <summary>The envelope's <c>event</c> field, e.g. <c>task.moved</c>.</summary>
+    public static readonly ReceiverResponse Ok = new();
+}
+
+internal sealed record ReceivedWebhook(string Receiver, string Method, string? ContentType, string Body, DateTimeOffset ReceivedAt)
+{
     public string? EventName => Parse().TryGetProperty("event", out JsonElement e) ? e.GetString() : null;
 
-    /// <summary>The <c>TaskId</c> inside the envelope's <c>data</c> element, if present.</summary>
     public Guid? TaskId =>
         Parse().TryGetProperty("data", out JsonElement data) && data.TryGetProperty("TaskId", out JsonElement id)
             ? id.GetGuid()
             : null;
 
-    private JsonElement Parse() => JsonDocument.Parse(Body).RootElement;
+    public JsonElement Json => Parse();
+
+    private JsonElement Parse() => JsonDocument.Parse(Body).RootElement.Clone();
 }

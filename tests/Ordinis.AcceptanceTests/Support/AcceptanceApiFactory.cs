@@ -28,6 +28,10 @@ internal sealed class AcceptanceApiFactory : OrdinisApiFactory
         // Read by WebApplication.CreateBuilder when the host is first built (see the base class
         // for why configuration must be supplied through environment variables).
         Environment.SetEnvironmentVariable("WebhookDelivery__PollingInterval", "00:00:01");
+
+        // Retries are observable within a scenario; the production backoff (30 s, then 60 s) is
+        // specified by the @needs-clock scenarios, which need a controllable clock instead.
+        Environment.SetEnvironmentVariable("WebhookDelivery__InitialBackoff", "00:00:02");
     }
 
     protected override int? LocalHostPort => null;
@@ -39,7 +43,7 @@ internal sealed class AcceptanceApiFactory : OrdinisApiFactory
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IWebhookUrlGuard>();
-            services.AddSingleton<IWebhookUrlGuard>(new ReceiverAwareUrlGuard(_receiver, new WebhookUrlGuard()));
+            services.AddSingleton<IWebhookUrlGuard>(new ReceiverAwareUrlGuard(_receiver, new WebhookUrlGuard(TestHost.Dns)));
 
             // "Given the database is unavailable" (off unless a scenario switches it on), and the
             // log capture Program.cs's Serilog setup picks up through ReadFrom.Services.

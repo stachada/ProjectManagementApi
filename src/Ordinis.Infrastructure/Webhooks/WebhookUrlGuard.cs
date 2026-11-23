@@ -5,14 +5,22 @@ using Ordinis.Application.Common;
 namespace Ordinis.Infrastructure.Webhooks;
 
 /// <summary>
-/// <see cref="IWebhookUrlGuard"/> implementation backed by real DNS resolution
-/// (<see cref="Dns.GetHostAddressesAsync(string, CancellationToken)"/>).
+/// <see cref="IWebhookUrlGuard"/> implementation that classifies every address a URL's host
+/// resolves to (through <see cref="IHostAddressResolver"/> — the operating system's DNS in
+/// production).
 /// </summary>
 /// <remarks>
 /// Stateless — registered as a singleton, same pattern as <c>ISlugGenerator</c>.
 /// </remarks>
-public sealed class WebhookUrlGuard : IWebhookUrlGuard
+/// <param name="resolver">Resolves host names; IP-literal hosts never reach it.</param>
+public sealed class WebhookUrlGuard(IHostAddressResolver resolver) : IWebhookUrlGuard
 {
+    /// <summary>A guard that resolves host names through the operating system's DNS.</summary>
+    public WebhookUrlGuard()
+        : this(new DnsHostAddressResolver())
+    {
+    }
+
     /// <inheritdoc/>
     public async Task<bool> IsAllowedAsync(string url, CancellationToken cancellationToken = default)
     {
@@ -30,7 +38,7 @@ public sealed class WebhookUrlGuard : IWebhookUrlGuard
             // a standard dotted-quad/IPv6 literal, so parsing uri.Host directly here is safe.
             addresses = uri.HostNameType is UriHostNameType.IPv4 or UriHostNameType.IPv6
                 ? [IPAddress.Parse(uri.Host)]
-                : await Dns.GetHostAddressesAsync(uri.Host, cancellationToken);
+                : await resolver.ResolveAsync(uri.Host, cancellationToken);
         }
         catch (Exception ex) when (ex is SocketException or ArgumentException)
         {

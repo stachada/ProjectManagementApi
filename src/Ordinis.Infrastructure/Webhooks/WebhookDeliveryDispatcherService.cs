@@ -105,10 +105,14 @@ internal sealed class WebhookDeliveryDispatcherService : BackgroundService
 
         HttpClient client = _httpClientFactory.CreateClient(WebhookDeliveryOptions.HttpClientName);
 
-        foreach (WebhookDelivery delivery in deliveries)
-        {
-            await DeliverAsync(client, delivery, stoppingToken);
-        }
+        // Concurrently (bounded), so one slow or unresponsive receiver cannot hold every other
+        // delivery of the batch back by up to HttpTimeout. Safe without locking: DeliverAsync
+        // only mutates its own delivery entity and never touches the DbContext, whose change
+        // tracking runs once, in SaveChangesAsync below.
+        await Parallel.ForEachAsync(
+            deliveries,
+            new ParallelOptions { MaxDegreeOfParallelism = _options.MaxParallelDeliveries, CancellationToken = stoppingToken },
+            async (delivery, cancellationToken) => await DeliverAsync(client, delivery, cancellationToken));
 
         await db.SaveChangesAsync(stoppingToken);
         await tx.CommitAsync(stoppingToken);

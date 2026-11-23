@@ -116,12 +116,14 @@ Feature: Webhook delivery
       When Bob creates a task "Fix login bug" on board "Sprint 1"
       Then both attempts received by "Chat" have byte-identical bodies
 
+    # GAP-27 (fixed): a batch's deliveries are sent concurrently, so a receiver that never
+    # answers no longer holds the others back by the HTTP timeout (10 s) on every attempt.
     Scenario: A slow receiver does not delay other webhooks
       Given a receiver "CI" listening at "https://ci.example.com/hooks"
       And project "Apollo" has a webhook at receiver "CI" for "task.created"
       And receiver "Chat" never answers
       When Bob creates a task "Fix login bug" on board "Sprint 1"
-      Then receiver "CI" eventually receives one "task.created" event
+      Then receiver "CI" receives one "task.created" event while "Chat" is still not answering
 
   Rule: The destination is re-checked before every attempt
 
