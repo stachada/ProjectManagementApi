@@ -54,6 +54,16 @@ internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api)
         }
     }
 
+    /// <summary>Registers the test receiver for all events — for scenarios where the URL is beside the point.</summary>
+    [When("^(" + ApiDriver.Anonymous + @"|\w+) registers a webhook for project ""([^""]+)""$")]
+    public async Task WhenPersonaRegistersAWebhook(string persona, string project)
+    {
+        Guid projectId = world.ProjectNamed(project);
+        await api.SendAsync(persona, HttpMethod.Post, $"/api/v1/projects/{projectId}/webhooks",
+            new { url = TestHost.Receiver.UrlFor(DefaultReceiver), eventTypes = (string[]?)null },
+            await seeder.CurrentProjectVersionAsync(projectId));
+    }
+
     [Then(@"^the webhook eventually receives a ""([^""]+)"" event for ""([^""]+)""$")]
     public async Task ThenTheWebhookEventuallyReceives(string eventType, string title)
     {

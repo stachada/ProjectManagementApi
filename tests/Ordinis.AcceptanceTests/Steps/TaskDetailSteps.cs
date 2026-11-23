@@ -89,10 +89,18 @@ internal sealed partial class TaskDetailSteps(World world, Seeder seeder, ApiDri
     public async Task ThenTheTaskExists(string title) =>
         Assert.NotNull(await seeder.FindTaskAsync(world.TaskNamed(title)));
 
-    /// <summary>Deleted tasks are hidden by the soft-delete query filter, exactly as the API sees them.</summary>
+    /// <summary>
+    /// Through the API, as the org-Admin observer — who can see every live task of the
+    /// organization, so a 404 means the task (or its project) is deleted, not merely hidden.
+    /// </summary>
     [Then(@"^the task ""([^""]+)"" is not found$")]
-    public async Task ThenTheTaskIsNotFound(string title) =>
-        Assert.Null(await seeder.FindTaskAsync(world.TaskNamed(title)));
+    public async Task ThenTheTaskIsNotFound(string title)
+    {
+        Guid taskId = world.TaskNamed(title);
+        Guid observer = await seeder.ObserverForOrganizationAsync(await seeder.OrganizationOfTaskAsync(taskId));
+        ApiResponse response = await api.SendAsUserAsync(observer, HttpMethod.Get, $"/api/v1/tasks/{taskId}");
+        Assert.True(response.StatusCode == System.Net.HttpStatusCode.NotFound, $"Expected 404 for task '{title}', got {response}");
+    }
 
     [Then(@"^the task ""([^""]+)"" is not listed on board ""([^""]+)""$")]
     public async Task ThenTheTaskIsNotListedOnBoard(string title, string board)

@@ -138,18 +138,60 @@ internal sealed class Seeder(World world)
         return true;
     });
 
+    /// <summary>Adds boards to an existing project, in the given order, created by one of its members.</summary>
+    public async Task CreateBoardsAsync(Guid projectId, params string[] boardNames)
+    {
+        Guid creatorId = await AnyProjectUserAsync(projectId);
+
+        List<(string Name, Guid Id)> boards = await WithDbAsync(async db =>
+        {
+            var created = new List<(string Name, Guid Id)>();
+            foreach (string boardName in boardNames)
+            {
+                Board board = Board.Create(projectId, boardName, creatorId);
+                db.Boards.Add(board);
+                created.Add((boardName, board.Id));
+            }
+
+            await db.SaveChangesAsync();
+            return created;
+        });
+
+        foreach ((string name, Guid boardId) in boards)
+        {
+            world.Boards[name] = boardId;
+            world.BoardProjects[boardId] = projectId;
+        }
+    }
+
+    /// <summary>Reads a board as stored (boards of a deleted project are hidden by the query filter).</summary>
+    public Task<Board?> FindBoardAsync(Guid boardId) =>
+        WithDbAsync(db => db.Boards.AsNoTracking().SingleOrDefaultAsync(b => b.Id == boardId));
+
+    /// <summary>A project's members as stored, in joining order.</summary>
+    public Task<List<ProjectMember>> ProjectMembersAsync(Guid projectId) =>
+        WithDbAsync(db => db.Projects
+            .Where(p => p.Id == projectId)
+            .SelectMany(p => p.Members)
+            .AsNoTracking()
+            .OrderBy(m => m.JoinedAt)
+            .ThenBy(m => m.Id)
+            .ToListAsync());
+
     /// <param name="dueInDays">Due date relative to now, or <see langword="null"/> for none.</param>
+    /// <param name="reporterId">The task's reporter; defaults to the most privileged project member.</param>
     public async Task<Guid> CreateTaskAsync(
-        Guid boardId, string title, Priority priority = Priority.Medium, int? dueInDays = null, string? description = null)
+        Guid boardId, string title, Priority priority = Priority.Medium, int? dueInDays = null, string? description = null,
+        Guid? reporterId = null)
     {
         Guid projectId = world.BoardProjects[boardId];
-        Guid reporterId = await AnyProjectUserAsync(projectId);
+        Guid reporter = reporterId ?? await AnyProjectUserAsync(projectId);
 
         Guid taskId = await WithDbAsync(async db =>
         {
             DateTimeOffset now = Now(db);
             ProjectTask task = ProjectTask.Create(
-                boardId, reporterId, title, now, priority, description,
+                boardId, reporter, title, now, priority, description,
                 dueDate: dueInDays is int days ? now.AddDays(days) : null);
             db.Tasks.Add(task);
             await db.SaveChangesAsync();
@@ -229,6 +271,14 @@ internal sealed class Seeder(World world)
     public Task<ProjectTask?> FindTaskAsync(Guid taskId) =>
         WithDbAsync(db => db.Tasks.AsNoTracking().SingleOrDefaultAsync(t => t.Id == taskId));
 
+    /// <summary>The organization a task belongs to — even when the task or its project is deleted.</summary>
+    public Task<Guid> OrganizationOfTaskAsync(Guid taskId) => WithDbAsync(db =>
+        (from task in db.Tasks.IgnoreQueryFilters()
+         join board in db.Boards.IgnoreQueryFilters() on task.BoardId equals board.Id
+         join project in db.Projects.IgnoreQueryFilters() on board.ProjectId equals project.Id
+         where task.Id == taskId
+         select project.OrganizationId).SingleAsync());
+
     /// <summary>The current version of a task, formatted exactly like the API's ETag.</summary>
     /// <remarks>Includes soft-deleted tasks, so "delete it again" scenarios still send a real version.</remarks>
     public async Task<string> CurrentTaskVersionAsync(Guid taskId)
@@ -239,10 +289,19 @@ internal sealed class Seeder(World world)
     }
 
     /// <summary>The current version of a project, formatted exactly like the API's ETag.</summary>
+    /// <remarks>Includes soft-deleted projects, so "delete it again" scenarios still send a real version.</remarks>
     public async Task<string> CurrentProjectVersionAsync(Guid projectId)
     {
         byte[]? rowVersion = await WithDbAsync(db =>
-            db.Projects.Where(p => p.Id == projectId).Select(p => p.RowVersion).SingleAsync());
+            db.Projects.IgnoreQueryFilters().Where(p => p.Id == projectId).Select(p => p.RowVersion).SingleAsync());
+        return $"\"{Convert.ToBase64String(rowVersion ?? [])}\"";
+    }
+
+    /// <summary>The current version of a board, formatted exactly like the API's ETag.</summary>
+    public async Task<string> CurrentBoardVersionAsync(Guid boardId)
+    {
+        byte[]? rowVersion = await WithDbAsync(db =>
+            db.Boards.Where(b => b.Id == boardId).Select(b => b.RowVersion).SingleAsync());
         return $"\"{Convert.ToBase64String(rowVersion ?? [])}\"";
     }
 
