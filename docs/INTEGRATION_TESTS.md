@@ -615,6 +615,12 @@ public sealed class TasksControllerTests(OrdinisApiFactory factory) : Integratio
 No further setup is required — the constructor picks up the shared factory automatically via
 xUnit's collection fixture injection.
 
+**Reading a response into a DTO:** pass `ApiJson.Options` (`tests/Ordinis.Testing/ApiJson.cs`) —
+`await response.Content.ReadFromJsonAsync<TaskDto>(ApiJson.Options)`, likewise
+`GetFromJsonAsync`. The API writes enums by name (`"status": "InProgress"`); the parameterless
+overloads' web defaults expect ordinals and throw a `JsonException` on the first enum. Sending
+needs nothing special: `PostAsJsonAsync` writes ordinals, which the API still accepts.
+
 ### Seeding prerequisite data via `CreateScope()`
 
 Most endpoints need rows that already exist — `POST /api/v1/tasks` needs a valid `BoardId`

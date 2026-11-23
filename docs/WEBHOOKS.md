@@ -124,7 +124,8 @@ For each `TaskCreated`/`TaskMoved`/`TaskAssigned`/`CommentAdded` message,
    `NextAttemptAt = now`.
 
 The `data` field is the domain event's own fields, serialized via its concrete runtime
-type (`JsonSerializer.SerializeToElement(data, data.GetType())`) — the same
+type (`JsonSerializer.SerializeToElement(data, data.GetType(), EventJson.Options)`, which writes
+enums by name — `"NewStatus": "InProgress"`, like the HTTP API) — the same
 "serialize by concrete type, not by static `object`" approach `OutboxMessage.From` already
 uses, so the envelope isn't relying on `System.Text.Json`'s more surprising
 object-property polymorphic-serialization behavior.
