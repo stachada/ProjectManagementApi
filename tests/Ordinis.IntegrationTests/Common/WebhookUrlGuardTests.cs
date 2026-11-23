@@ -1,3 +1,4 @@
+using System.Net;
 using Ordinis.Infrastructure.Webhooks;
 
 namespace Ordinis.IntegrationTests.Common;
@@ -58,5 +59,67 @@ public sealed class WebhookUrlGuardTests
     public async Task IsAllowedAsync_HostDoesNotResolve_ReturnsFalse()
     {
         Assert.False(await _guard.IsAllowedAsync("http://this-host-does-not-exist.invalid/hook"));
+    }
+
+    // ---- Host names, through a scripted resolver (no real DNS) ----
+
+    [Theory]
+    [InlineData("203.0.113.10")]
+    [InlineData("2606:4700:4700::1111")]
+    public async Task IsAllowedAsync_HostResolvingToPublicAddresses_ReturnsTrue(string address)
+    {
+        var guard = new WebhookUrlGuard(new ScriptedResolver(IPAddress.Parse(address)));
+
+        Assert.True(await guard.IsAllowedAsync("https://hooks.example.com/hook"));
+    }
+
+    [Theory]
+    [InlineData("10.1.2.3")]
+    [InlineData("127.0.0.1")]
+    [InlineData("169.254.169.254")]
+    [InlineData("fd00::1")]
+    public async Task IsAllowedAsync_HostResolvingToAnInternalAddress_ReturnsFalse(string address)
+    {
+        var guard = new WebhookUrlGuard(new ScriptedResolver(IPAddress.Parse(address)));
+
+        Assert.False(await guard.IsAllowedAsync("https://intranet.example.com/hook"));
+    }
+
+    /// <summary>One internal address among public ones is enough: the client may connect to any of them.</summary>
+    [Fact]
+    public async Task IsAllowedAsync_HostResolvingToPublicAndInternalAddresses_ReturnsFalse()
+    {
+        var guard = new WebhookUrlGuard(new ScriptedResolver(IPAddress.Parse("203.0.113.10"), IPAddress.Parse("10.0.0.5")));
+
+        Assert.False(await guard.IsAllowedAsync("https://mixed.example.com/hook"));
+    }
+
+    [Fact]
+    public async Task IsAllowedAsync_HostResolvingToNoAddress_ReturnsFalse()
+    {
+        var guard = new WebhookUrlGuard(new ScriptedResolver());
+
+        Assert.False(await guard.IsAllowedAsync("https://empty.example.com/hook"));
+    }
+
+    [Fact]
+    public async Task IsAllowedAsync_IpLiteral_DoesNotConsultTheResolver()
+    {
+        var resolver = new ScriptedResolver(IPAddress.Parse("10.0.0.5"));
+        var guard = new WebhookUrlGuard(resolver);
+
+        Assert.True(await guard.IsAllowedAsync("http://1.1.1.1/hook"));
+        Assert.Equal(0, resolver.Lookups);
+    }
+
+    private sealed class ScriptedResolver(params IPAddress[] addresses) : IHostAddressResolver
+    {
+        public int Lookups { get; private set; }
+
+        public Task<IPAddress[]> ResolveAsync(string host, CancellationToken cancellationToken = default)
+        {
+            Lookups++;
+            return Task.FromResult(addresses);
+        }
     }
 }

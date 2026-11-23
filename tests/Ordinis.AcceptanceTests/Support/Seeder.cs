@@ -115,6 +115,30 @@ internal sealed class Seeder(World world)
         return boardIds.Concat(taskIds).ToList();
     });
 
+    /// <summary>
+    /// Outbox messages not yet dispatched plus webhook deliveries not yet settled (still pending,
+    /// including a scheduled retry) — zero once the event pipeline is idle.
+    /// </summary>
+    public Task<int> UnsettledEventWorkAsync() => WithDbAsync(async db =>
+        await db.OutboxMessages.CountAsync(m => m.ProcessedAt == null)
+        + await db.WebhookDeliveries.CountAsync(d => d.Status == Ordinis.Infrastructure.Webhooks.WebhookDeliveryStatus.Pending));
+
+    /// <summary>The most recently created webhook delivery.</summary>
+    /// <remarks>
+    /// Ordered in .NET, not SQL: delivery IDs are time-ordered UUIDv7s, but SQL Server sorts
+    /// <c>uniqueidentifier</c> by its last bytes first, so <c>ORDER BY Id</c> is not creation order.
+    /// </remarks>
+    public async Task<Ordinis.Infrastructure.Webhooks.WebhookDelivery?> LatestDeliveryAsync() =>
+        (await WithDbAsync(db => db.WebhookDeliveries.AsNoTracking().ToListAsync())).MaxBy(d => d.Id);
+
+    /// <summary>How many deliveries were ever created for a URL.</summary>
+    public Task<int> CountDeliveriesToAsync(string url) =>
+        WithDbAsync(db => db.WebhookDeliveries.CountAsync(d => d.Url == url));
+
+    /// <summary>A project's webhooks as stored, in registration order.</summary>
+    public Task<List<Webhook>> WebhooksOfAsync(Guid projectId) =>
+        WithDbAsync(db => db.Webhooks.AsNoTracking().Where(w => w.ProjectId == projectId).OrderBy(w => w.RegisteredAt).ThenBy(w => w.Id).ToListAsync());
+
     /// <summary>The kinds of entity <see cref="CountAsync"/> can count.</summary>
     public static readonly string[] CountableKinds =
         ["task", "comment", "attachment", "board", "project", "membership", "webhook", "user", "organization"];

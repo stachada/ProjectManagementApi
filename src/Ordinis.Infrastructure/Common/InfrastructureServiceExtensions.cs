@@ -72,7 +72,8 @@ public static class InfrastructureServiceExtensions
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 
         // Stateless — same singleton treatment as ISlugGenerator.
-        services.AddSingleton<IWebhookUrlGuard, WebhookUrlGuard>();
+        services.AddSingleton<IHostAddressResolver, DnsHostAddressResolver>();
+        services.AddSingleton<IWebhookUrlGuard>(sp => new WebhookUrlGuard(sp.GetRequiredService<IHostAddressResolver>()));
 
         // One WebhookDomainEventHandler instance implements all four closed IDomainEventHandler<T>
         // interfaces — OutboxDispatcherJob resolves handlers per event type via DI, so each

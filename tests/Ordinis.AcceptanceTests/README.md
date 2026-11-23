@@ -26,7 +26,7 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 
 ## Binding status
 
-963 scenarios (outline rows expanded): **887 pass, 76 skipped, 0 fail.**
+963 scenarios (outline rows expanded): **954 pass, 9 skipped, 0 fail.** Every feature is bound; the 9 skipped scenarios are `@needs-clock` ones (token and key expiry, rate-limit windows, retry timing), waiting for a controllable test clock.
 
 | Feature | Status |
 | --- | --- |
@@ -65,7 +65,8 @@ The suite runs in CI as part of `dotnet test Ordinis.slnx`, alongside the integr
 | Platform/health | ✅ bound — 6 pass |
 | Platform/rate-limiting | ✅ bound — 6 pass; 2 `@needs-clock` skipped (Tier 3) |
 | Platform/pagination | ✅ bound — 28 pass |
-| *all other features* | ⏳ not bound yet (reported as skipped) |
+| Webhooks/webhook-subscriptions | ✅ bound — 43 pass |
+| Webhooks/webhook-delivery | ✅ bound — 24 pass; 2 `@needs-clock` skipped (Tier 3) |
 
 ## Host variants and simulated failures
 
@@ -78,6 +79,11 @@ no background jobs (so outbox messages are never processed twice):
 | Development / Production environment ("Given the API runs in the … environment") | `TestHost.Development` / `TestHost.Production` (`UseEnvironment`); the scenario switches host through `World.Host` |
 | The production rate limiter (`@needs-rate-limiter`) | `TestHost.RateLimited` registers `KeepProductionRateLimiter`, so the limiter is exactly `Program.cs`'s. A test header sets `RemoteIpAddress`, and every scenario gets its own address and new users, so no scenario inherits another's quota |
 | "Given the database is unavailable" | `DatabaseOutage`, an EF Core connection interceptor on the main host: while on, opening a connection fails like an unreachable SQL Server (instantly, with connection details in the message, so leaks are detectable). The test's own seeding is exempt. Switched off after every scenario |
+| Made-up hosts in webhook URLs (`hooks.example.com`, "the host … resolves to 10.1.2.3") | `ScriptedDns`, the `IHostAddressResolver` the test host's `WebhookUrlGuard` uses: every `*.example.com` host is public, a scenario can point a host elsewhere (or rebind it), anything else goes to real DNS. Reset after every scenario |
+| Webhook receivers ("Chat", "CI") that fail, hang, drop the connection or redirect | `WebhookReceiver`, a loopback HTTP server: each named receiver is a path, records every request (failed attempts included) and answers as its script says. The addresses the features give receivers are labels |
+| Observing only what an action causes | Before a webhook scenario's first action, the event pipeline is drained and the receivers forget what they got — the arrangement's own events (a seeded task is a `task.created`) are history. After every scenario the background jobs are stopped around the database reset, so no in-flight batch leaks into the next scenario |
+| Retries within a scenario | The test host's retry backoff is 2 s (production: 30 s, then 60 s — specified by `@needs-clock` scenarios) |
+| Workers stopped / a second instance ("two API instances share the database") | `TestHost.StopWorkersAsync` / `StartWorkersAsync` stop and restart the main host's background jobs; `StartSecondInstance` runs another host with its own jobs on the same database for the rest of the scenario |
 | Log lines ("a request log entry records …") | `CapturedLogs`, a Serilog sink registered in DI and picked up by `Program.cs`'s `ReadFrom.Services` — so scenarios check the real logging pipeline. Cleared after every scenario |
 
 ## How it works
@@ -198,7 +204,7 @@ Scenarios tagged `@gap` carry a `# GAP-nn` comment pointing here. When a gap is 
 its `@gap` tags are removed (the scenarios become ordinary regression specs) and the row
 moves to **Fixed gaps** below.
 
-*No open gaps — all 26 found by the specs are fixed (see below).*
+*No open gaps — all 27 found by the specs are fixed (see below).*
 
 ### Known edge cases (documented, not fixed)
 
@@ -240,6 +246,7 @@ moves to **Fixed gaps** below.
 | GAP-24 | FluentValidation translated validation messages into the server's current UI culture, so the API's error language depended on the host (Polish on a Polish machine: "Pole 'Refresh Token' nie może być puste.") while every other message is English | `ValidatorOptions.Global.LanguageManager.Enabled = false` in `AddApplicationServices`: always the built-in English messages. Found binding `token-refresh.feature` on a Polish-locale machine. Regression test: `AuthEndpointsTests.Validation_ServerUiCultureIsNotEnglish_MessagesStayEnglish` (runs the request under `pl-PL`, so it reproduces on any host) |
 | GAP-25 | A retried upload with the same `Idempotency-Key` was rejected as "already used with a different request body": the request fingerprint hashed the raw multipart body, whose boundary the client picks anew (usually at random) for every request — so request keys never worked for attachments | `IdempotencyMiddleware` replaces the multipart boundary with a fixed marker before hashing, so the hash depends only on the parts. Found binding `idempotency.feature`. Regression tests: `IdempotencyMiddlewareTests.Post_RetriedUploadWithNewMultipartBoundary_ReplaysAndCreatesOneAttachment` (and `…SameKeyDifferentUploadContent_Returns409Conflict`, which guards that different content still conflicts); "Every create endpoint honours the request key: uploads …" scenario |
 | GAP-26 | An authenticated caller over the limit got `429` without `Retry-After` — although the body says "Retry after the interval given in the Retry-After header": `OnRejected` only copied the limiter's retry-after metadata, which the fixed window (anonymous callers) reports and the sliding window (authenticated callers) does not | `OnRejected` always sets `Retry-After`: the metadata when present, otherwise one sliding-window segment (`WindowSeconds / SegmentsPerWindow`, 10 s by default). Found binding `rate-limiting.feature`. Regression test: `RateLimitingTests.SlidingWindowRejection_StillReturnsRetryAfterInSeconds`; "The 501st request by one user within a minute is rejected" scenario |
+| GAP-27 | `WebhookDeliveryDispatcherService` sent a batch's deliveries one after another, so a receiver that never answered held every delivery queued behind it back by the 10 s HTTP timeout — on every attempt | The batch is delivered concurrently (`Parallel.ForEachAsync`, `MaxParallelDeliveries` = 8), still claimed, updated and saved in one transaction. Found binding `webhook-delivery.feature` (the scenario only asked for "eventually", so it was tightened to "while "Chat" is still not answering"). Regression test: `WebhookDeliveryDispatcherTests.SlowReceiver_DoesNotDelayTheRestOfTheBatch` (deterministic: the slow delivery is due first) |
 
 ## Out of scope (by design, not gaps)
 

@@ -32,4 +32,10 @@ public sealed class WebhookDeliveryOptions
 
     /// <summary>Per-request timeout for the outbound delivery HTTP call.</summary>
     public TimeSpan HttpTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// How many deliveries of one batch are sent at the same time, so a slow receiver delays
+    /// only its own delivery, not the rest of the batch.
+    /// </summary>
+    public int MaxParallelDeliveries { get; set; } = 8;
 }
