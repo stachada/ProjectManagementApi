@@ -1378,7 +1378,14 @@ See [docs/REST_API_CONCEPTS.md#hateoas](docs/REST_API_CONCEPTS.md#hateoas) for t
     | GAP-24 | Validation messages followed the server's UI culture (Polish on a Polish host) | FluentValidation's `LanguageManager` disabled: messages are always English |
 
     No spec corrections this batch (unlike controller endpoints, Minimal APIs bind a missing JSON field as null, so a sign-in without a field is *invalid* (422) as the spec says). Bindings: role-named actions ("the Viewer moves …") run the matching persona's step through Reqnroll's `ITestRunner`; "nothing from project / organization X is listed" checks that none of its project, board or task IDs appears in the response; forged access tokens (wrong key, issuer, audience) are minted for a real user from the API's own `JwtOptions`, so only the one defect can cause the rejection
-  - [ ] Batch 5 — platform cross-cutting (concurrency, idempotency, versioning, errors, fields, caching, correlation, health)
+  - [x] Batch 5a — platform features that run on the standard test host (`optimistic-concurrency`, `idempotency`, `error-responses`, `sparse-fieldsets`, `api-versioning`, `caching`, `correlation`): **871 pass, 92 skipped, 0 fail**. New gap:
+
+    | Gap | Problem | Fix |
+    |---|---|---|
+    | GAP-25 | A retried upload with the same `Idempotency-Key` → 409 "different request body": the fingerprint hashed the raw multipart body, whose boundary clients pick anew per request, so keys never worked for attachments | `IdempotencyMiddleware` hashes the body with the boundary replaced by a fixed marker |
+
+    Spec corrections: adding a member and registering a webhook need a project Admin, so those idempotency rows moved to an outline sent by Alice (they were sent by Bob, a Member); the webhook row registers the test receiver (as in batch 2). Bindings: protocol phrases are now modifier steps (`RequestModifierSteps`) that wrap any action — "… without stating a version", "… with request key "k-1"", "… using API version N" / "… in API vN", "… with correlation id "x"" — replacing the per-action variants; `ApiResponse` now carries headers and the request path
+  - [ ] Batch 5b — platform features that need a differently configured host: `health` and `rate-limiting` (a rate-limited host, a Production host), the "database is unavailable" scenarios (`error-responses`, `health`) and the log-line scenarios (`correlation`, captured Serilog events)
   - [ ] Batch 6 — webhooks (subscriptions and delivery)
   - [ ] Tier 3 — controllable test clock and scriptable webhook receiver for `@needs-clock` / delivery-retry scenarios; `@manual` for the rest
 
