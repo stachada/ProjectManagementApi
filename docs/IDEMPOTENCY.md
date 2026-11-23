@@ -191,10 +191,11 @@ only catch a duplicate — concurrent or retried — if it happens to land on th
 this project's current single-instance deployment target; the interface exists
 specifically so this can be upgraded later without a design change.
 
-Cache expiry runs on the wall clock — `MemoryCacheOptions` has no `TimeProvider`-based
-clock override in the referenced `Microsoft.Extensions.Caching.Memory` package version
-(10.0.9), so this is the one clock dependency in the codebase not routed through the
-app's `TimeProvider` singleton.
+Cache expiry follows the app's `TimeProvider`, like every other clock read in the codebase.
+`MemoryCacheOptions` takes its clock as an `ISystemClock` (`MemoryCacheOptions.Clock`), so
+`AddInfrastructureServices` sets it to `TimeProviderSystemClock`, a one-line adapter over the
+`TimeProvider` singleton. A test that moves its clock forward therefore sees keys expire
+(`idempotency.feature`, "A key can be reused after it expires").
 
 ---
 
