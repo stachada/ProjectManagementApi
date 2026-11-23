@@ -46,11 +46,12 @@ internal sealed class Seeder(World world)
         [ProjectTaskStatus.Cancelled] = [ProjectTaskStatus.Cancelled],
     };
 
-    public async Task<Guid> CreateOrganizationAsync(string name)
+    /// <param name="slug">The organization's slug; derived from the name when omitted.</param>
+    public async Task<Guid> CreateOrganizationAsync(string name, string? slug = null)
     {
         Guid id = await WithDbAsync(async db =>
         {
-            Organization organization = Organization.Create(name, Slugify(name));
+            Organization organization = Organization.Create(name, slug ?? Slugify(name));
             db.Organizations.Add(organization);
             await db.SaveChangesAsync();
             return organization.Id;
@@ -60,9 +61,11 @@ internal sealed class Seeder(World world)
         return id;
     }
 
-    public async Task<World.Persona> CreatePersonaAsync(string name, Guid organizationId, Role orgRole, string? password = null)
+    /// <param name="email">The persona's email; <c>{name}@{org slug}.example</c> when omitted.</param>
+    public async Task<World.Persona> CreatePersonaAsync(
+        string name, Guid organizationId, Role orgRole, string? password = null, string? email = null)
     {
-        Guid userId = await CreateUserAsync(organizationId, name, orgRole, password);
+        Guid userId = await CreateUserAsync(organizationId, name, orgRole, password, email);
         var persona = new World.Persona(name, userId, organizationId);
         world.Personas[name] = persona;
         world.PersonaPasswords[name] = password ?? DefaultPassword;
@@ -89,6 +92,29 @@ internal sealed class Seeder(World world)
         return true;
     });
 
+    /// <summary>Deactivates a user through the domain, without going through the API.</summary>
+    public Task DeactivateUserAsync(Guid userId) => WithDbAsync(async db =>
+    {
+        User user = await db.Users.SingleAsync(u => u.Id == userId);
+        user.Deactivate();
+        await db.SaveChangesAsync();
+        return true;
+    });
+
+    /// <summary>The IDs of the given projects' boards and of the tasks on them — deleted ones included.</summary>
+    public Task<List<Guid>> BoardAndTaskIdsOfProjectsAsync(IReadOnlyCollection<Guid> projectIds) => WithDbAsync(async db =>
+    {
+        List<Guid> boardIds = await db.Boards.IgnoreQueryFilters()
+            .Where(b => projectIds.Contains(b.ProjectId))
+            .Select(b => b.Id)
+            .ToListAsync();
+        List<Guid> taskIds = await db.Tasks.IgnoreQueryFilters()
+            .Where(t => boardIds.Contains(t.BoardId))
+            .Select(t => t.Id)
+            .ToListAsync();
+        return boardIds.Concat(taskIds).ToList();
+    });
+
     public Task<User> FindUserAsync(Guid userId) =>
         WithDbAsync(db => db.Users.AsNoTracking().SingleAsync(u => u.Id == userId));
 
@@ -98,14 +124,18 @@ internal sealed class Seeder(World world)
     public Task<Organization> FindOrganizationAsync(Guid organizationId) =>
         WithDbAsync(db => db.Organizations.AsNoTracking().SingleAsync(o => o.Id == organizationId));
 
-    public async Task<Guid> CreateProjectWithBoardsAsync(Guid organizationId, string projectName, params string[] boardNames)
+    public Task<Guid> CreateProjectWithBoardsAsync(Guid organizationId, string projectName, params string[] boardNames) =>
+        CreateProjectAsync(organizationId, projectName, description: null, boardNames);
+
+    /// <summary>A project with a description (and optionally boards), founded by a hidden user.</summary>
+    public async Task<Guid> CreateProjectAsync(Guid organizationId, string projectName, string? description, params string[] boardNames)
     {
         Guid founderId = await CreateUserAsync(organizationId, $"Founder of {projectName}", Role.Member);
 
         (Guid projectId, List<(string Name, Guid Id)> boards) = await WithDbAsync(async db =>
         {
             DateTimeOffset now = Now(db);
-            Project project = Project.Create(organizationId, founderId, projectName, Slugify(projectName), now);
+            Project project = Project.Create(organizationId, founderId, projectName, Slugify(projectName), now, description);
             db.Projects.Add(project);
 
             var created = new List<(string Name, Guid Id)>();
@@ -369,7 +399,8 @@ internal sealed class Seeder(World world)
             .Select(m => m.UserId)
             .FirstAsync());
 
-    private async Task<Guid> CreateUserAsync(Guid organizationId, string displayName, Role orgRole, string? password = null)
+    private async Task<Guid> CreateUserAsync(
+        Guid organizationId, string displayName, Role orgRole, string? password = null, string? email = null)
     {
         string orgSlug = await WithDbAsync(db =>
             db.Organizations.Where(o => o.Id == organizationId).Select(o => o.Slug).SingleAsync());
@@ -381,8 +412,8 @@ internal sealed class Seeder(World world)
 
         return await WithDbAsync(async db =>
         {
-            string email = $"{Slugify(displayName)}@{orgSlug}.example";
-            User user = User.Create(organizationId, displayName, email, passwordHash, orgRole);
+            User user = User.Create(
+                organizationId, displayName, email ?? $"{Slugify(displayName)}@{orgSlug}.example", passwordHash, orgRole);
             db.Users.Add(user);
             await db.SaveChangesAsync();
             return user.Id;

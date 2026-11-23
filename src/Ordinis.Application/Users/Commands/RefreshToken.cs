@@ -64,6 +64,9 @@ internal sealed class RefreshTokenValidator : AbstractValidator<RefreshToken>
 {
     public RefreshTokenValidator()
     {
-        RuleFor(x => x.Token).NotEmpty();
+        // Named after the request field (POST /auth/refresh sends "refreshToken"), so a client can
+        // match the error to what it sent; the command cannot use that name itself, because a
+        // record member may not share its enclosing type's name.
+        RuleFor(x => x.Token).NotEmpty().OverridePropertyName("RefreshToken");
     }
 }

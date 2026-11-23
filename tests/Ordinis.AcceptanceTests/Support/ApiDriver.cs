@@ -53,6 +53,31 @@ internal sealed class ApiDriver(World world, Seeder seeder)
     }
 
     /// <summary>
+    /// Sends a request with exactly the given access token (or none), whoever it belongs to — for
+    /// scenarios about the token itself: a kept, an expired or a forged one. Recorded as
+    /// <see cref="World.LastResponse"/>.
+    /// </summary>
+    public async Task<ApiResponse> SendWithTokenAsync(string? accessToken, HttpMethod method, string path, object? body = null)
+    {
+        using HttpClient client = TestHost.Factory.CreateClient();
+        using var request = new HttpRequestMessage(method, path);
+
+        if (accessToken is not null)
+        {
+            request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {accessToken}");
+        }
+
+        if (body is not null)
+        {
+            request.Content = JsonContent.Create(body, options: ApiJson.Options);
+        }
+
+        ApiResponse result = await SendRawAsync(client, request);
+        world.LastResponse = result;
+        return result;
+    }
+
+    /// <summary>
     /// Uploads a file as <c>multipart/form-data</c> (field <c>file</c>) and records the response.
     /// </summary>
     public async Task<ApiResponse> UploadAsync(string persona, string path, string fileName, string contentType, byte[] content)

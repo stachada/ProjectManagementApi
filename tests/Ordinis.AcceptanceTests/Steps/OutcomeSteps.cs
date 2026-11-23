@@ -49,7 +49,18 @@ internal sealed class OutcomeSteps(World world)
     public void ThenTheRequestIsRejectedOnField(string field)
     {
         ThenTheRequestIsRejectedAs("invalid");
-        Assert.Contains(world.Response.ValidationErrorFields, f => string.Equals(f, field, StringComparison.OrdinalIgnoreCase));
+        Assert.True(
+            world.Response.ValidationErrorFields.Any(f => string.Equals(f, field, StringComparison.OrdinalIgnoreCase)),
+            $"Expected a validation error on '{field}', got {world.Response}");
+    }
+
+    /// <summary>The human-readable message of a Problem Details body: its <c>detail</c>.</summary>
+    [Then(@"^the (?:sign-in )?error is (?:the generic )?""([^""]+)""$")]
+    public void ThenTheErrorIs(string message)
+    {
+        AssertIsProblemDetails();
+        string? detail = world.Response.Json.TryGetProperty("detail", out System.Text.Json.JsonElement value) ? value.GetString() : null;
+        Assert.True(detail == message, $"Expected the error \"{message}\", got {world.Response}");
     }
 
     private void AssertIsProblemDetails()

@@ -16,6 +16,10 @@ internal sealed class SetupSteps(World world, Seeder seeder)
     public Task GivenAnOrganization(string organization) =>
         seeder.CreateOrganizationAsync(organization);
 
+    [Given(@"^an organization ""([^""]+)"" with slug ""([^""]+)""$")]
+    public Task GivenAnOrganizationWithSlug(string organization, string slug) =>
+        seeder.CreateOrganizationAsync(organization, slug);
+
     [Given(@"^an organization ""([^""]+)"" whose org Admin is (\w+)$")]
     public async Task GivenAnOrganizationWithAdmin(string organization, string admin)
     {
@@ -33,6 +37,18 @@ internal sealed class SetupSteps(World world, Seeder seeder)
     [Given(@"^(\w+) is a user in ""([^""]+)""$")]
     public Task GivenUserInOrganization(string user, string organization) =>
         seeder.CreatePersonaAsync(user, world.OrganizationNamed(organization), Role.Member);
+
+    [Given(@"^(\w+) is a user in ""([^""]+)"" with email ""([^""]+)"" and password ""([^""]+)""$")]
+    public Task GivenUserWithEmailAndPassword(string user, string organization, string email, string password) =>
+        seeder.CreatePersonaAsync(user, world.OrganizationNamed(organization), Role.Member, password, email);
+
+    [Given(@"^(\w+) is a user in ""([^""]+)"" with org role (Viewer|Member|Admin)$")]
+    public Task GivenUserWithOrgRole(string user, string organization, Role orgRole) =>
+        seeder.CreatePersonaAsync(user, world.OrganizationNamed(organization), orgRole);
+
+    [Given(@"^the user (\w+) is inactive$")]
+    public Task GivenTheUserIsInactive(string user) =>
+        seeder.DeactivateUserAsync(world.PersonaNamed(user).UserId);
 
     [Given(@"^(\w+) is a user in ""([^""]+)"" with password ""([^""]+)""$")]
     public Task GivenUserWithPassword(string user, string organization, string password) =>
@@ -60,6 +76,14 @@ internal sealed class SetupSteps(World world, Seeder seeder)
         await seeder.AddProjectMemberAsync(projectId, member.UserId, role);
     }
 
+    [Given(@"^a project ""([^""]+)"" in ""([^""]+)"" described as ""([^""]+)""$")]
+    public Task GivenADescribedProject(string project, string organization, string description) =>
+        seeder.CreateProjectAsync(world.OrganizationNamed(organization), project, description);
+
+    [Given(@"^project ""([^""]+)"" has a board ""([^""]+)""$")]
+    public Task GivenProjectHasABoard(string project, string board) =>
+        seeder.CreateBoardsAsync(world.ProjectNamed(project), board);
+
     [Given(@"^a project ""([^""]+)"" in ""([^""]+)"" with a board ""([^""]+)""$")]
     public Task GivenAProjectWithBoard(string project, string organization, string board) =>
         seeder.CreateProjectWithBoardsAsync(world.OrganizationNamed(organization), project, board);
@@ -70,32 +94,56 @@ internal sealed class SetupSteps(World world, Seeder seeder)
 
     /// <summary>
     /// Seeds tasks row by row, in table order (which is therefore creation order). Columns:
-    /// title, board, status, priority, assignee (optional), due in (e.g. "5 days", optional).
+    /// title and board, then optionally status (default Backlog), priority (default Medium),
+    /// assignee, due in (e.g. "5 days") and description.
     /// </summary>
     [Given(@"^these tasks exist(?:, created in this order)?:$")]
     public async Task GivenTheseTasksExist(DataTable table)
     {
         foreach (DataTableRow row in table.Rows)
         {
-            int? dueInDays = string.IsNullOrWhiteSpace(row["due in"])
+            string dueIn = Cell(table, row, "due in");
+            int? dueInDays = dueIn.Length == 0
                 ? null
-                : int.Parse(row["due in"].Split(' ')[0], System.Globalization.CultureInfo.InvariantCulture);
+                : int.Parse(dueIn.Split(' ')[0], System.Globalization.CultureInfo.InvariantCulture);
+            string priority = Cell(table, row, "priority");
+            string description = Cell(table, row, "description");
 
             Guid taskId = await seeder.CreateTaskAsync(
                 world.BoardNamed(row["board"]),
                 row["title"],
-                Enum.Parse<Priority>(row["priority"]),
-                dueInDays);
+                priority.Length == 0 ? Priority.Medium : Enum.Parse<Priority>(priority),
+                dueInDays,
+                description.Length == 0 ? null : description);
 
             // Assign before moving: terminal statuses refuse assignment.
-            if (!string.IsNullOrWhiteSpace(row["assignee"]))
+            string assignee = Cell(table, row, "assignee");
+            if (assignee.Length > 0)
             {
-                await seeder.AssignTaskAsync(taskId, world.PersonaNamed(row["assignee"]).UserId);
+                await seeder.AssignTaskAsync(taskId, world.PersonaNamed(assignee).UserId);
             }
 
-            await seeder.SetTaskStatusAsync(taskId, Enum.Parse<ProjectTaskStatus>(row["status"]));
+            string status = Cell(table, row, "status");
+            if (status.Length > 0)
+            {
+                await seeder.SetTaskStatusAsync(taskId, Enum.Parse<ProjectTaskStatus>(status));
+            }
         }
     }
+
+    /// <summary>Generated tasks "Prefix 1" … "Prefix N", in that creation order.</summary>
+    [Given(@"^(\d+) tasks on board ""([^""]+)"" titled ""(.+) 1"" to ""(.+) \d+""$")]
+    public async Task GivenNumberedTasksOnBoard(int count, string board, string prefix, string samePrefix)
+    {
+        Assert.Equal(prefix, samePrefix);
+        for (int i = 1; i <= count; i++)
+        {
+            await seeder.CreateTaskAsync(world.BoardNamed(board), $"{prefix} {i}");
+        }
+    }
+
+    private static string Cell(DataTable table, DataTableRow row, string column) =>
+        table.ContainsColumn(column) ? row[column].Trim() : string.Empty;
 
     [Given(@"^(\d+) tasks on board ""([^""]+)"" with priority (\w+)$")]
     public async Task GivenManyTasksOnBoard(int count, string board, Priority priority)
