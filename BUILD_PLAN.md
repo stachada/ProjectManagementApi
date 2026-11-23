@@ -1370,7 +1370,14 @@ See [docs/REST_API_CONCEPTS.md#hateoas](docs/REST_API_CONCEPTS.md#hateoas) for t
     | GAP-22 | `GetUserTasks` sent an unknown `sortBy` to newest first whatever `sortDescending` said; every other task list falls back to `createdAt` in the requested direction | The fallback shares the `createdAt` branch |
 
     Spec/binding corrections: missing organization name and missing user display name / email / password are *malformed* (400), as in batches 1–2; a user's task list is oldest first by default like every other task list (the spec had assumed newest first — the API documents `createdAt` ascending). Bindings: `UserSteps` (users created through the API become personas), a session refresh that signs in first when the persona has no session yet, and a sign-in-error check that compares an inactive account's rejection with an unknown email's
-  - [ ] Batch 4 — auth, authorization and search
+  - [x] Batch 4 — auth, authorization and search (`login`, `logout`, `token-refresh`, `resource-visibility`, `role-permissions`, `tenant-isolation`, `search`): all 7 bound; **773 pass, 190 skipped, 0 fail**. Still skipped on purpose: 4 `@needs-clock` refresh/expiry scenarios (Tier 3 test clock) and 1 `@needs-rate-limiter` sign-in scenario (batch 5). New gaps:
+
+    | Gap | Problem | Fix |
+    |---|---|---|
+    | GAP-23 | A missing refresh token was reported on field `Token` (the command property), not the `refreshToken` the client sent — the only request field renamed on its way to a command | `RefreshTokenValidator` reports it as `RefreshToken` |
+    | GAP-24 | Validation messages followed the server's UI culture (Polish on a Polish host) | FluentValidation's `LanguageManager` disabled: messages are always English |
+
+    No spec corrections this batch (unlike controller endpoints, Minimal APIs bind a missing JSON field as null, so a sign-in without a field is *invalid* (422) as the spec says). Bindings: role-named actions ("the Viewer moves …") run the matching persona's step through Reqnroll's `ITestRunner`; "nothing from project / organization X is listed" checks that none of its project, board or task IDs appears in the response; forged access tokens (wrong key, issuer, audience) are minted for a real user from the API's own `JwtOptions`, so only the one defect can cause the rejection
   - [ ] Batch 5 — platform cross-cutting (concurrency, idempotency, versioning, errors, fields, caching, correlation, health)
   - [ ] Batch 6 — webhooks (subscriptions and delivery)
   - [ ] Tier 3 — controllable test clock and scriptable webhook receiver for `@needs-clock` / delivery-retry scenarios; `@manual` for the rest
