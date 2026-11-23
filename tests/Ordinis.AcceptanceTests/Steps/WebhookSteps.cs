@@ -36,8 +36,8 @@ internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api, Sc
     /// <summary>How far a retry may be off its schedule ("about 30 seconds later").</summary>
     private static readonly TimeSpan RetryTolerance = TimeSpan.FromSeconds(3);
 
-    /// <summary>Long enough for the delivery job (polling every second here) to act if it were going to.</summary>
-    private static readonly TimeSpan QuietPeriod = TimeSpan.FromSeconds(2.5);
+    /// <summary>Long enough for the delivery job (polling every 250 ms here) to act if it were going to.</summary>
+    private static readonly TimeSpan QuietPeriod = TimeSpan.FromSeconds(1.5);
 
     private bool _drained;
     private Guid? _projectWithSeededWebhooks;

@@ -37,6 +37,7 @@ public static class InfrastructureServiceExtensions
         // even when the config value uses non-canonical casing such as "sqlserver".
         var provider = AddDatabase(services, configuration);
 
+        services.Configure<OutboxOptions>(configuration.GetSection(OutboxOptions.SectionName));
         services.Configure<OutboxOptions>(o => o.DatabaseProvider = provider);
 
         services.AddSingleton(TimeProvider.System);
