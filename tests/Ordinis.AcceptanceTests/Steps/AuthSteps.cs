@@ -206,7 +206,7 @@ internal sealed class AuthSteps(World world, Seeder seeder, ApiDriver api)
     [Then(@"^the access token expires (\d+) minutes from now$")]
     public void ThenTheAccessTokenExpires(int minutes)
     {
-        DateTimeOffset expected = DateTimeOffset.UtcNow.AddMinutes(minutes);
+        DateTimeOffset expected = TestHost.Clock.GetUtcNow().AddMinutes(minutes);
         DateTimeOffset stated = SuccessfulJson().GetProperty("accessTokenExpiresAt").GetDateTimeOffset();
         DateTimeOffset claimed = DateTimeOffset.FromUnixTimeSeconds(long.Parse(ClaimOf(AccessToken(), "exp")!, System.Globalization.CultureInfo.InvariantCulture));
 
@@ -339,7 +339,7 @@ internal sealed class AuthSteps(World world, Seeder seeder, ApiDriver api)
     private async Task<string> ForgeTokenAsync(Guid userId, string issuer, string audience, byte[] key)
     {
         Ordinis.Domain.Users.User user = await seeder.FindUserAsync(userId);
-        DateTime now = DateTime.UtcNow;
+        DateTime now = TestHost.Clock.GetUtcNow().UtcDateTime;
 
         var token = new JwtSecurityToken(
             issuer: issuer,

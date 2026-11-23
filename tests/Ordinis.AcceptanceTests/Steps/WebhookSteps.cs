@@ -15,6 +15,11 @@ namespace Ordinis.AcceptanceTests.Steps;
 /// Before the first action ("When") of a webhook scenario, the event pipeline is drained and the
 /// receivers forget what they got: the arrangement's own events (a seeded task is a
 /// <c>task.created</c>) are history, and only what the action causes is observed.
+/// <para>
+/// Retries keep their production schedule (30 s, then 60 s). Steps that wait for a delivery to
+/// play out skip the <see cref="TestHost.Clock"/> ahead to each retry as soon as it is scheduled,
+/// as if that time had simply passed; the retry timing steps move it deliberately.
+/// </para>
 /// </remarks>
 [Binding]
 internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api, ScenarioContext scenario)
@@ -27,6 +32,12 @@ internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api, Sc
     private static readonly string[] AllEventTypes = ["task.created", "task.moved", "task.assigned", "comment.added"];
 
     private static readonly TimeSpan DeliveryTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>How far a retry may be off its schedule ("about 30 seconds later").</summary>
+    private static readonly TimeSpan RetryTolerance = TimeSpan.FromSeconds(3);
+
+    /// <summary>Long enough for the delivery job (polling every second here) to act if it were going to.</summary>
+    private static readonly TimeSpan QuietPeriod = TimeSpan.FromSeconds(2.5);
 
     private bool _drained;
     private Guid? _projectWithSeededWebhooks;
@@ -268,7 +279,8 @@ internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api, Sc
         ReceivedWebhook? delivery = await TestHost.Receiver.WaitForAsync(
             DefaultReceiver,
             w => w.EventName == eventType && w.TaskId == taskId,
-            DeliveryTimeout);
+            DeliveryTimeout,
+            SkipToDueRetryAsync);
 
         Assert.True(
             delivery is not null,
@@ -280,7 +292,7 @@ internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api, Sc
     [Then(@"^receiver ""([^""]+)"" eventually receives one POST with content type ""([^""]+)""$")]
     public async Task ThenReceiverReceivesOnePost(string receiver, string contentType)
     {
-        await TestHost.Receiver.WaitForAsync(receiver, _ => true, DeliveryTimeout);
+        await TestHost.Receiver.WaitForAsync(receiver, _ => true, DeliveryTimeout, SkipToDueRetryAsync);
         await WaitUntilSettledAsync();
 
         ReceivedWebhook delivery = Assert.Single(TestHost.Receiver.ReceivedBy(receiver));
@@ -296,14 +308,15 @@ internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api, Sc
 
         Assert.Equal(eventName, payload.GetProperty("event").GetString());
         Assert.True(payload.GetProperty("occurredAt").TryGetDateTimeOffset(out DateTimeOffset occurredAt), payload.ToString());
-        Assert.InRange(occurredAt, DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddMinutes(1));
+        DateTimeOffset now = TestHost.Clock.GetUtcNow();
+        Assert.InRange(occurredAt, now.AddMinutes(-5), now.AddMinutes(1));
         Assert.Equal(world.TaskNamed(title), payload.GetProperty("data").GetProperty("TaskId").GetGuid());
     }
 
     [Then(@"^receiver ""([^""]+)"" eventually receives exactly one event, ""([^""]+)""$")]
     public async Task ThenReceiverReceivesExactlyOneEvent(string receiver, string eventName)
     {
-        await TestHost.Receiver.WaitForAsync(receiver, r => r.EventName == eventName, DeliveryTimeout);
+        await TestHost.Receiver.WaitForAsync(receiver, r => r.EventName == eventName, DeliveryTimeout, SkipToDueRetryAsync);
         await WaitUntilSettledAsync();
         Assert.Equal([eventName], EventsReceivedBy(receiver));
     }
@@ -311,7 +324,7 @@ internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api, Sc
     [Then(@"^receiver ""([^""]+)"" eventually receives ""([^""]+)"" and ""([^""]+)""$")]
     public async Task ThenReceiverReceivesBoth(string receiver, string first, string second)
     {
-        await TestHost.Receiver.WaitForCountAsync(receiver, _ => true, 2, DeliveryTimeout);
+        await TestHost.Receiver.WaitForCountAsync(receiver, _ => true, 2, DeliveryTimeout, SkipToDueRetryAsync);
         await WaitUntilSettledAsync();
         Assert.Equal(new[] { first, second }.Order(), EventsReceivedBy(receiver).Order());
     }
@@ -333,7 +346,7 @@ internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api, Sc
     [Then(@"^receiver ""([^""]+)"" eventually receives one ""([^""]+)"" event$")]
     public async Task ThenReceiverReceivesOneEvent(string receiver, string eventName)
     {
-        ReceivedWebhook? delivery = await TestHost.Receiver.WaitForAsync(receiver, r => r.EventName == eventName, DeliveryTimeout);
+        ReceivedWebhook? delivery = await TestHost.Receiver.WaitForAsync(receiver, r => r.EventName == eventName, DeliveryTimeout, SkipToDueRetryAsync);
         Assert.True(delivery is not null, $"Receiver '{receiver}' got no '{eventName}' within {DeliveryTimeout.TotalSeconds:0} s.");
         Assert.Single(TestHost.Receiver.ReceivedBy(receiver), r => r.EventName == eventName);
     }
@@ -358,7 +371,7 @@ internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api, Sc
     [Then(@"^receiver ""([^""]+)"" eventually receives (\d+) ""([^""]+)"" events, one per task$")]
     public async Task ThenReceiverReceivesOneEventPerTask(string receiver, int count, string eventName)
     {
-        await TestHost.Receiver.WaitForCountAsync(receiver, r => r.EventName == eventName, count, DeliveryTimeout);
+        await TestHost.Receiver.WaitForCountAsync(receiver, r => r.EventName == eventName, count, DeliveryTimeout, SkipToDueRetryAsync);
         await WaitUntilSettledAsync();
 
         List<ReceivedWebhook> events = TestHost.Receiver.ReceivedBy(receiver).Where(r => r.EventName == eventName).ToList();
@@ -369,12 +382,84 @@ internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api, Sc
     [Then(@"^both attempts received by ""([^""]+)"" have byte-identical bodies$")]
     public async Task ThenBothAttemptsHaveIdenticalBodies(string receiver)
     {
-        IReadOnlyList<ReceivedWebhook> attempts = await TestHost.Receiver.WaitForCountAsync(receiver, _ => true, 2, DeliveryTimeout);
+        IReadOnlyList<ReceivedWebhook> attempts = await TestHost.Receiver.WaitForCountAsync(receiver, _ => true, 2, DeliveryTimeout, SkipToDueRetryAsync);
         Assert.Equal(2, attempts.Count);
         Assert.Equal(attempts[0].Body, attempts[1].Body);
     }
 
+    // ---- Retry timing ----
+
+    [Then(@"^receiver ""([^""]+)"" receives attempt 1 immediately$")]
+    public async Task ThenReceiverReceivesTheFirstAttemptImmediately(string receiver)
+    {
+        // No time is skipped: the first attempt does not wait for any backoff.
+        ReceivedWebhook? first = await TestHost.Receiver.WaitForAsync(receiver, _ => true, DeliveryTimeout);
+        Assert.True(first is not null, $"Receiver '{receiver}' got no first attempt within {DeliveryTimeout.TotalSeconds:0} s.");
+        Assert.Single(TestHost.Receiver.ReceivedBy(receiver));
+    }
+
+    /// <summary>
+    /// Attempt <paramref name="attempt"/> is not made shortly before <paramref name="seconds"/>
+    /// have passed since the previous one, and is made once they have.
+    /// </summary>
+    [Then(@"^receiver ""([^""]+)"" receives attempt (\d+) about (\d+) seconds (?:later|after that)$")]
+    public async Task ThenReceiverReceivesTheNextAttemptAfter(string receiver, int attempt, int seconds)
+    {
+        TimeSpan backoff = TimeSpan.FromSeconds(seconds);
+        ReceivedWebhook previous = TestHost.Receiver.ReceivedBy(receiver)[attempt - 2];
+
+        // The previous attempt's failure must be recorded (and the retry scheduled) before the
+        // clock moves; otherwise the retry would be scheduled from the moved clock.
+        await WaitForDeliveryAsync(d => d.AttemptCount >= attempt - 1, skipToDueRetries: false);
+
+        TestHost.Clock.AdvanceTo(previous.ReceivedAt + backoff - RetryTolerance);
+        await Task.Delay(QuietPeriod);
+        Assert.True(TestHost.Receiver.ReceivedBy(receiver).Count == attempt - 1,
+            $"Attempt {attempt} came before {seconds} s had passed since attempt {attempt - 1}.");
+
+        TestHost.Clock.AdvanceTo(previous.ReceivedAt + backoff);
+        IReadOnlyList<ReceivedWebhook> attempts = await TestHost.Receiver.WaitForCountAsync(receiver, _ => true, attempt, DeliveryTimeout);
+        Assert.True(attempts.Count >= attempt, $"Attempt {attempt} was not made once {seconds} s had passed since attempt {attempt - 1}.");
+
+        TimeSpan gap = attempts[attempt - 1].ReceivedAt - previous.ReceivedAt;
+        Assert.InRange(gap, backoff - RetryTolerance, backoff + RetryTolerance);
+    }
+
+    [Then(@"^receiver ""([^""]+)"" eventually receives exactly (\d+) attempts$")]
+    public async Task ThenReceiverReceivesExactlyAttempts(string receiver, int count)
+    {
+        await TestHost.Receiver.WaitForCountAsync(receiver, _ => true, count, DeliveryTimeout, SkipToDueRetryAsync);
+        await WaitForDeliveryAsync(d => d.Status != WebhookDeliveryStatus.Pending);
+
+        // Given up: however much more time passes, no further attempt is made.
+        TestHost.Clock.Advance(TimeSpan.FromHours(1));
+        await Task.Delay(QuietPeriod);
+        Assert.Equal(count, TestHost.Receiver.ReceivedBy(receiver).Count);
+    }
+
     // ---- Delivery records ----
+
+    /// <summary>Delivered by the last attempt; the attempt count records the failed attempts before it.</summary>
+    [Then(@"^the delivery is recorded as delivered after (\d+) attempts$")]
+    public async Task ThenTheDeliveryIsRecordedAsDeliveredAfter(int attempts)
+    {
+        WebhookDelivery delivery = await WaitForDeliveryAsync(d => d.Status != WebhookDeliveryStatus.Pending);
+
+        Assert.Equal(WebhookDeliveryStatus.Delivered, delivery.Status);
+        Assert.Equal(attempts - 1, delivery.AttemptCount);
+        Assert.Null(delivery.LastError);
+        Assert.Equal(attempts, TestHost.Receiver.ReceivedByAnyone.Count);
+    }
+
+    [Then(@"^the delivery is recorded as failed with the last error$")]
+    public async Task ThenTheDeliveryIsRecordedAsFailed()
+    {
+        WebhookDelivery delivery = await WaitForDeliveryAsync(d => d.Status != WebhookDeliveryStatus.Pending);
+
+        Assert.Equal(WebhookDeliveryStatus.Failed, delivery.Status);
+        Assert.Equal(3, delivery.AttemptCount);
+        Assert.StartsWith("Received HTTP 500", delivery.LastError, StringComparison.Ordinal);
+    }
 
     /// <summary>The first attempt failed and was recorded, and the delivery was attempted again (and then succeeded).</summary>
     [Then(@"^the delivery is retried$")]
@@ -466,11 +551,21 @@ internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api, Sc
         while (await seeder.UnsettledEventWorkAsync() > 0)
         {
             Assert.True(DateTime.UtcNow < deadline, $"The event pipeline did not settle within {DeliveryTimeout.TotalSeconds:0} s.");
+            await SkipToDueRetryAsync();
             await Task.Delay(TimeSpan.FromMilliseconds(250));
         }
     }
 
-    private async Task<WebhookDelivery> WaitForDeliveryAsync(Func<WebhookDelivery, bool> condition)
+    /// <summary>Lets the time until the earliest scheduled retry pass, so that retry is made now.</summary>
+    private async Task SkipToDueRetryAsync()
+    {
+        if (await seeder.NextRetryDueAsync() is DateTimeOffset due)
+        {
+            TestHost.Clock.AdvanceTo(due);
+        }
+    }
+
+    private async Task<WebhookDelivery> WaitForDeliveryAsync(Func<WebhookDelivery, bool> condition, bool skipToDueRetries = true)
     {
         DateTime deadline = DateTime.UtcNow + DeliveryTimeout;
         while (true)
@@ -483,6 +578,11 @@ internal sealed class WebhookSteps(World world, Seeder seeder, ApiDriver api, Sc
 
             Assert.True(DateTime.UtcNow < deadline,
                 $"No delivery reached the expected state within {DeliveryTimeout.TotalSeconds:0} s (latest: {delivery?.Status} after {delivery?.AttemptCount} attempts, {delivery?.LastError}).");
+            if (skipToDueRetries)
+            {
+                await SkipToDueRetryAsync();
+            }
+
             await Task.Delay(TimeSpan.FromMilliseconds(250));
         }
     }

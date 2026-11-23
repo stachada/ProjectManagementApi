@@ -110,7 +110,7 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
             boardId = world.BoardNamed(board),
             title,
             priority = Priority.Medium,
-            dueDate = when == "yesterday" ? DateTimeOffset.UtcNow.AddDays(-1) : DateTimeOffset.UtcNow,
+            dueDate = when == "yesterday" ? TestHost.Clock.GetUtcNow().AddDays(-1) : TestHost.Clock.GetUtcNow(),
         }, title);
 
     [When("^" + Actor + @" creates a task ""([^""]+)"" on board ""([^""]+)"" assigned to (\w+)$")]
@@ -182,7 +182,7 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
         {
             "a blank title" => new { title = "   ", description = current.Description, priority = current.Priority, dueDate = current.DueDate },
             "an unknown priority" => new { title = current.Title, description = current.Description, priority = UnknownEnumValue, dueDate = current.DueDate },
-            "a due date of yesterday" => new { title = current.Title, description = current.Description, priority = current.Priority, dueDate = (DateTimeOffset?)DateTimeOffset.UtcNow.AddDays(-1) },
+            "a due date of yesterday" => new { title = current.Title, description = current.Description, priority = current.Priority, dueDate = (DateTimeOffset?)TestHost.Clock.GetUtcNow().AddDays(-1) },
             _ => new { title = new string('t', int.Parse(System.Text.RegularExpressions.Regex.Match(variant, @"\d+").Value, System.Globalization.CultureInfo.InvariantCulture)), description = current.Description, priority = current.Priority, dueDate = current.DueDate },
         };
         await UpdateAsync(persona, title, body, newTitle: null, VersionMode.Current, reader: null);
@@ -331,7 +331,7 @@ internal sealed class TaskSteps(World world, Seeder seeder, ApiDriver api)
 
     /// <summary>"7 days from now" → now + 7 days.</summary>
     private static DateTimeOffset DaysFromNow(string phrase) =>
-        DateTimeOffset.UtcNow.AddDays(int.Parse(phrase.Split(' ')[0], System.Globalization.CultureInfo.InvariantCulture));
+        TestHost.Clock.GetUtcNow().AddDays(int.Parse(phrase.Split(' ')[0], System.Globalization.CultureInfo.InvariantCulture));
 
     /// <summary>A two-column table without a header row (Reqnroll reads the first line as the header).</summary>
     internal static Dictionary<string, string> Fields(DataTable table) =>

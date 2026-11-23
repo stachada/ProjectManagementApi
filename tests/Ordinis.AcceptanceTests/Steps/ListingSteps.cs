@@ -234,7 +234,7 @@ internal sealed class ListingSteps(World world, ApiDriver api)
         // "before 6 days" / "after 6 days"
         string[] parts = argument.Split(' ');
         int days = int.Parse(parts[1], CultureInfo.InvariantCulture);
-        string when = Uri.EscapeDataString(DateTimeOffset.UtcNow.AddDays(days).ToString("O", CultureInfo.InvariantCulture));
+        string when = Uri.EscapeDataString(TestHost.Clock.GetUtcNow().AddDays(days).ToString("O", CultureInfo.InvariantCulture));
 
         return parts[0] switch
         {

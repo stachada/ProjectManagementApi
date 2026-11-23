@@ -39,7 +39,7 @@ internal sealed class WebhookReceiver : IAsyncDisposable
             using var reader = new StreamReader(context.Request.Body);
             string body = await reader.ReadToEndAsync();
             int attempt = _attempts.AddOrUpdate(receiver, 1, (_, n) => n + 1);
-            _received.Enqueue(new ReceivedWebhook(receiver, context.Request.Method, context.Request.ContentType, body, DateTimeOffset.UtcNow));
+            _received.Enqueue(new ReceivedWebhook(receiver, context.Request.Method, context.Request.ContentType, body, TestHost.Clock.GetUtcNow()));
 
             ReceiverResponse response = _scripts.TryGetValue(receiver, out Func<int, ReceiverResponse>? script)
                 ? script(attempt)
@@ -109,15 +109,19 @@ internal sealed class WebhookReceiver : IAsyncDisposable
         _scripts.Clear();
     }
 
-    public async Task<ReceivedWebhook?> WaitForAsync(string name, Func<ReceivedWebhook, bool> match, TimeSpan timeout)
+    public async Task<ReceivedWebhook?> WaitForAsync(
+        string name, Func<ReceivedWebhook, bool> match, TimeSpan timeout, Func<Task>? whileWaiting = null)
     {
-        IReadOnlyList<ReceivedWebhook> hits = await WaitForCountAsync(name, match, 1, timeout);
+        IReadOnlyList<ReceivedWebhook> hits = await WaitForCountAsync(name, match, 1, timeout, whileWaiting);
         return hits.FirstOrDefault();
     }
 
-    /// <summary>Waits until <paramref name="count"/> matching requests arrived (or the timeout), returning the matches.</summary>
+    /// <summary>
+    /// Waits until <paramref name="count"/> matching requests arrived (or the timeout), returning
+    /// the matches. <paramref name="whileWaiting"/> runs between checks (to skip time ahead, say).
+    /// </summary>
     public async Task<IReadOnlyList<ReceivedWebhook>> WaitForCountAsync(
-        string name, Func<ReceivedWebhook, bool> match, int count, TimeSpan timeout)
+        string name, Func<ReceivedWebhook, bool> match, int count, TimeSpan timeout, Func<Task>? whileWaiting = null)
     {
         DateTime deadline = DateTime.UtcNow + timeout;
         while (true)
@@ -126,6 +130,11 @@ internal sealed class WebhookReceiver : IAsyncDisposable
             if (hits.Count >= count || DateTime.UtcNow >= deadline)
             {
                 return hits;
+            }
+
+            if (whileWaiting is not null)
+            {
+                await whileWaiting();
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(200));
