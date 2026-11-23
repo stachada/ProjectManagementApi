@@ -1346,6 +1346,22 @@ See [docs/REST_API_CONCEPTS.md#hateoas](docs/REST_API_CONCEPTS.md#hateoas) for t
   | GAP-16 | Mixed-case sign-in failed on PostgreSQL (input compared as typed) | `Login` normalizes email and slug like they are stored | #144 |
   | GAP-17 | **SSRF:** webhook delivery followed redirects past `WebhookUrlGuard` | Delivery `HttpClient` with `AllowAutoRedirect = false` | #138, #139 |
 
+- [ ] **Bind the remaining scenarios** — in batches by area; each batch triages every failure as a gap (fixed in code, with a red check) or a spec error (scenario corrected). Impractical scenarios (dead database, two instances, restarts) get tagged `@manual` instead of bound
+  - [x] Batch 1 — the remaining task features (`task-creation`, `task-editing`, `task-assignment`, `task-comments`, `task-attachments`, `task-hypermedia`): all 9 task features now fully bound; **401 pass, 562 skipped, 0 fail**. New gaps:
+
+    | Gap | Problem | Fix |
+    |---|---|---|
+    | GAP-18 | Attachments didn't say who uploaded them, though only the uploader or a moderator may remove one | `AttachmentDto.UploadedByUserId` |
+    | GAP-19 | A valid file name over ~218 characters → 500: the stored `{guid}_{name}` exceeded the 255-character path-component limit | `LocalFileStorageService` caps the *stored* name at 100 characters (extension kept); the original name is unchanged in the database |
+
+    Spec errors: a request with a required field absent (no comment content, no task title) is *malformed* (400, model binding), not *invalid* (422) — the API's documented split; the scenarios were corrected
+  - [ ] Batch 2 — projects and boards
+  - [ ] Batch 3 — organizations and users
+  - [ ] Batch 4 — auth, authorization and search
+  - [ ] Batch 5 — platform cross-cutting (concurrency, idempotency, versioning, errors, fields, caching, correlation, health)
+  - [ ] Batch 6 — webhooks (subscriptions and delivery)
+  - [ ] Tier 3 — controllable test clock and scriptable webhook receiver for `@needs-clock` / delivery-retry scenarios; `@manual` for the rest
+
 **Findings:**
 
 - **Specs find what code review misses.** Four of the 17 gaps (GAP-14 to GAP-17) — plus the page-number overflow later folded into GAP-01 — weren't in the initial code review; they surfaced only while checking concrete scenarios against the code (e.g. "priority descending" against string-stored enums).
